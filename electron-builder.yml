@@ -1,5 +1,5 @@
 appId: com.electron.app
-productName: mcpflo
+productName: MCPFlo
 directories:
   buildResources: build
 files:

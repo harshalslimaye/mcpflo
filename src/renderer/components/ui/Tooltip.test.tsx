@@ -88,4 +88,15 @@ describe('Tooltip', () => {
     act(() => { vi.runAllTimers() })
     expect(screen.getByRole('tooltip')).toHaveClass('pointer-events-none')
   })
+
+  it.each(['left', 'top', 'bottom'] as const)('shows tooltip with side="%s"', (side) => {
+    render(
+      <Tooltip label="Label" side={side} delayMs={0}>
+        <button>Trigger</button>
+      </Tooltip>
+    )
+    fireEvent.mouseEnter(screen.getByRole('button'))
+    act(() => { vi.runAllTimers() })
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+  })
 })

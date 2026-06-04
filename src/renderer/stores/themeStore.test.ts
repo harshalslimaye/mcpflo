@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-// Reset module + localStorage between tests
 beforeEach(() => {
   localStorage.clear()
-  // Re-import a fresh store instance
+  vi.resetModules()
 })
 
 describe('themeStore', () => {
@@ -45,5 +44,17 @@ describe('themeStore', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
     useThemeStore.getState().setTheme('dark')
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
+  })
+
+  it('resolves stored light theme from localStorage on init', async () => {
+    localStorage.setItem('mcpflo-theme', 'light')
+    const { useThemeStore } = await import('./themeStore')
+    expect(useThemeStore.getState().theme).toBe('light')
+  })
+
+  it('resolves stored dark theme from localStorage on init', async () => {
+    localStorage.setItem('mcpflo-theme', 'dark')
+    const { useThemeStore } = await import('./themeStore')
+    expect(useThemeStore.getState().theme).toBe('dark')
   })
 })
