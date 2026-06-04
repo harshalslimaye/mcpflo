@@ -1,5 +1,8 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import {
+  StdioClientTransport,
+  getDefaultEnvironment
+} from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { ServerConfig, Tool, Resource, Prompt } from '../shared/mcp.types'
 
 export interface ConnectResult {
@@ -22,10 +25,11 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
   const transport = new StdioClientTransport({
     command: config.transport.command,
     args: config.transport.args,
+    // Inherit only a safe baseline (PATH, HOME, …) rather than the full host
+    // environment, so secrets in process.env never leak into spawned servers.
+    // The user's explicitly configured env vars are layered on top.
     env: {
-      ...Object.fromEntries(
-        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
-      ),
+      ...getDefaultEnvironment(),
       ...config.transport.env
     }
   })
