@@ -1,6 +1,44 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { SecondarySidebar } from './SecondarySidebar'
+import { useServerStore } from '../../stores/serverStore'
+import type { MCPServer } from '../../../shared/mcp.types'
+
+const mockServers: MCPServer[] = [
+  {
+    id: 'memory-mcp',
+    name: 'Memory MCP',
+    transport: { type: 'stdio', command: 'npx' },
+    status: 'disconnected',
+    tools: [
+      { name: 'create_entities', inputSchema: { type: 'object' } },
+      { name: 'search_nodes', inputSchema: { type: 'object' } },
+    ],
+    resources: [{ uri: 'memory://graph', name: 'Graph' }],
+    prompts: [],
+  },
+  {
+    id: 'slack-mcp',
+    name: 'Slack MCP',
+    transport: { type: 'sse', url: 'https://slack.example.com' },
+    status: 'disconnected',
+    tools: [],
+    resources: [],
+    prompts: [],
+  },
+]
+
+const mockConnectServer = vi.fn()
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockConnectServer.mockResolvedValue(undefined)
+  useServerStore.setState({
+    servers: mockServers,
+    selectedServerId: null,
+    connectServer: mockConnectServer,
+  })
+})
 
 describe('SecondarySidebar', () => {
   it('renders section title', () => {
@@ -13,41 +51,114 @@ describe('SecondarySidebar', () => {
     expect(screen.getByText('+ Add Server')).toBeInTheDocument()
   })
 
-  it('renders all three server names', () => {
+  it('renders all server names', () => {
     render(<SecondarySidebar />)
-    expect(screen.getByText('GitHub MCP')).toBeInTheDocument()
+    expect(screen.getByText('Memory MCP')).toBeInTheDocument()
     expect(screen.getByText('Slack MCP')).toBeInTheDocument()
-    expect(screen.getByText('PostgreSQL MCP')).toBeInTheDocument()
   })
 
-  it('renders correct tool counts for GitHub MCP', () => {
+  it('does not show groups before server is expanded', () => {
     render(<SecondarySidebar />)
-    const rows = screen.getAllByText('Tools')
-    // GitHub MCP is first — sibling count cell should be 4
-    expect(rows[0].nextSibling?.textContent).toBe('4')
+    expect(screen.queryByText('Tools')).not.toBeInTheDocument()
   })
 
-  it('renders correct tool counts for Slack MCP', () => {
+  it('shows group rows after server is expanded', () => {
     render(<SecondarySidebar />)
-    const rows = screen.getAllByText('Tools')
-    expect(rows[1].nextSibling?.textContent).toBe('6')
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(screen.getByText('Tools')).toBeInTheDocument()
+    expect(screen.getByText('Resources')).toBeInTheDocument()
+    expect(screen.getByText('Prompts')).toBeInTheDocument()
   })
 
-  it('renders correct tool counts for PostgreSQL MCP', () => {
+  it('collapses server on second click', () => {
     render(<SecondarySidebar />)
-    const rows = screen.getAllByText('Tools')
-    expect(rows[2].nextSibling?.textContent).toBe('3')
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(screen.queryByText('Tools')).not.toBeInTheDocument()
   })
 
-  it('renders Resources and Prompts labels for each server', () => {
+  it('shows correct tool count in group row', () => {
     render(<SecondarySidebar />)
-    expect(screen.getAllByText('Resources')).toHaveLength(3)
-    expect(screen.getAllByText('Prompts')).toHaveLength(3)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    const toolsRow = screen.getByText('Tools').closest('button')
+    expect(toolsRow).toHaveTextContent('2')
   })
 
-  it('renders chevron icon for each server', () => {
-    const { container } = render(<SecondarySidebar />)
-    // One ChevronRight SVG per server
-    expect(container.querySelectorAll('svg')).toHaveLength(3)
+  it('does not show tool items before Tools group is expanded', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(screen.queryByText('create_entities')).not.toBeInTheDocument()
+  })
+
+  it('shows tool items after Tools group is expanded', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Tools'))
+    expect(screen.getByText('create_entities')).toBeInTheDocument()
+    expect(screen.getByText('search_nodes')).toBeInTheDocument()
+  })
+
+  it('disables group row when count is 0', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    const promptsBtn = screen.getByText('Prompts').closest('button')
+    expect(promptsBtn).toBeDisabled()
+  })
+
+  it('does not expand disabled group when clicked', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Prompts'))
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
+  })
+
+  it('expands independent servers independently', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(screen.queryByText('Slack MCP')).toBeInTheDocument()
+    expect(screen.getAllByText('Tools')).toHaveLength(1)
+  })
+
+  it('renders empty list when no servers in store', () => {
+    useServerStore.setState({ servers: [] })
+    render(<SecondarySidebar />)
+    expect(screen.queryByText('Memory MCP')).not.toBeInTheDocument()
+  })
+
+  it('opens AddServerModal when Add Server is clicked', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('+ Add Server'))
+    expect(screen.getByText('Add MCP Server')).toBeInTheDocument()
+  })
+
+  it('closes AddServerModal when modal is dismissed', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('+ Add Server'))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByText('Add MCP Server')).not.toBeInTheDocument()
+  })
+
+  it('calls connectServer when a disconnected server is expanded', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(mockConnectServer).toHaveBeenCalledWith('memory-mcp')
+  })
+
+  it('does not call connectServer when server is already connected', () => {
+    useServerStore.setState({
+      servers: mockServers.map(s =>
+        s.id === 'memory-mcp' ? { ...s, status: 'connected' } : s
+      ),
+      connectServer: mockConnectServer,
+    })
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(mockConnectServer).not.toHaveBeenCalled()
+  })
+
+  it('shows status dot on server row', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    expect(serverBtn?.querySelector('[title="disconnected"]')).toBeInTheDocument()
   })
 })

@@ -1,12 +1,24 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { ServerConfig, ConnectResult } from '../shared/mcp.types'
 
-// Custom APIs for renderer
-const api = {}
+const api = {
+  mcp: {
+    getServers: (): Promise<ServerConfig[]> =>
+      ipcRenderer.invoke('mcp:getServers'),
+    addServer: (config: ServerConfig): Promise<void> =>
+      ipcRenderer.invoke('mcp:addServer', config),
+    updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>): Promise<void> =>
+      ipcRenderer.invoke('mcp:updateServer', id, patch),
+    removeServer: (id: string): Promise<void> =>
+      ipcRenderer.invoke('mcp:removeServer', id),
+    connectServer: (config: ServerConfig): Promise<ConnectResult> =>
+      ipcRenderer.invoke('mcp:connectServer', config),
+    disconnectServer: (id: string): Promise<void> =>
+      ipcRenderer.invoke('mcp:disconnectServer', id),
+  },
+}
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
