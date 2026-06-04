@@ -1,34 +1,21 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useThemeStore } from '../stores/themeStore'
 
 function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+  const { theme, toggleTheme } = useThemeStore()
 
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
+    <div className="min-h-screen bg-bg-primary p-8">
+      <div className="bg-bg-surface border border-border rounded-lg p-6 max-w-sm">
+        <p className="text-text-primary text-lg font-medium mb-1">MCPFlo</p>
+        <p className="text-text-muted text-sm mb-4">Current theme: {theme}</p>
+        <button
+          onClick={toggleTheme}
+          className="bg-accent hover:bg-accent-hover text-white px-4 py-2 rounded text-sm"
+        >
+          Toggle theme
+        </button>
       </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
+    </div>
   )
 }
 

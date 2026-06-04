@@ -29,6 +29,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@xyflow/react": "~12.11.0",
+    "lucide-react": "^1.17.0",
     "zod": "^4.4.3",
     "zustand": "~5.0.14"
   },
