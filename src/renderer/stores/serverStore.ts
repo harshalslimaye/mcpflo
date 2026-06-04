@@ -36,7 +36,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   updateServer: async (id, patch) => {
     await window.api.mcp.updateServer(id, patch)
     set((state) => ({
-      servers: state.servers.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...patch } : s))
     }))
   },
 
@@ -44,7 +44,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     await window.api.mcp.removeServer(id)
     set((state) => ({
       servers: state.servers.filter((s) => s.id !== id),
-      selectedServerId: state.selectedServerId === id ? null : state.selectedServerId,
+      selectedServerId: state.selectedServerId === id ? null : state.selectedServerId
     }))
   },
 
@@ -56,7 +56,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     set((state) => ({
       servers: state.servers.map((s) =>
         s.id === id ? { ...s, status: 'connecting', error: undefined } : s
-      ),
+      )
     }))
 
     try {
@@ -64,7 +64,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       set((state) => ({
         servers: state.servers.map((s) =>
           s.id === id ? { ...s, status: 'connected', tools, resources, prompts } : s
-        ),
+        )
       }))
     } catch (err) {
       set((state) => ({
@@ -72,8 +72,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
           s.id === id
             ? { ...s, status: 'error', error: err instanceof Error ? err.message : String(err) }
             : s
-        ),
+        )
       }))
     }
-  },
+  }
 }))

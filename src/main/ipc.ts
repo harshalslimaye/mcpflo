@@ -8,8 +8,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('mcp:addServer', (_event, config: ServerConfig) => addServer(config))
 
-  ipcMain.handle('mcp:updateServer', (_event, id: string, patch: Partial<Omit<ServerConfig, 'id'>>) =>
-    updateServer(id, patch)
+  ipcMain.handle(
+    'mcp:updateServer',
+    (_event, id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => updateServer(id, patch)
   )
 
   ipcMain.handle('mcp:removeServer', (_event, id: string) => removeServer(id))

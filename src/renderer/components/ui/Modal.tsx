@@ -10,7 +10,9 @@ interface ModalProps {
 
 export function Modal({ title, onClose, children }: ModalProps): React.JSX.Element {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
@@ -23,11 +25,7 @@ export function Modal({ title, onClose, children }: ModalProps): React.JSX.Eleme
       aria-labelledby="modal-title"
     >
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50"
-        aria-hidden="true"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/50" aria-hidden="true" onClick={onClose} />
 
       {/* Panel */}
       <div className="relative z-10 w-full max-w-md bg-bg-surface border border-border rounded-lg shadow-xl">

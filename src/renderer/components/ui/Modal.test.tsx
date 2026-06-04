@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Modal } from './Modal'
 
-function renderModal(onClose = vi.fn()) {
+function renderModal(onClose = vi.fn()): ReturnType<typeof render> {
   return render(
     <Modal title="Test Modal" onClose={onClose}>
       <p>Modal content</p>

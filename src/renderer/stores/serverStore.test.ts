@@ -4,13 +4,13 @@ import type { ServerConfig } from '../../shared/mcp.types'
 const githubConfig: ServerConfig = {
   id: 'github-mcp',
   name: 'GitHub MCP',
-  transport: { type: 'stdio', command: 'npx' },
+  transport: { type: 'stdio', command: 'npx' }
 }
 
 const slackConfig: ServerConfig = {
   id: 'slack-mcp',
   name: 'Slack MCP',
-  transport: { type: 'sse', url: 'https://slack.example.com/sse' },
+  transport: { type: 'sse', url: 'https://slack.example.com/sse' }
 }
 
 const mockApi = {
@@ -20,8 +20,8 @@ const mockApi = {
     updateServer: vi.fn<(id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>>(),
     removeServer: vi.fn<(id: string) => Promise<void>>(),
     connectServer: vi.fn(),
-    disconnectServer: vi.fn<(id: string) => Promise<void>>(),
-  },
+    disconnectServer: vi.fn<(id: string) => Promise<void>>()
+  }
 }
 
 // Expose mock as window.api before the store module loads
@@ -144,7 +144,7 @@ describe('serverStore', () => {
       const tools = [{ name: 'list_issues', inputSchema: { type: 'object' as const } }]
       mockApi.mcp.connectServer.mockResolvedValue({ tools, resources: [], prompts: [] })
       await useServerStore.getState().connectServer('github-mcp')
-      const server = useServerStore.getState().servers.find(s => s.id === 'github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('connected')
       expect(server?.tools).toEqual(tools)
       expect(server?.resources).toEqual([])
@@ -155,7 +155,7 @@ describe('serverStore', () => {
       await useServerStore.getState().addServer(githubConfig)
       mockApi.mcp.connectServer.mockRejectedValue(new Error('Connection refused'))
       await useServerStore.getState().connectServer('github-mcp')
-      const server = useServerStore.getState().servers.find(s => s.id === 'github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('error')
       expect(server?.error).toBe('Connection refused')
     })

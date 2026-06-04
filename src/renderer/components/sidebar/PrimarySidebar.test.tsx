@@ -9,7 +9,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-function renderSidebar(theme: 'dark' | 'light' = 'dark') {
+function renderSidebar(theme: 'dark' | 'light' = 'dark'): ReturnType<typeof render> {
   useThemeStore.setState({ theme, toggleTheme: mockToggleTheme })
   return render(<PrimarySidebar />)
 }

@@ -26,7 +26,7 @@ const defaults: FormState = {
   args: '',
   env: '',
   url: '',
-  headers: '',
+  headers: ''
 }
 
 function parseKeyValue(raw: string): Record<string, string> {
@@ -46,13 +46,18 @@ function buildTransport(form: FormState): TransportConfig {
   if (form.transportType === 'stdio') {
     const args = form.args.trim() ? form.args.trim().split(/\s+/) : undefined
     const env = form.env.trim() ? parseKeyValue(form.env) : undefined
-    return { type: 'stdio', command: form.command.trim(), ...(args && { args }), ...(env && { env }) }
+    return {
+      type: 'stdio',
+      command: form.command.trim(),
+      ...(args && { args }),
+      ...(env && { env })
+    }
   }
   const headers = form.headers.trim() ? parseKeyValue(form.headers) : undefined
   return {
     type: form.transportType,
     url: form.url.trim(),
-    ...(headers && { headers }),
+    ...(headers && { headers })
   }
 }
 
@@ -82,13 +87,16 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const errs = validate(form)
-    if (Object.keys(errs).length > 0) { setErrors(errs); return }
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      return
+    }
 
     const config: ServerConfig = {
       id: crypto.randomUUID(),
       name: form.name.trim(),
       ...(form.description.trim() && { description: form.description.trim() }),
-      transport: buildTransport(form),
+      transport: buildTransport(form)
     }
 
     setSubmitting(true)
@@ -104,7 +112,6 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
     <Modal title="Add MCP Server" onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>
         <div className="flex flex-col gap-4">
-
           {/* Name */}
           <Field label="Name" error={errors.name} required>
             <Input
@@ -166,7 +173,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
               </Field>
               <Field label="Env vars" hint="One KEY=VALUE per line">
                 <Textarea
-                  placeholder={"GITHUB_TOKEN=ghp_xxx\nANOTHER=value"}
+                  placeholder={'GITHUB_TOKEN=ghp_xxx\nANOTHER=value'}
                   value={form.env}
                   onChange={(v) => set('env', v)}
                   aria-label="Env vars"
@@ -188,7 +195,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
               </Field>
               <Field label="Headers" hint="One KEY=VALUE per line">
                 <Textarea
-                  placeholder={"Authorization=Bearer token"}
+                  placeholder={'Authorization=Bearer token'}
                   value={form.headers}
                   onChange={(v) => set('headers', v)}
                   aria-label="Headers"
@@ -214,7 +221,6 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
               {submitting ? 'Adding…' : 'Add Server'}
             </button>
           </div>
-
         </div>
       </form>
     </Modal>
@@ -228,7 +234,7 @@ function Field({
   error,
   hint,
   required,
-  children,
+  children
 }: {
   label: string
   error?: string
@@ -239,7 +245,8 @@ function Field({
   return (
     <div className="flex flex-col gap-1">
       <label className="text-xs text-text-muted">
-        {label}{required && <span className="text-accent ml-0.5">*</span>}
+        {label}
+        {required && <span className="text-accent ml-0.5">*</span>}
         {hint && <span className="ml-1 text-text-muted opacity-60">{hint}</span>}
       </label>
       {children}
@@ -252,7 +259,7 @@ function Input({
   value,
   onChange,
   placeholder,
-  'aria-label': ariaLabel,
+  'aria-label': ariaLabel
 }: {
   value: string
   onChange: (v: string) => void
@@ -275,7 +282,7 @@ function Textarea({
   value,
   onChange,
   placeholder,
-  'aria-label': ariaLabel,
+  'aria-label': ariaLabel
 }: {
   value: string
   onChange: (v: string) => void

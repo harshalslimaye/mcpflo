@@ -12,7 +12,7 @@ beforeEach(() => {
   mockAddServer.mockResolvedValue(undefined)
 })
 
-function renderModal() {
+function renderModal(): ReturnType<typeof render> {
   return render(<AddServerModal onClose={mockOnClose} />)
 }
 
@@ -66,7 +66,9 @@ describe('AddServerModal', () => {
 
   it('shows command error when stdio command is empty', async () => {
     renderModal()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'My Server' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     expect(await screen.findByText('Command is required')).toBeInTheDocument()
   })
@@ -74,16 +76,22 @@ describe('AddServerModal', () => {
   it('shows url error when sse url is empty', async () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'sse' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'My Server' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     expect(await screen.findByText('URL is required')).toBeInTheDocument()
   })
 
   it('calls addServer with correct stdio config on submit', async () => {
     renderModal()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'GitHub MCP' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'GitHub MCP' }
+    })
     fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Args' }), { target: { value: '-y @modelcontextprotocol/server-github' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Args' }), {
+      target: { value: '-y @modelcontextprotocol/server-github' }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
     const config = mockAddServer.mock.calls[0][0]
@@ -97,8 +105,12 @@ describe('AddServerModal', () => {
   it('calls addServer with correct sse config on submit', async () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'sse' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Slack MCP' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), { target: { value: 'https://slack.example.com/sse' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Slack MCP' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+      target: { value: 'https://slack.example.com/sse' }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
     const config = mockAddServer.mock.calls[0][0]
@@ -108,9 +120,13 @@ describe('AddServerModal', () => {
 
   it('parses env vars as KEY=VALUE pairs', async () => {
     renderModal()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'My Server' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
     fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Env vars' }), { target: { value: 'TOKEN=abc\nDEBUG=true' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Env vars' }), {
+      target: { value: 'TOKEN=abc\nDEBUG=true' }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
     expect(mockAddServer.mock.calls[0][0].transport.env).toEqual({ TOKEN: 'abc', DEBUG: 'true' })
@@ -118,8 +134,12 @@ describe('AddServerModal', () => {
 
   it('closes modal after successful submit', async () => {
     renderModal()
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'My Server' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'node' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), {
+      target: { value: 'node' }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockOnClose).toHaveBeenCalledOnce())
   })

@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import {
-  Server, Wrench, Database, MessageSquare,
-  Zap, FileText, Hash
-} from 'lucide-react'
+import { Server, Wrench, Database, MessageSquare, Zap, FileText, Hash } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { AddServerModal } from '../servers/AddServerModal'
 import { ServerRowItem } from './ServerRowItem'
@@ -11,10 +8,13 @@ import type { MCPServer, Tool, Resource, Prompt } from '../../../shared/mcp.type
 
 type GroupKey = 'tools' | 'resources' | 'prompts'
 
-const GROUP_META: Record<GroupKey, { label: string; icon: React.ReactNode; itemIcon: React.ReactNode }> = {
-  tools:     { label: 'Tools',     icon: <Wrench size={13} />,       itemIcon: <Zap size={11} /> },
-  resources: { label: 'Resources', icon: <Database size={13} />,     itemIcon: <FileText size={11} /> },
-  prompts:   { label: 'Prompts',   icon: <MessageSquare size={13} />, itemIcon: <Hash size={11} /> },
+const GROUP_META: Record<
+  GroupKey,
+  { label: string; icon: React.ReactNode; itemIcon: React.ReactNode }
+> = {
+  tools: { label: 'Tools', icon: <Wrench size={13} />, itemIcon: <Zap size={11} /> },
+  resources: { label: 'Resources', icon: <Database size={13} />, itemIcon: <FileText size={11} /> },
+  prompts: { label: 'Prompts', icon: <MessageSquare size={13} />, itemIcon: <Hash size={11} /> }
 }
 
 function groupId(serverId: string, group: GroupKey): string {
@@ -29,18 +29,17 @@ interface ServerTreeProps {
   onToggleGroup: (group: GroupKey) => void
 }
 
-
 function ServerTree({
   server,
   expanded,
   expandedGroups,
   onToggleServer,
-  onToggleGroup,
+  onToggleGroup
 }: ServerTreeProps): React.JSX.Element {
   const groups: { key: GroupKey; items: (Tool | Resource | Prompt)[] }[] = [
-    { key: 'tools',     items: server.tools },
+    { key: 'tools', items: server.tools },
     { key: 'resources', items: server.resources },
-    { key: 'prompts',   items: server.prompts },
+    { key: 'prompts', items: server.prompts }
   ]
 
   return (
@@ -54,35 +53,31 @@ function ServerTree({
         onToggle={onToggleServer}
       />
 
-      {expanded && groups.map(({ key, items }) => {
-        const meta = GROUP_META[key]
-        const isGroupExpanded = expandedGroups.has(groupId(server.id, key))
+      {expanded &&
+        groups.map(({ key, items }) => {
+          const meta = GROUP_META[key]
+          const isGroupExpanded = expandedGroups.has(groupId(server.id, key))
 
-        return (
-          <div key={key}>
-            <ServerRowItem
-              icon={meta.icon}
-              label={meta.label}
-              count={items.length}
-              depth={1}
-              expanded={isGroupExpanded}
-              disabled={items.length === 0}
-              onToggle={() => onToggleGroup(key)}
-            />
+          return (
+            <div key={key}>
+              <ServerRowItem
+                icon={meta.icon}
+                label={meta.label}
+                count={items.length}
+                depth={1}
+                expanded={isGroupExpanded}
+                disabled={items.length === 0}
+                onToggle={() => onToggleGroup(key)}
+              />
 
-            {isGroupExpanded && items.map((item) => {
-              const label = item.name ?? ('uri' in item ? item.uri : '')
-              return (
-                <CapabilityItem
-                  key={label}
-                  icon={meta.itemIcon}
-                  label={label}
-                />
-              )
-            })}
-          </div>
-        )
-      })}
+              {isGroupExpanded &&
+                items.map((item) => {
+                  const label = item.name ?? ('uri' in item ? item.uri : '')
+                  return <CapabilityItem key={label} icon={meta.itemIcon} label={label} />
+                })}
+            </div>
+          )
+        })}
     </div>
   )
 }

@@ -8,8 +8,12 @@ vi.mock('electron-store', () => {
     constructor({ defaults }: { defaults: Record<string, unknown> }) {
       this.data = structuredClone(defaults)
     }
-    get(key: string) { return this.data[key] }
-    set(key: string, value: unknown) { this.data[key] = value }
+    get(key: string): unknown {
+      return this.data[key]
+    }
+    set(key: string, value: unknown): void {
+      this.data[key] = value
+    }
   }
   return { default: MockStore }
 })
@@ -17,13 +21,13 @@ vi.mock('electron-store', () => {
 const githubConfig: ServerConfig = {
   id: 'github-mcp',
   name: 'GitHub MCP',
-  transport: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] },
+  transport: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'] }
 }
 
 const slackConfig: ServerConfig = {
   id: 'slack-mcp',
   name: 'Slack MCP',
-  transport: { type: 'sse', url: 'https://slack.mcp.example.com/sse' },
+  transport: { type: 'sse', url: 'https://slack.mcp.example.com/sse' }
 }
 
 describe('store', () => {

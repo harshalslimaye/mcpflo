@@ -9,7 +9,7 @@ import type {
   StdioTransportConfig,
   SseTransportConfig,
   StreamableHttpTransportConfig,
-  ServerStatus,
+  ServerStatus
 } from './mcp.types'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -18,18 +18,18 @@ const stdioTransport: StdioTransportConfig = {
   type: 'stdio',
   command: 'npx',
   args: ['-y', '@modelcontextprotocol/server-github'],
-  env: { GITHUB_TOKEN: 'ghp_test' },
+  env: { GITHUB_TOKEN: 'ghp_test' }
 }
 
 const sseTransport: SseTransportConfig = {
   type: 'sse',
   url: 'https://mcp.example.com/sse',
-  headers: { Authorization: 'Bearer token' },
+  headers: { Authorization: 'Bearer token' }
 }
 
 const streamableHttpTransport: StreamableHttpTransportConfig = {
   type: 'streamable-http',
-  url: 'https://mcp.example.com/mcp',
+  url: 'https://mcp.example.com/mcp'
 }
 
 const tool: Tool = {
@@ -39,17 +39,17 @@ const tool: Tool = {
     type: 'object',
     properties: {
       owner: { type: 'string' },
-      repo: { type: 'string' },
+      repo: { type: 'string' }
     },
-    required: ['owner', 'repo'],
-  },
+    required: ['owner', 'repo']
+  }
 }
 
 const resource: Resource = {
   uri: 'github://repos/owner/repo',
   name: 'Repository',
   description: 'A GitHub repository',
-  mimeType: 'application/json',
+  mimeType: 'application/json'
 }
 
 const prompt: Prompt = {
@@ -57,15 +57,15 @@ const prompt: Prompt = {
   description: 'Summarize a pull request',
   arguments: [
     { name: 'pr_number', description: 'PR number', required: true },
-    { name: 'style', description: 'Summary style', required: false },
-  ],
+    { name: 'style', description: 'Summary style', required: false }
+  ]
 }
 
 const serverConfig: ServerConfig = {
   id: 'github-mcp',
   name: 'GitHub MCP',
   description: 'GitHub integration via MCP',
-  transport: stdioTransport,
+  transport: stdioTransport
 }
 
 const server: MCPServer = {
@@ -73,7 +73,7 @@ const server: MCPServer = {
   status: 'connected',
   tools: [tool],
   resources: [resource],
-  prompts: [prompt],
+  prompts: [prompt]
 }
 
 // ── TransportConfig ───────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ describe('ServerConfig', () => {
     const minimal: ServerConfig = {
       id: 'min',
       name: 'Min',
-      transport: { type: 'stdio', command: 'node' },
+      transport: { type: 'stdio', command: 'node' }
     }
     expect(minimal.description).toBeUndefined()
   })
@@ -272,7 +272,7 @@ describe('MCPServer', () => {
       status: 'disconnected',
       tools: [],
       resources: [],
-      prompts: [],
+      prompts: []
     }
     expect(empty.tools).toHaveLength(0)
     expect(empty.resources).toHaveLength(0)
@@ -292,7 +292,7 @@ describe('MCPServer', () => {
       status: 'disconnected',
       tools: [],
       resources: [],
-      prompts: [],
+      prompts: []
     }
     expect(minimal.description).toBeUndefined()
     expect(minimal.error).toBeUndefined()

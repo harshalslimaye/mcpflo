@@ -36,5 +36,5 @@ export const useThemeStore = create<ThemeStore>((set) => ({
       localStorage.setItem(STORAGE_KEY, theme)
       applyTheme(theme)
       return { theme }
-    }),
+    })
 }))

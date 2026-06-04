@@ -8,7 +8,12 @@ interface TooltipProps {
   delayMs?: number
 }
 
-export function Tooltip({ label, children, side = 'right', delayMs = 400 }: TooltipProps) {
+export function Tooltip({
+  label,
+  children,
+  side = 'right',
+  delayMs = 400
+}: TooltipProps): React.JSX.Element {
   const [visible, setVisible] = useState(false)
   const [coords, setCoords] = useState({ top: 0, left: 0 })
   const triggerRef = useRef<HTMLElement>(null)
@@ -44,17 +49,27 @@ export function Tooltip({ label, children, side = 'right', delayMs = 400 }: Tool
     setVisible(false)
   }, [])
 
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    },
+    []
+  )
 
   return (
     <>
-      {React.cloneElement(children as React.ReactElement<React.HTMLAttributes<HTMLElement> & { ref?: React.Ref<HTMLElement> }>, {
-        ref: triggerRef,
-        onMouseEnter: show,
-        onMouseLeave: hide,
-        onFocus: show,
-        onBlur: hide,
-      })}
+      {React.cloneElement(
+        children as React.ReactElement<
+          React.HTMLAttributes<HTMLElement> & { ref?: React.Ref<HTMLElement> }
+        >,
+        {
+          ref: triggerRef,
+          onMouseEnter: show,
+          onMouseLeave: hide,
+          onFocus: show,
+          onBlur: hide
+        }
+      )}
       {visible &&
         createPortal(
           <div

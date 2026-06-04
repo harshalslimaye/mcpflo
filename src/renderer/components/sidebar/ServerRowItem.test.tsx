@@ -8,7 +8,7 @@ const defaultProps = {
   label: 'Memory MCP',
   depth: 0 as const,
   expanded: false,
-  onToggle: vi.fn(),
+  onToggle: vi.fn()
 }
 
 describe('ServerRowItem', () => {

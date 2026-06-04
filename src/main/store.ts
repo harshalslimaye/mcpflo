@@ -8,8 +8,8 @@ interface StoreSchema {
 export const store = new Store<StoreSchema>({
   name: 'config',
   defaults: {
-    servers: [],
-  },
+    servers: []
+  }
 })
 
 export function getServers(): ServerConfig[] {
@@ -35,5 +35,8 @@ export function updateServer(id: string, patch: Partial<Omit<ServerConfig, 'id'>
 export function removeServer(id: string): void {
   const servers = store.get('servers')
   if (!servers.some((s) => s.id === id)) throw new Error(`Server "${id}" not found`)
-  store.set('servers', servers.filter((s) => s.id !== id))
+  store.set(
+    'servers',
+    servers.filter((s) => s.id !== id)
+  )
 }

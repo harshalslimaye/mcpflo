@@ -12,10 +12,10 @@ const mockServers: MCPServer[] = [
     status: 'disconnected',
     tools: [
       { name: 'create_entities', inputSchema: { type: 'object' } },
-      { name: 'search_nodes', inputSchema: { type: 'object' } },
+      { name: 'search_nodes', inputSchema: { type: 'object' } }
     ],
     resources: [{ uri: 'memory://graph', name: 'Graph' }],
-    prompts: [],
+    prompts: []
   },
   {
     id: 'slack-mcp',
@@ -24,8 +24,8 @@ const mockServers: MCPServer[] = [
     status: 'disconnected',
     tools: [],
     resources: [],
-    prompts: [],
-  },
+    prompts: []
+  }
 ]
 
 const mockConnectServer = vi.fn()
@@ -36,7 +36,7 @@ beforeEach(() => {
   useServerStore.setState({
     servers: mockServers,
     selectedServerId: null,
-    connectServer: mockConnectServer,
+    connectServer: mockConnectServer
   })
 })
 
@@ -146,10 +146,8 @@ describe('SecondarySidebar', () => {
 
   it('does not call connectServer when server is already connected', () => {
     useServerStore.setState({
-      servers: mockServers.map(s =>
-        s.id === 'memory-mcp' ? { ...s, status: 'connected' } : s
-      ),
-      connectServer: mockConnectServer,
+      servers: mockServers.map((s) => (s.id === 'memory-mcp' ? { ...s, status: 'connected' } : s)),
+      connectServer: mockConnectServer
     })
     render(<SecondarySidebar />)
     fireEvent.click(screen.getByText('Memory MCP'))

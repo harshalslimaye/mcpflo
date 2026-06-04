@@ -40,6 +40,7 @@ function createWindow(): void {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
+  app.setName('MCPFlo')
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 

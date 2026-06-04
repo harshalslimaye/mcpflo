@@ -23,11 +23,11 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
     command: config.transport.command,
     args: config.transport.args,
     env: {
-      ...(Object.fromEntries(
+      ...Object.fromEntries(
         Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined)
-      )),
-      ...config.transport.env,
-    },
+      ),
+      ...config.transport.env
+    }
   })
 
   const client = new Client({ name: 'mcpflo', version: '1.0.0' })
@@ -37,13 +37,13 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
   const [toolsResult, resourcesResult, promptsResult] = await Promise.all([
     client.listTools().catch(() => ({ tools: [] })),
     client.listResources().catch(() => ({ resources: [] })),
-    client.listPrompts().catch(() => ({ prompts: [] })),
+    client.listPrompts().catch(() => ({ prompts: [] }))
   ])
 
   return {
     tools: toolsResult.tools as Tool[],
     resources: resourcesResult.resources as Resource[],
-    prompts: promptsResult.prompts as Prompt[],
+    prompts: promptsResult.prompts as Prompt[]
   }
 }
 

@@ -9,16 +9,19 @@ interface SidebarButtonProps {
   children: React.ReactNode
 }
 
-function SidebarButton({ label, active, onClick, children }: SidebarButtonProps): React.JSX.Element {
+function SidebarButton({
+  label,
+  active,
+  onClick,
+  children
+}: SidebarButtonProps): React.JSX.Element {
   return (
     <Tooltip label={label} side="right">
       <button
         aria-label={label}
         onClick={onClick}
         className={`p-3 rounded-md transition-colors ${
-          active
-            ? 'text-accent'
-            : 'text-text-muted hover:text-text-primary hover:bg-bg-elevated'
+          active ? 'text-accent' : 'text-text-muted hover:text-text-primary hover:bg-bg-elevated'
         }`}
       >
         {children}
@@ -29,7 +32,7 @@ function SidebarButton({ label, active, onClick, children }: SidebarButtonProps)
 
 const topItems = [
   { icon: Server, label: 'MCP Servers', active: true },
-  { icon: GitBranch, label: 'Workflows' },
+  { icon: GitBranch, label: 'Workflows' }
 ]
 
 export function PrimarySidebar(): React.JSX.Element {
