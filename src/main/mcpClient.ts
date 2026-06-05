@@ -51,6 +51,17 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
   }
 }
 
+// Fetches a snapshot of a server's capabilities, then disconnects — we don't
+// keep the process alive just to browse cached capabilities. Tool calling (a
+// later feature) will reconnect on demand.
+export async function fetchCapabilities(config: ServerConfig): Promise<ConnectResult> {
+  try {
+    return await connectServer(config)
+  } finally {
+    await disconnectServer(config.id)
+  }
+}
+
 export async function disconnectServer(id: string): Promise<void> {
   const client = clients.get(id)
   if (client) {

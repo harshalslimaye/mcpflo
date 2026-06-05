@@ -1,6 +1,12 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
-import { connectServer, disconnectServer } from './mcpClient'
+import { fetchCapabilities } from './mcpClient'
+import {
+  readAllCapabilities,
+  writeCapabilities,
+  clearCapabilities,
+  removeServerDir
+} from './capabilitiesCache'
 import type { ServerConfig } from '../shared/mcp.types'
 
 export function registerIpcHandlers(): void {
@@ -13,9 +19,19 @@ export function registerIpcHandlers(): void {
     (_event, id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => updateServer(id, patch)
   )
 
-  ipcMain.handle('mcp:removeServer', (_event, id: string) => removeServer(id))
+  ipcMain.handle('mcp:removeServer', async (_event, id: string) => {
+    removeServer(id)
+    await removeServerDir(id)
+  })
 
-  ipcMain.handle('mcp:connectServer', (_event, config: ServerConfig) => connectServer(config))
+  // Capabilities cache
+  ipcMain.handle('mcp:getCachedCapabilities', () => readAllCapabilities())
 
-  ipcMain.handle('mcp:disconnectServer', (_event, id: string) => disconnectServer(id))
+  ipcMain.handle('mcp:fetchCapabilities', async (_event, config: ServerConfig) => {
+    const result = await fetchCapabilities(config)
+    await writeCapabilities(config.id, result)
+    return result
+  })
+
+  ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => clearCapabilities(id))
 }

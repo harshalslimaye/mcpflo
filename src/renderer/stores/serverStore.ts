@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ServerConfig, MCPServer } from '../../shared/mcp.types'
+import type { ServerConfig, MCPServer, CachedCapabilities } from '../../shared/mcp.types'
 
 interface ServerStore {
   servers: MCPServer[]
@@ -10,11 +10,20 @@ interface ServerStore {
   addServer: (config: ServerConfig) => Promise<void>
   updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
   removeServer: (id: string) => Promise<void>
-  connectServer: (id: string) => Promise<void>
+  fetchCapabilities: (id: string) => Promise<void>
+  refreshCapabilities: (id: string) => Promise<void>
 }
 
-function toRuntime(config: ServerConfig): MCPServer {
-  return { ...config, status: 'disconnected', tools: [], resources: [], prompts: [] }
+function toRuntime(config: ServerConfig, cached?: CachedCapabilities): MCPServer {
+  return {
+    ...config,
+    // A cached server starts green (capabilities available); an unfetched one grey.
+    status: cached ? 'connected' : 'disconnected',
+    tools: cached?.tools ?? [],
+    resources: cached?.resources ?? [],
+    prompts: cached?.prompts ?? [],
+    fetchedAt: cached?.fetchedAt
+  }
 }
 
 export const useServerStore = create<ServerStore>((set, get) => ({
@@ -22,8 +31,11 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   selectedServerId: null,
 
   hydrate: async () => {
-    const configs = await window.api.mcp.getServers()
-    set({ servers: configs.map(toRuntime) })
+    const [configs, cache] = await Promise.all([
+      window.api.mcp.getServers(),
+      window.api.mcp.getCachedCapabilities()
+    ])
+    set({ servers: configs.map((c) => toRuntime(c, cache[c.id])) })
   },
 
   selectServer: (id) => set({ selectedServerId: id }),
@@ -48,11 +60,11 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }))
   },
 
-  connectServer: async (id) => {
+  fetchCapabilities: async (id) => {
     const server = get().servers.find((s) => s.id === id)
     if (!server) return
 
-    // Mark as connecting
+    // grey/green → yellow
     set((state) => ({
       servers: state.servers.map((s) =>
         s.id === id ? { ...s, status: 'connecting', error: undefined } : s
@@ -60,10 +72,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }))
 
     try {
-      const { tools, resources, prompts } = await window.api.mcp.connectServer(server)
+      const { tools, resources, prompts } = await window.api.mcp.fetchCapabilities(server)
       set((state) => ({
         servers: state.servers.map((s) =>
-          s.id === id ? { ...s, status: 'connected', tools, resources, prompts } : s
+          s.id === id
+            ? { ...s, status: 'connected', tools, resources, prompts, fetchedAt: Date.now() }
+            : s
         )
       }))
     } catch (err) {
@@ -75,5 +89,11 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         )
       }))
     }
+  },
+
+  // Clears the cache and fetches again — the manual "refresh" action.
+  refreshCapabilities: async (id) => {
+    await window.api.mcp.clearCapabilities(id)
+    await get().fetchCapabilities(id)
   }
 }))

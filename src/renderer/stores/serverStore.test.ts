@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { ServerConfig } from '../../shared/mcp.types'
+import type { ServerConfig, CachedCapabilities } from '../../shared/mcp.types'
 
 const githubConfig: ServerConfig = {
   id: 'github-mcp',
@@ -19,8 +19,9 @@ const mockApi = {
     addServer: vi.fn<(c: ServerConfig) => Promise<void>>(),
     updateServer: vi.fn<(id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>>(),
     removeServer: vi.fn<(id: string) => Promise<void>>(),
-    connectServer: vi.fn(),
-    disconnectServer: vi.fn<(id: string) => Promise<void>>()
+    getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
+    fetchCapabilities: vi.fn(),
+    clearCapabilities: vi.fn<(id: string) => Promise<void>>()
   }
 }
 
@@ -37,8 +38,9 @@ describe('serverStore', () => {
     mockApi.mcp.addServer.mockResolvedValue(undefined)
     mockApi.mcp.updateServer.mockResolvedValue(undefined)
     mockApi.mcp.removeServer.mockResolvedValue(undefined)
-    mockApi.mcp.connectServer.mockResolvedValue({ tools: [], resources: [], prompts: [] })
-    mockApi.mcp.disconnectServer.mockResolvedValue(undefined)
+    mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
+    mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
+    mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -46,16 +48,35 @@ describe('serverStore', () => {
   })
 
   describe('hydrate', () => {
-    it('loads servers from IPC and converts them to runtime shape', async () => {
+    it('loads an uncached server as a grey (disconnected) runtime server', async () => {
       mockApi.mcp.getServers.mockResolvedValue([githubConfig])
       await useServerStore.getState().hydrate()
       const servers = useServerStore.getState().servers
       expect(servers).toHaveLength(1)
       expect(servers[0].id).toBe('github-mcp')
       expect(servers[0].status).toBe('disconnected')
+      expect(servers[0].fetchedAt).toBeUndefined()
       expect(servers[0].tools).toEqual([])
       expect(servers[0].resources).toEqual([])
       expect(servers[0].prompts).toEqual([])
+    })
+
+    it('loads a cached server as green with its capabilities populated', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': {
+          tools: [{ name: 'list_issues', inputSchema: { type: 'object' } }],
+          resources: [],
+          prompts: [],
+          fetchedAt: 1000
+        }
+      })
+      await useServerStore.getState().hydrate()
+      const server = useServerStore.getState().servers[0]
+      expect(server.status).toBe('connected')
+      expect(server.fetchedAt).toBe(1000)
+      expect(server.tools).toHaveLength(1)
+      expect(server.tools[0].name).toBe('list_issues')
     })
 
     it('sets empty array when no servers stored', async () => {
@@ -138,14 +159,15 @@ describe('serverStore', () => {
     })
   })
 
-  describe('connectServer', () => {
-    it('sets status to connecting then connected on success', async () => {
+  describe('fetchCapabilities', () => {
+    it('sets status to connected and records fetchedAt on success', async () => {
       await useServerStore.getState().addServer(githubConfig)
       const tools = [{ name: 'list_issues', inputSchema: { type: 'object' as const } }]
-      mockApi.mcp.connectServer.mockResolvedValue({ tools, resources: [], prompts: [] })
-      await useServerStore.getState().connectServer('github-mcp')
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools, resources: [], prompts: [] })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('connected')
+      expect(server?.fetchedAt).toEqual(expect.any(Number))
       expect(server?.tools).toEqual(tools)
       expect(server?.resources).toEqual([])
       expect(server?.prompts).toEqual([])
@@ -153,24 +175,40 @@ describe('serverStore', () => {
 
     it('sets status to error on failure', async () => {
       await useServerStore.getState().addServer(githubConfig)
-      mockApi.mcp.connectServer.mockRejectedValue(new Error('Connection refused'))
-      await useServerStore.getState().connectServer('github-mcp')
+      mockApi.mcp.fetchCapabilities.mockRejectedValue(new Error('Connection refused'))
+      await useServerStore.getState().fetchCapabilities('github-mcp')
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('error')
       expect(server?.error).toBe('Connection refused')
     })
 
     it('does nothing when server id not found', async () => {
-      await useServerStore.getState().connectServer('nonexistent')
-      expect(mockApi.mcp.connectServer).not.toHaveBeenCalled()
+      await useServerStore.getState().fetchCapabilities('nonexistent')
+      expect(mockApi.mcp.fetchCapabilities).not.toHaveBeenCalled()
     })
 
     it('passes full server config to IPC', async () => {
       await useServerStore.getState().addServer(githubConfig)
-      await useServerStore.getState().connectServer('github-mcp')
-      expect(mockApi.mcp.connectServer).toHaveBeenCalledWith(
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'github-mcp' })
       )
+    })
+  })
+
+  describe('refreshCapabilities', () => {
+    it('clears the cache then fetches again', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      const tools = [{ name: 'list_issues', inputSchema: { type: 'object' as const } }]
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools, resources: [], prompts: [] })
+      await useServerStore.getState().refreshCapabilities('github-mcp')
+      expect(mockApi.mcp.clearCapabilities).toHaveBeenCalledWith('github-mcp')
+      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'github-mcp' })
+      )
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('connected')
+      expect(server?.tools).toEqual(tools)
     })
   })
 })

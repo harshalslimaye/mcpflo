@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Server, Wrench, Database, MessageSquare, Zap, FileText, Hash } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { AddServerModal } from '../servers/AddServerModal'
+import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { ServerRowItem } from './ServerRowItem'
 import { CapabilityItem } from './CapabilityItem'
 import type { MCPServer, Tool, Resource, Prompt } from '../../../shared/mcp.types'
@@ -27,6 +28,8 @@ interface ServerTreeProps {
   expandedGroups: Set<string>
   onToggleServer: () => void
   onToggleGroup: (group: GroupKey) => void
+  onRefresh: () => void
+  onDelete: () => void
 }
 
 function ServerTree({
@@ -34,7 +37,9 @@ function ServerTree({
   expanded,
   expandedGroups,
   onToggleServer,
-  onToggleGroup
+  onToggleGroup,
+  onRefresh,
+  onDelete
 }: ServerTreeProps): React.JSX.Element {
   const groups: { key: GroupKey; items: (Tool | Resource | Prompt)[] }[] = [
     { key: 'tools', items: server.tools },
@@ -51,6 +56,8 @@ function ServerTree({
         expanded={expanded}
         status={server.status}
         onToggle={onToggleServer}
+        onRefresh={onRefresh}
+        onDelete={onDelete}
       />
 
       {expanded &&
@@ -84,20 +91,27 @@ function ServerTree({
 
 export function SecondarySidebar(): React.JSX.Element {
   const servers = useServerStore((s) => s.servers)
-  const connectServer = useServerStore((s) => s.connectServer)
+  const fetchCapabilities = useServerStore((s) => s.fetchCapabilities)
+  const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<MCPServer | null>(null)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   function toggleServer(id: string): void {
+    const willExpand = !expandedServers.has(id)
     setExpandedServers((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
-    const server = servers.find((s) => s.id === id)
-    if (server && server.status === 'disconnected') {
-      connectServer(id)
+    // Lazy fetch: auto-fetch only a never-fetched server (grey) on expand.
+    // Cached (green) and errored (red) servers refetch only via the refresh button.
+    if (willExpand) {
+      const server = servers.find((s) => s.id === id)
+      if (server && server.status === 'disconnected') {
+        fetchCapabilities(id)
+      }
     }
   }
 
@@ -137,12 +151,22 @@ export function SecondarySidebar(): React.JSX.Element {
               expandedGroups={expandedGroups}
               onToggleServer={() => toggleServer(server.id)}
               onToggleGroup={(group) => toggleGroup(server.id, group)}
+              onRefresh={() => refreshCapabilities(server.id)}
+              onDelete={() => setPendingDelete(server)}
             />
           ))}
         </div>
       </div>
 
       {showAddModal && <AddServerModal onClose={() => setShowAddModal(false)} />}
+
+      {pendingDelete && (
+        <DeleteServerModal
+          serverId={pendingDelete.id}
+          serverName={pendingDelete.name}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
     </>
   )
 }

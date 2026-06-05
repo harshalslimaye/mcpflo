@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { ServerConfig, ConnectResult } from '../shared/mcp.types'
+import type { ServerConfig, ConnectResult, CachedCapabilities } from '../shared/mcp.types'
 
 declare global {
   interface Window {
@@ -10,8 +10,9 @@ declare global {
         addServer: (config: ServerConfig) => Promise<void>
         updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
         removeServer: (id: string) => Promise<void>
-        connectServer: (config: ServerConfig) => Promise<ConnectResult>
-        disconnectServer: (id: string) => Promise<void>
+        getCachedCapabilities: () => Promise<Record<string, CachedCapabilities>>
+        fetchCapabilities: (config: ServerConfig) => Promise<ConnectResult>
+        clearCapabilities: (id: string) => Promise<void>
       }
     }
   }

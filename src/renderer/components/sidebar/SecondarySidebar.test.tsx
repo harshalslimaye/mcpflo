@@ -6,10 +6,12 @@ import type { MCPServer } from '../../../shared/mcp.types'
 
 const mockServers: MCPServer[] = [
   {
+    // Cached / green — capabilities already fetched.
     id: 'memory-mcp',
     name: 'Memory MCP',
     transport: { type: 'stdio', command: 'npx' },
-    status: 'disconnected',
+    status: 'connected',
+    fetchedAt: 1000,
     tools: [
       { name: 'create_entities', inputSchema: { type: 'object' } },
       { name: 'search_nodes', inputSchema: { type: 'object' } }
@@ -18,6 +20,7 @@ const mockServers: MCPServer[] = [
     prompts: []
   },
   {
+    // Never fetched / grey.
     id: 'slack-mcp',
     name: 'Slack MCP',
     transport: { type: 'sse', url: 'https://slack.example.com' },
@@ -28,15 +31,18 @@ const mockServers: MCPServer[] = [
   }
 ]
 
-const mockConnectServer = vi.fn()
+const mockFetchCapabilities = vi.fn()
+const mockRefreshCapabilities = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockConnectServer.mockResolvedValue(undefined)
+  mockFetchCapabilities.mockResolvedValue(undefined)
+  mockRefreshCapabilities.mockResolvedValue(undefined)
   useServerStore.setState({
     servers: mockServers,
     selectedServerId: null,
-    connectServer: mockConnectServer
+    fetchCapabilities: mockFetchCapabilities,
+    refreshCapabilities: mockRefreshCapabilities
   })
 })
 
@@ -138,25 +144,62 @@ describe('SecondarySidebar', () => {
     expect(screen.queryByText('Add MCP Server')).not.toBeInTheDocument()
   })
 
-  it('calls connectServer when a disconnected server is expanded', () => {
+  it('fetches capabilities when a never-fetched (grey) server is expanded', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
-    expect(mockConnectServer).toHaveBeenCalledWith('memory-mcp')
+    fireEvent.click(screen.getByText('Slack MCP'))
+    expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
   })
 
-  it('does not call connectServer when server is already connected', () => {
-    useServerStore.setState({
-      servers: mockServers.map((s) => (s.id === 'memory-mcp' ? { ...s, status: 'connected' } : s)),
-      connectServer: mockConnectServer
-    })
+  it('does not fetch when expanding a cached (green) server', () => {
     render(<SecondarySidebar />)
     fireEvent.click(screen.getByText('Memory MCP'))
-    expect(mockConnectServer).not.toHaveBeenCalled()
+    expect(mockFetchCapabilities).not.toHaveBeenCalled()
+  })
+
+  it('does not fetch when collapsing a server', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Slack MCP')) // expand → fetch
+    mockFetchCapabilities.mockClear()
+    fireEvent.click(screen.getByText('Slack MCP')) // collapse → no fetch
+    expect(mockFetchCapabilities).not.toHaveBeenCalled()
+  })
+
+  it('calls refreshCapabilities when the refresh control is clicked', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    const refresh = serverBtn?.querySelector('[title="Refresh capabilities"]') as HTMLElement
+    fireEvent.click(refresh)
+    expect(mockRefreshCapabilities).toHaveBeenCalledWith('memory-mcp')
+  })
+
+  it('refresh control does not toggle the server', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    const refresh = serverBtn?.querySelector('[title="Refresh capabilities"]') as HTMLElement
+    fireEvent.click(refresh)
+    // groups should NOT appear — the click was on refresh, not the row toggle
+    expect(screen.queryByText('Tools')).not.toBeInTheDocument()
   })
 
   it('shows status dot on server row', () => {
     render(<SecondarySidebar />)
     const serverBtn = screen.getByText('Memory MCP').closest('button')
-    expect(serverBtn?.querySelector('[title="disconnected"]')).toBeInTheDocument()
+    expect(serverBtn?.querySelector('[title="connected"]')).toBeInTheDocument()
+  })
+
+  it('opens the delete confirmation when the delete control is clicked', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
+    fireEvent.click(del)
+    expect(screen.getByText('Delete Server')).toBeInTheDocument()
+  })
+
+  it('delete control does not toggle the server', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Slack MCP').closest('button')
+    const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
+    fireEvent.click(del)
+    expect(mockFetchCapabilities).not.toHaveBeenCalled()
   })
 })

@@ -83,4 +83,48 @@ describe('ServerRowItem', () => {
       expect(container.querySelector(`[title="${status}"]`)).toBeInTheDocument()
     })
   })
+
+  it('renders a refresh control when onRefresh is provided', () => {
+    render(<ServerRowItem {...defaultProps} onRefresh={vi.fn()} />)
+    expect(screen.getByTitle('Refresh capabilities')).toBeInTheDocument()
+  })
+
+  it('does not render a refresh control when onRefresh is omitted', () => {
+    render(<ServerRowItem {...defaultProps} />)
+    expect(screen.queryByTitle('Refresh capabilities')).not.toBeInTheDocument()
+  })
+
+  it('calls onRefresh (and not onToggle) when the refresh control is clicked', () => {
+    const onToggle = vi.fn()
+    const onRefresh = vi.fn()
+    render(<ServerRowItem {...defaultProps} onToggle={onToggle} onRefresh={onRefresh} />)
+    fireEvent.click(screen.getByTitle('Refresh capabilities'))
+    expect(onRefresh).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('spins the refresh icon while fetching (connecting)', () => {
+    render(<ServerRowItem {...defaultProps} status="connecting" onRefresh={vi.fn()} />)
+    const icon = screen.getByTitle('Refresh capabilities').querySelector('svg')
+    expect(icon).toHaveClass('animate-spin')
+  })
+
+  it('renders a delete control when onDelete is provided', () => {
+    render(<ServerRowItem {...defaultProps} onDelete={vi.fn()} />)
+    expect(screen.getByTitle('Delete server')).toBeInTheDocument()
+  })
+
+  it('does not render a delete control when onDelete is omitted', () => {
+    render(<ServerRowItem {...defaultProps} />)
+    expect(screen.queryByTitle('Delete server')).not.toBeInTheDocument()
+  })
+
+  it('calls onDelete (and not onToggle) when the delete control is clicked', () => {
+    const onToggle = vi.fn()
+    const onDelete = vi.fn()
+    render(<ServerRowItem {...defaultProps} onToggle={onToggle} onDelete={onDelete} />)
+    fireEvent.click(screen.getByTitle('Delete server'))
+    expect(onDelete).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
 })
