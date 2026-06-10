@@ -41,6 +41,7 @@ beforeEach(() => {
   useServerStore.setState({
     servers: mockServers,
     selectedServerId: null,
+    selectedTool: null,
     fetchCapabilities: mockFetchCapabilities,
     refreshCapabilities: mockRefreshCapabilities
   })
@@ -201,5 +202,27 @@ describe('SecondarySidebar', () => {
     const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
     fireEvent.click(del)
     expect(mockFetchCapabilities).not.toHaveBeenCalled()
+  })
+
+  it('selects a tool in the store when a tool item is clicked', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Tools'))
+    fireEvent.click(screen.getByText('create_entities'))
+    expect(useServerStore.getState().selectedTool).toEqual({
+      serverId: 'memory-mcp',
+      toolName: 'create_entities'
+    })
+  })
+
+  it('marks the selected tool with aria-current', () => {
+    useServerStore.setState({ selectedTool: { serverId: 'memory-mcp', toolName: 'search_nodes' } })
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Tools'))
+    expect(screen.getByText('search_nodes').closest('button')).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
   })
 })

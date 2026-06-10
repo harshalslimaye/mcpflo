@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
-import { fetchCapabilities } from './mcpClient'
+import { fetchCapabilities, callTool } from './mcpClient'
 import {
   readAllCapabilities,
   writeCapabilities,
@@ -34,4 +34,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => clearCapabilities(id))
+
+  // Tool execution
+  ipcMain.handle(
+    'mcp:callTool',
+    (_event, config: ServerConfig, toolName: string, args: Record<string, unknown>) =>
+      callTool(config, toolName, args)
+  )
 }

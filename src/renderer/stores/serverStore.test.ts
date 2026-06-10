@@ -21,7 +21,8 @@ const mockApi = {
     removeServer: vi.fn<(id: string) => Promise<void>>(),
     getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
     fetchCapabilities: vi.fn(),
-    clearCapabilities: vi.fn<(id: string) => Promise<void>>()
+    clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
+    callTool: vi.fn()
   }
 }
 
@@ -41,10 +42,16 @@ describe('serverStore', () => {
     mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
     mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
     mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
+    mockApi.mcp.callTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
-    useServerStore.setState({ servers: [], selectedServerId: null })
+    useServerStore.setState({
+      servers: [],
+      selectedServerId: null,
+      selectedTool: null,
+      history: {}
+    })
   })
 
   describe('hydrate', () => {
@@ -95,6 +102,76 @@ describe('serverStore', () => {
       useServerStore.getState().selectServer('github-mcp')
       useServerStore.getState().selectServer(null)
       expect(useServerStore.getState().selectedServerId).toBeNull()
+    })
+  })
+
+  describe('selectTool', () => {
+    it('sets the selected tool with its owning server id', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      expect(useServerStore.getState().selectedTool).toEqual({
+        serverId: 'github-mcp',
+        toolName: 'create_issue'
+      })
+    })
+
+    it('replaces a previously selected tool', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      useServerStore.getState().selectTool('github-mcp', 'list_issues')
+      expect(useServerStore.getState().selectedTool?.toolName).toBe('list_issues')
+    })
+  })
+
+  describe('executeTool', () => {
+    const key = 'github-mcp::create_issue'
+
+    it('calls IPC with the server config, tool name and args', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', { title: 'x' })
+      expect(mockApi.mcp.callTool).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'github-mcp' }),
+        'create_issue',
+        { title: 'x' }
+      )
+    })
+
+    it('records a successful call in history', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', { title: 'x' })
+      const records = useServerStore.getState().history[key]
+      expect(records).toHaveLength(1)
+      expect(records[0].status).toBe('success')
+      expect(records[0].args).toEqual({ title: 'x' })
+    })
+
+    it('marks the call as an error when the result reports isError', async () => {
+      mockApi.mcp.callTool.mockResolvedValue({ isError: true, content: [] })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      expect(useServerStore.getState().history[key][0].status).toBe('error')
+    })
+
+    it('records a transport error when the call throws', async () => {
+      mockApi.mcp.callTool.mockRejectedValue(new Error('connection refused'))
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      const record = useServerStore.getState().history[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('connection refused')
+    })
+
+    it('prepends newer calls so the latest is first', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', { n: 1 })
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', { n: 2 })
+      const records = useServerStore.getState().history[key]
+      expect(records).toHaveLength(2)
+      expect(records[0].args).toEqual({ n: 2 })
+    })
+
+    it('does nothing for an unknown server', async () => {
+      await useServerStore.getState().executeTool('missing', 'create_issue', {})
+      expect(mockApi.mcp.callTool).not.toHaveBeenCalled()
+      expect(useServerStore.getState().history).toEqual({})
     })
   })
 
@@ -156,6 +233,32 @@ describe('serverStore', () => {
       useServerStore.getState().selectServer('github-mcp')
       await useServerStore.getState().removeServer('slack-mcp')
       expect(useServerStore.getState().selectedServerId).toBe('github-mcp')
+    })
+
+    it('clears selectedTool if it belonged to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().selectedTool).toBeNull()
+    })
+
+    it('preserves selectedTool if a different server is removed', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      await useServerStore.getState().removeServer('slack-mcp')
+      expect(useServerStore.getState().selectedTool?.serverId).toBe('github-mcp')
+    })
+
+    it('prunes call history belonging to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      await useServerStore.getState().executeTool('slack-mcp', 'post_message', {})
+      await useServerStore.getState().removeServer('github-mcp')
+      const history = useServerStore.getState().history
+      expect(history['github-mcp::create_issue']).toBeUndefined()
+      expect(history['slack-mcp::post_message']).toHaveLength(1)
     })
   })
 

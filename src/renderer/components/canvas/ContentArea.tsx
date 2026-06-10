@@ -1,6 +1,8 @@
 import { Server } from 'lucide-react'
+import { useServerStore } from '../../stores/serverStore'
+import { ToolDetailView } from '../tool/ToolDetailView'
 
-export function ContentArea(): React.JSX.Element {
+function EmptyState(): React.JSX.Element {
   return (
     <div className="flex-1 h-full bg-bg-primary overflow-y-auto flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
@@ -11,5 +13,27 @@ export function ContentArea(): React.JSX.Element {
         </div>
       </div>
     </div>
+  )
+}
+
+export function ContentArea(): React.JSX.Element {
+  const selectedTool = useServerStore((s) => s.selectedTool)
+  const servers = useServerStore((s) => s.servers)
+
+  const server = selectedTool ? servers.find((s) => s.id === selectedTool.serverId) : undefined
+  const tool = server?.tools.find((t) => t.name === selectedTool?.toolName)
+
+  if (!server || !tool) {
+    return <EmptyState />
+  }
+
+  // Remount per tool so all local view state (active tab, form values) resets.
+  return (
+    <ToolDetailView
+      key={`${server.id}::${tool.name}`}
+      tool={tool}
+      serverId={server.id}
+      serverName={server.name}
+    />
   )
 }

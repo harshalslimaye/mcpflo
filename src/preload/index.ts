@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { ServerConfig, ConnectResult, CachedCapabilities } from '../shared/mcp.types'
+import type {
+  ServerConfig,
+  ConnectResult,
+  CachedCapabilities,
+  ToolCallResult
+} from '../shared/mcp.types'
 
 const api = {
   mcp: {
@@ -14,7 +19,12 @@ const api = {
     fetchCapabilities: (config: ServerConfig): Promise<ConnectResult> =>
       ipcRenderer.invoke('mcp:fetchCapabilities', config),
     clearCapabilities: (id: string): Promise<void> =>
-      ipcRenderer.invoke('mcp:clearCapabilities', id)
+      ipcRenderer.invoke('mcp:clearCapabilities', id),
+    callTool: (
+      config: ServerConfig,
+      toolName: string,
+      args: Record<string, unknown>
+    ): Promise<ToolCallResult> => ipcRenderer.invoke('mcp:callTool', config, toolName, args)
   }
 }
 

@@ -1,5 +1,10 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { ServerConfig, ConnectResult, CachedCapabilities } from '../shared/mcp.types'
+import type {
+  ServerConfig,
+  ConnectResult,
+  CachedCapabilities,
+  ToolCallResult
+} from '../shared/mcp.types'
 
 declare global {
   interface Window {
@@ -13,6 +18,11 @@ declare global {
         getCachedCapabilities: () => Promise<Record<string, CachedCapabilities>>
         fetchCapabilities: (config: ServerConfig) => Promise<ConnectResult>
         clearCapabilities: (id: string) => Promise<void>
+        callTool: (
+          config: ServerConfig,
+          toolName: string,
+          args: Record<string, unknown>
+        ) => Promise<ToolCallResult>
       }
     }
   }

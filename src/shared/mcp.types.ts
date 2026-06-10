@@ -34,10 +34,21 @@ export interface ToolInputSchema {
   [key: string]: unknown
 }
 
+// Optional behavioural hints a server may attach to a tool.
+// Mirrors the MCP spec's ToolAnnotations shape; all fields are advisory.
+export interface ToolAnnotations {
+  title?: string
+  readOnlyHint?: boolean
+  destructiveHint?: boolean
+  idempotentHint?: boolean
+  openWorldHint?: boolean
+}
+
 export interface Tool {
   name: string
   description?: string
   inputSchema: ToolInputSchema
+  annotations?: ToolAnnotations
 }
 
 export interface Resource {
@@ -64,6 +75,22 @@ export interface ConnectResult {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
+}
+
+// A single content block in a tool-call result (text, image, resource, …).
+export interface ToolCallContent {
+  type: string
+  text?: string
+  [key: string]: unknown
+}
+
+// Result of invoking a tool — mirrors the MCP SDK's CallToolResult shape.
+export interface ToolCallResult {
+  content?: ToolCallContent[]
+  structuredContent?: unknown
+  // True when the tool itself reported an error (protocol-level success).
+  isError?: boolean
+  [key: string]: unknown
 }
 
 // Capabilities persisted to disk (servers/<id>/capabilities.json) so they're

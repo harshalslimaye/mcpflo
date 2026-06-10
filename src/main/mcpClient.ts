@@ -3,7 +3,7 @@ import {
   StdioClientTransport,
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js'
-import type { ServerConfig, Tool, Resource, Prompt } from '../shared/mcp.types'
+import type { ServerConfig, Tool, Resource, Prompt, ToolCallResult } from '../shared/mcp.types'
 
 export interface ConnectResult {
   tools: Tool[]
@@ -14,7 +14,8 @@ export interface ConnectResult {
 // Active clients keyed by server ID
 const clients = new Map<string, Client>()
 
-export async function connectServer(config: ServerConfig): Promise<ConnectResult> {
+// Opens (or re-opens) a connection for a server and caches the client.
+async function openClient(config: ServerConfig): Promise<Client> {
   if (config.transport.type !== 'stdio') {
     throw new Error(`Transport "${config.transport.type}" not yet supported`)
   }
@@ -37,6 +38,11 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
   const client = new Client({ name: 'mcpflo', version: '1.0.0' })
   await client.connect(transport)
   clients.set(config.id, client)
+  return client
+}
+
+export async function connectServer(config: ServerConfig): Promise<ConnectResult> {
+  const client = await openClient(config)
 
   const [toolsResult, resourcesResult, promptsResult] = await Promise.all([
     client.listTools().catch(() => ({ tools: [] })),
@@ -48,6 +54,22 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
     tools: toolsResult.tools as Tool[],
     resources: resourcesResult.resources as Resource[],
     prompts: promptsResult.prompts as Prompt[]
+  }
+}
+
+// Invokes a tool on a server. Connects on demand and disconnects afterwards —
+// consistent with how we treat capability fetches (no long-lived process).
+export async function callTool(
+  config: ServerConfig,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<ToolCallResult> {
+  try {
+    const client = await openClient(config)
+    const result = await client.callTool({ name: toolName, arguments: args })
+    return result as ToolCallResult
+  } finally {
+    await disconnectServer(config.id)
   }
 }
 

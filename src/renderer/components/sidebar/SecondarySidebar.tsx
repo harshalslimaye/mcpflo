@@ -5,6 +5,7 @@ import { AddServerModal } from '../servers/AddServerModal'
 import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { ServerRowItem } from './ServerRowItem'
 import { CapabilityItem } from './CapabilityItem'
+import type { SelectedTool } from '../../stores/serverStore'
 import type { MCPServer, Tool, Resource, Prompt } from '../../../shared/mcp.types'
 
 type GroupKey = 'tools' | 'resources' | 'prompts'
@@ -26,8 +27,10 @@ interface ServerTreeProps {
   server: MCPServer
   expanded: boolean
   expandedGroups: Set<string>
+  selectedTool: SelectedTool | null
   onToggleServer: () => void
   onToggleGroup: (group: GroupKey) => void
+  onSelectTool: (toolName: string) => void
   onRefresh: () => void
   onDelete: () => void
 }
@@ -36,8 +39,10 @@ function ServerTree({
   server,
   expanded,
   expandedGroups,
+  selectedTool,
   onToggleServer,
   onToggleGroup,
+  onSelectTool,
   onRefresh,
   onDelete
 }: ServerTreeProps): React.JSX.Element {
@@ -80,7 +85,21 @@ function ServerTree({
               {isGroupExpanded &&
                 items.map((item) => {
                   const label = item.name ?? ('uri' in item ? item.uri : '')
-                  return <CapabilityItem key={label} icon={meta.itemIcon} label={label} />
+                  // Only tools open a detail view; resources/prompts stay display-only.
+                  const isTool = key === 'tools'
+                  const isSelected =
+                    isTool &&
+                    selectedTool?.serverId === server.id &&
+                    selectedTool?.toolName === label
+                  return (
+                    <CapabilityItem
+                      key={label}
+                      icon={meta.itemIcon}
+                      label={label}
+                      selected={isSelected}
+                      onClick={isTool ? () => onSelectTool(label) : undefined}
+                    />
+                  )
                 })}
             </div>
           )
@@ -93,6 +112,8 @@ export function SecondarySidebar(): React.JSX.Element {
   const servers = useServerStore((s) => s.servers)
   const fetchCapabilities = useServerStore((s) => s.fetchCapabilities)
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
+  const selectedTool = useServerStore((s) => s.selectedTool)
+  const selectTool = useServerStore((s) => s.selectTool)
   const [showAddModal, setShowAddModal] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<MCPServer | null>(null)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
@@ -149,8 +170,10 @@ export function SecondarySidebar(): React.JSX.Element {
               server={server}
               expanded={expandedServers.has(server.id)}
               expandedGroups={expandedGroups}
+              selectedTool={selectedTool}
               onToggleServer={() => toggleServer(server.id)}
               onToggleGroup={(group) => toggleGroup(server.id, group)}
+              onSelectTool={(toolName) => selectTool(server.id, toolName)}
               onRefresh={() => refreshCapabilities(server.id)}
               onDelete={() => setPendingDelete(server)}
             />
