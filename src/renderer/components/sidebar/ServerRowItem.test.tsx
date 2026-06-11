@@ -127,4 +127,36 @@ describe('ServerRowItem', () => {
     expect(onDelete).toHaveBeenCalledOnce()
     expect(onToggle).not.toHaveBeenCalled()
   })
+
+  it('activates refresh with Enter and Space without toggling the row', () => {
+    const onToggle = vi.fn()
+    const onRefresh = vi.fn()
+    render(<ServerRowItem {...defaultProps} onToggle={onToggle} onRefresh={onRefresh} />)
+    const refresh = screen.getByTitle('Refresh capabilities')
+    fireEvent.keyDown(refresh, { key: 'Enter' })
+    fireEvent.keyDown(refresh, { key: ' ' })
+    expect(onRefresh).toHaveBeenCalledTimes(2)
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('activates delete with Enter and Space without toggling the row', () => {
+    const onToggle = vi.fn()
+    const onDelete = vi.fn()
+    render(<ServerRowItem {...defaultProps} onToggle={onToggle} onDelete={onDelete} />)
+    const del = screen.getByTitle('Delete server')
+    fireEvent.keyDown(del, { key: 'Enter' })
+    fireEvent.keyDown(del, { key: ' ' })
+    expect(onDelete).toHaveBeenCalledTimes(2)
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('ignores other keys on the inline controls', () => {
+    const onRefresh = vi.fn()
+    const onDelete = vi.fn()
+    render(<ServerRowItem {...defaultProps} onRefresh={onRefresh} onDelete={onDelete} />)
+    fireEvent.keyDown(screen.getByTitle('Refresh capabilities'), { key: 'a' })
+    fireEvent.keyDown(screen.getByTitle('Delete server'), { key: 'Escape' })
+    expect(onRefresh).not.toHaveBeenCalled()
+    expect(onDelete).not.toHaveBeenCalled()
+  })
 })

@@ -132,6 +132,51 @@ describe('AddServerModal', () => {
     expect(mockAddServer.mock.calls[0][0].transport.env).toEqual({ TOKEN: 'abc', DEBUG: 'true' })
   })
 
+  it('includes the trimmed description when provided', async () => {
+    renderModal()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description' }), {
+      target: { value: '  Knowledge graph  ' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    expect(mockAddServer.mock.calls[0][0].description).toBe('Knowledge graph')
+  })
+
+  it('omits the description key when the field is left blank', async () => {
+    renderModal()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    expect('description' in mockAddServer.mock.calls[0][0]).toBe(false)
+  })
+
+  it('parses sse headers as KEY=VALUE pairs', async () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'sse' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Slack MCP' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+      target: { value: 'https://slack.example.com/sse' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Headers' }), {
+      target: { value: 'Authorization=Bearer abc\nX-Team=ops' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    expect(mockAddServer.mock.calls[0][0].transport.headers).toEqual({
+      Authorization: 'Bearer abc',
+      'X-Team': 'ops'
+    })
+  })
+
   it('closes modal after successful submit', async () => {
     renderModal()
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {

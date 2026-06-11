@@ -93,6 +93,17 @@ export interface ToolCallResult {
   [key: string]: unknown
 }
 
+// Outcome of a tool invocation as surfaced to the renderer.
+//
+// `response` is the full JSON-RPC response envelope captured off the wire
+// ({ jsonrpc, id, result } or { jsonrpc, id, error }). It's undefined only when
+// the call failed before any response arrived (e.g. a connection error), in
+// which case `error` carries the transport-level message.
+export interface ToolCallOutcome {
+  response?: unknown
+  error?: string
+}
+
 // Capabilities persisted to disk (servers/<id>/capabilities.json) so they're
 // available before fetching and across app restarts.
 export interface CachedCapabilities {

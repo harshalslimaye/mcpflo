@@ -215,6 +215,36 @@ describe('SecondarySidebar', () => {
     })
   })
 
+  it('collapses an expanded group on second click', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Tools'))
+    expect(screen.getByText('create_entities')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Tools'))
+    expect(screen.queryByText('create_entities')).not.toBeInTheDocument()
+  })
+
+  it('closes the delete confirmation on Cancel', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
+    fireEvent.click(del)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('Delete Server')).not.toBeInTheDocument()
+  })
+
+  it('labels an unnamed resource with its uri and keeps it non-clickable', () => {
+    useServerStore.setState({
+      servers: [{ ...mockServers[0], resources: [{ uri: 'memory://graph' }] }]
+    })
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Resources'))
+    fireEvent.click(screen.getByText('memory://graph'))
+    // Resources are display-only — clicking must not select a tool.
+    expect(useServerStore.getState().selectedTool).toBeNull()
+  })
+
   it('marks the selected tool with aria-current', () => {
     useServerStore.setState({ selectedTool: { serverId: 'memory-mcp', toolName: 'search_nodes' } })
     render(<SecondarySidebar />)

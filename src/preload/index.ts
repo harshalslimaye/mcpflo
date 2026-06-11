@@ -4,7 +4,7 @@ import type {
   ServerConfig,
   ConnectResult,
   CachedCapabilities,
-  ToolCallResult
+  ToolCallOutcome
 } from '../shared/mcp.types'
 
 const api = {
@@ -24,7 +24,7 @@ const api = {
       config: ServerConfig,
       toolName: string,
       args: Record<string, unknown>
-    ): Promise<ToolCallResult> => ipcRenderer.invoke('mcp:callTool', config, toolName, args)
+    ): Promise<ToolCallOutcome> => ipcRenderer.invoke('mcp:callTool', config, toolName, args)
   }
 }
 

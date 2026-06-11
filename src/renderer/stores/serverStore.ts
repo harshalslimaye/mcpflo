@@ -3,7 +3,7 @@ import type {
   ServerConfig,
   MCPServer,
   CachedCapabilities,
-  ToolCallResult
+  ToolCallOutcome
 } from '../../shared/mcp.types'
 
 // A single recorded tool invocation, kept in memory for the session.
@@ -13,10 +13,24 @@ export interface ToolCallRecord {
   toolName: string
   args: Record<string, unknown>
   status: 'success' | 'error'
-  result?: ToolCallResult
+  // Full JSON-RPC response envelope, when one was received.
+  response?: unknown
+  // Transport-level error message, when no response arrived.
   error?: string
   durationMs: number
   at: number
+}
+
+// An outcome counts as an error when the connection failed, the server returned
+// a JSON-RPC error, or the tool itself reported `isError`.
+function outcomeStatus(outcome: ToolCallOutcome): 'success' | 'error' {
+  if (outcome.error) return 'error'
+  const response = outcome.response
+  if (!response || typeof response !== 'object') return 'error'
+  const envelope = response as Record<string, unknown>
+  if ('error' in envelope) return 'error'
+  const result = envelope.result as { isError?: boolean } | undefined
+  return result?.isError === true ? 'error' : 'success'
 }
 
 // History is keyed per tool; names are only unique within a server.
@@ -86,14 +100,15 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     const at = Date.now()
     let record: ToolCallRecord
     try {
-      const result = await window.api.mcp.callTool(server, toolName, args)
+      const outcome = await window.api.mcp.callTool(server, toolName, args)
       record = {
         id: crypto.randomUUID(),
         serverId,
         toolName,
         args,
-        status: result.isError ? 'error' : 'success',
-        result,
+        status: outcomeStatus(outcome),
+        response: outcome.response,
+        error: outcome.error,
         durationMs: Date.now() - at,
         at
       }

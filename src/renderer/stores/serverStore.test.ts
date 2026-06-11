@@ -42,7 +42,9 @@ describe('serverStore', () => {
     mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
     mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
     mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
-    mockApi.mcp.callTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] })
+    mockApi.mcp.callTool.mockResolvedValue({
+      response: { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }
+    })
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -144,19 +146,48 @@ describe('serverStore', () => {
     })
 
     it('marks the call as an error when the result reports isError', async () => {
-      mockApi.mcp.callTool.mockResolvedValue({ isError: true, content: [] })
+      mockApi.mcp.callTool.mockResolvedValue({
+        response: { jsonrpc: '2.0', id: 1, result: { isError: true, content: [] } }
+      })
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
       expect(useServerStore.getState().history[key][0].status).toBe('error')
     })
 
-    it('records a transport error when the call throws', async () => {
-      mockApi.mcp.callTool.mockRejectedValue(new Error('connection refused'))
+    it('marks the call as an error for a JSON-RPC error response', async () => {
+      mockApi.mcp.callTool.mockResolvedValue({
+        response: { jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'Method not found' } }
+      })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      expect(useServerStore.getState().history[key][0].status).toBe('error')
+    })
+
+    it('marks an outcome with neither response nor error as an error', async () => {
+      mockApi.mcp.callTool.mockResolvedValue({})
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      const record = useServerStore.getState().history[key][0]
+      expect(record.status).toBe('error')
+      expect(record.response).toBeUndefined()
+    })
+
+    it('records a transport error returned by the outcome', async () => {
+      mockApi.mcp.callTool.mockResolvedValue({ error: 'connection refused' })
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
       const record = useServerStore.getState().history[key][0]
       expect(record.status).toBe('error')
       expect(record.error).toBe('connection refused')
+    })
+
+    it('records an error when the IPC call rejects', async () => {
+      mockApi.mcp.callTool.mockRejectedValue(new Error('ipc failed'))
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      const record = useServerStore.getState().history[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('ipc failed')
     })
 
     it('prepends newer calls so the latest is first', async () => {
@@ -288,6 +319,16 @@ describe('serverStore', () => {
     it('does nothing when server id not found', async () => {
       await useServerStore.getState().fetchCapabilities('nonexistent')
       expect(mockApi.mcp.fetchCapabilities).not.toHaveBeenCalled()
+    })
+
+    it('leaves other servers untouched while fetching one', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      mockApi.mcp.fetchCapabilities.mockRejectedValue(new Error('boom'))
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const slack = useServerStore.getState().servers.find((s) => s.id === 'slack-mcp')
+      expect(slack?.status).toBe('disconnected')
+      expect(slack?.error).toBeUndefined()
     })
 
     it('passes full server config to IPC', async () => {

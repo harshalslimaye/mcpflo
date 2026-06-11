@@ -3,7 +3,7 @@ import type {
   ServerConfig,
   ConnectResult,
   CachedCapabilities,
-  ToolCallResult
+  ToolCallOutcome
 } from '../shared/mcp.types'
 
 declare global {
@@ -22,7 +22,7 @@ declare global {
           config: ServerConfig,
           toolName: string,
           args: Record<string, unknown>
-        ) => Promise<ToolCallResult>
+        ) => Promise<ToolCallOutcome>
       }
     }
   }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Tool } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
-import { ToolCallResultView } from './ToolCallResultView'
+import { ToolCallResultView, type ResultTab } from './ToolCallResultView'
 import { useServerStore, toolKey } from '../../stores/serverStore'
 import {
   analyzeSchema,
@@ -45,6 +45,9 @@ export function ParamsTab({ tool, serverId }: ParamsTabProps): React.JSX.Element
   const executeTool = useServerStore((s) => s.executeTool)
   const latestCall = useServerStore((s) => s.history[toolKey(serverId, tool.name)]?.[0])
   const [running, setRunning] = useState(false)
+  // Kept here (not in the result view) so it survives across executions — each
+  // run swaps in a new record, but the chosen result tab stays put.
+  const [resultTab, setResultTab] = useState<ResultTab>('preview')
 
   // Schemas with non-primitive properties can't be represented by the form, so
   // they open in (and are locked to) raw-JSON mode.
@@ -172,7 +175,9 @@ export function ParamsTab({ tool, serverId }: ParamsTabProps): React.JSX.Element
           {running ? (
             <span className="text-text-muted text-sm">Executing…</span>
           ) : (
-            latestCall && <ToolCallResultView record={latestCall} />
+            latestCall && (
+              <ToolCallResultView record={latestCall} tab={resultTab} onTabChange={setResultTab} />
+            )
           )}
         </div>
       )}

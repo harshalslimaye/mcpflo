@@ -167,6 +167,24 @@ describe('assembleParams', () => {
     const { params } = assembleParams(numericEnum, { level: '2' })
     expect(params.level).toBe(2)
   })
+
+  it('reports a "must be one of" error for an out-of-set enum value', () => {
+    const { errors } = assembleParams(fields, {
+      ...initialFormValues(fields),
+      query: 'x',
+      mode: 'warp'
+    })
+    expect(errors.mode).toBe('Must be one of: fast, slow')
+  })
+
+  it('handles a single-value enum as a literal', () => {
+    const single: PrimitiveField[] = analyzeSchema({
+      type: 'object',
+      properties: { only: { enum: ['x'] } }
+    }).fields
+    expect(assembleParams(single, { only: 'x' }).params.only).toBe('x')
+    expect(assembleParams(single, { only: 'y' }).errors.only).toBe('Must be one of: x')
+  })
 })
 
 describe('valuesToJson / jsonToValues round-trip', () => {
