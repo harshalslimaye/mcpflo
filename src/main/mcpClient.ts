@@ -3,7 +3,14 @@ import {
   StdioClientTransport,
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js'
-import type { ServerConfig, Tool, Resource, Prompt, ToolCallOutcome } from '../shared/mcp.types'
+import type {
+  ServerConfig,
+  Tool,
+  Resource,
+  Prompt,
+  ToolCallOutcome,
+  ToolCallNotification
+} from '../shared/mcp.types'
 
 export interface ConnectResult {
   tools: Tool[]
@@ -38,7 +45,22 @@ async function openClient(
     }
   })
 
-  const client = new Client({ name: 'mcpflo', version: '1.0.0' })
+  const client = new Client(
+    { name: 'mcpflo', version: '1.0.0' },
+    {
+      capabilities: {
+        sampling: {},
+        elicitation: {},
+        roots: { listChanged: true },
+        tasks: {
+          requests: {
+            sampling: { createMessage: {} },
+            elicitation: { create: {} }
+          }
+        }
+      }
+    }
+  )
   await client.connect(transport)
   clients.set(config.id, client)
   return { client, transport }
@@ -64,6 +86,16 @@ function isResponseId(value: unknown): value is string | number {
   return typeof value === 'string' || typeof value === 'number'
 }
 
+// Protocol housekeeping the server may emit at any moment (e.g. while
+// registering capability-gated tools right after the handshake). These are
+// capability-cache invalidation hints, never the output of a tool call, so
+// they're excluded from the per-call notification stream.
+const IGNORED_NOTIFICATION_METHODS = new Set([
+  'notifications/tools/list_changed',
+  'notifications/resources/list_changed',
+  'notifications/prompts/list_changed'
+])
+
 // Invokes a tool on a server. Connects on demand and disconnects afterwards —
 // consistent with how we treat capability fetches (no long-lived process).
 //
@@ -74,7 +106,8 @@ function isResponseId(value: unknown): value is string | number {
 export async function callTool(
   config: ServerConfig,
   toolName: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  onNotification?: (notification: ToolCallNotification) => void
 ): Promise<ToolCallOutcome> {
   let requestId: string | number | undefined
   let response: unknown
@@ -97,10 +130,33 @@ export async function callTool(
       if (msg && msg.id === requestId && ('result' in msg || 'error' in msg)) {
         response = msg
       }
+      // Notification frames carry a method but no id (server-to-client
+      // *requests*, e.g. sampling, carry an id and are not notifications).
+      // Frames arriving before the tools/call request goes out are connection
+      // handshake traffic, not call output.
+      if (
+        msg &&
+        typeof msg.method === 'string' &&
+        !('id' in msg) &&
+        requestId !== undefined &&
+        !IGNORED_NOTIFICATION_METHODS.has(msg.method)
+      ) {
+        onNotification?.({
+          method: msg.method,
+          params:
+            msg.params !== null && typeof msg.params === 'object'
+              ? (msg.params as Record<string, unknown>)
+              : undefined,
+          at: Date.now()
+        })
+      }
       originalOnMessage?.(message)
     }
 
-    await client.callTool({ name: toolName, arguments: args })
+    // The no-op onprogress makes the SDK attach `_meta.progressToken` to the
+    // request — servers only emit notifications/progress when a token is
+    // present. The frames themselves are captured by the onmessage tap above.
+    await client.callTool({ name: toolName, arguments: args }, undefined, { onprogress: () => {} })
     return { response }
   } catch (err) {
     // A JSON-RPC error still arrives as a response frame (captured above); only

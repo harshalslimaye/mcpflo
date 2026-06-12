@@ -22,7 +22,8 @@ const mockApi = {
     getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
     fetchCapabilities: vi.fn(),
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
-    callTool: vi.fn()
+    callTool: vi.fn(),
+    onToolNotification: vi.fn()
   }
 }
 
@@ -45,6 +46,7 @@ describe('serverStore', () => {
     mockApi.mcp.callTool.mockResolvedValue({
       response: { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }
     })
+    mockApi.mcp.onToolNotification.mockReturnValue(() => {})
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -52,7 +54,8 @@ describe('serverStore', () => {
       servers: [],
       selectedServerId: null,
       selectedTool: null,
-      history: {}
+      history: {},
+      liveNotifications: {}
     })
   })
 
@@ -132,7 +135,8 @@ describe('serverStore', () => {
       expect(mockApi.mcp.callTool).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'github-mcp' }),
         'create_issue',
-        { title: 'x' }
+        { title: 'x' },
+        expect.any(String)
       )
     })
 
@@ -190,6 +194,14 @@ describe('serverStore', () => {
       expect(record.error).toBe('ipc failed')
     })
 
+    it('stringifies a non-Error rejection in executeTool', async () => {
+      mockApi.mcp.callTool.mockRejectedValue('raw string error')
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      const record = useServerStore.getState().history[key][0]
+      expect(record.error).toBe('raw string error')
+    })
+
     it('prepends newer calls so the latest is first', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().executeTool('github-mcp', 'create_issue', { n: 1 })
@@ -203,6 +215,111 @@ describe('serverStore', () => {
       await useServerStore.getState().executeTool('missing', 'create_issue', {})
       expect(mockApi.mcp.callTool).not.toHaveBeenCalled()
       expect(useServerStore.getState().history).toEqual({})
+    })
+
+    describe('notifications', () => {
+      const progressNotification = {
+        method: 'notifications/progress',
+        params: { progress: 1, total: 5 },
+        at: 123
+      }
+
+      // Wires the mocks so callTool emits the given notifications (tagged with
+      // the callId it actually received, unless overridden) before resolving.
+      function emitDuringCall(
+        notifications: Array<Record<string, unknown>>,
+        callIdOverride?: string
+      ): void {
+        let subscriber: ((event: never) => void) | undefined
+        mockApi.mcp.onToolNotification.mockImplementation((cb) => {
+          subscriber = cb
+          return () => {
+            subscriber = undefined
+          }
+        })
+        mockApi.mcp.callTool.mockImplementation(async (_config, _tool, _args, callId) => {
+          for (const notification of notifications) {
+            subscriber?.({ callId: callIdOverride ?? callId, notification } as never)
+          }
+          return { response: { jsonrpc: '2.0', id: 1, result: { content: [] } } }
+        })
+      }
+
+      it('exposes notifications via liveNotifications while the call runs', async () => {
+        let subscriber: ((event: unknown) => void) | undefined
+        mockApi.mcp.onToolNotification.mockImplementation((cb) => {
+          subscriber = cb as (event: unknown) => void
+          return () => {}
+        })
+        let liveDuringCall: unknown
+        mockApi.mcp.callTool.mockImplementation(async (_config, _tool, _args, callId) => {
+          subscriber?.({ callId, notification: progressNotification })
+          liveDuringCall = useServerStore.getState().liveNotifications[key]
+          return { response: { jsonrpc: '2.0', id: 1, result: { content: [] } } }
+        })
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        expect(liveDuringCall).toEqual([progressNotification])
+      })
+
+      it('persists collected notifications on the history record and clears live state', async () => {
+        emitDuringCall([
+          progressNotification,
+          { ...progressNotification, params: { progress: 5, total: 5 } }
+        ])
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        const record = useServerStore.getState().history[key][0]
+        expect(record.notifications).toHaveLength(2)
+        expect(useServerStore.getState().liveNotifications[key]).toBeUndefined()
+      })
+
+      it('ignores notifications tagged with a different callId', async () => {
+        emitDuringCall([progressNotification], 'some-other-call')
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        expect(useServerStore.getState().history[key][0].notifications).toEqual([])
+      })
+
+      it('records an empty notifications array when none arrived', async () => {
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        expect(useServerStore.getState().history[key][0].notifications).toEqual([])
+      })
+
+      it('keeps notifications received before a rejected IPC call', async () => {
+        let subscriber: ((event: unknown) => void) | undefined
+        mockApi.mcp.onToolNotification.mockImplementation((cb) => {
+          subscriber = cb as (event: unknown) => void
+          return () => {}
+        })
+        mockApi.mcp.callTool.mockImplementation(async (_config, _tool, _args, callId) => {
+          subscriber?.({ callId, notification: progressNotification })
+          throw new Error('ipc failed')
+        })
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        const record = useServerStore.getState().history[key][0]
+        expect(record.status).toBe('error')
+        expect(record.notifications).toEqual([progressNotification])
+      })
+
+      it('unsubscribes from the notification channel after the call settles', async () => {
+        const unsubscribe = vi.fn()
+        mockApi.mcp.onToolNotification.mockReturnValue(unsubscribe)
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        expect(unsubscribe).toHaveBeenCalledTimes(1)
+      })
+
+      it('unsubscribes even when the IPC call rejects', async () => {
+        const unsubscribe = vi.fn()
+        mockApi.mcp.onToolNotification.mockReturnValue(unsubscribe)
+        mockApi.mcp.callTool.mockRejectedValue(new Error('ipc failed'))
+        await useServerStore.getState().addServer(githubConfig)
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        expect(unsubscribe).toHaveBeenCalledTimes(1)
+      })
     })
   })
 
@@ -316,12 +433,21 @@ describe('serverStore', () => {
       expect(server?.error).toBe('Connection refused')
     })
 
+    it('stringifies a non-Error rejection in fetchCapabilities', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockRejectedValue('timeout')
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('error')
+      expect(server?.error).toBe('timeout')
+    })
+
     it('does nothing when server id not found', async () => {
       await useServerStore.getState().fetchCapabilities('nonexistent')
       expect(mockApi.mcp.fetchCapabilities).not.toHaveBeenCalled()
     })
 
-    it('leaves other servers untouched while fetching one', async () => {
+    it('leaves other servers untouched while fetching one (error path)', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().addServer(slackConfig)
       mockApi.mcp.fetchCapabilities.mockRejectedValue(new Error('boom'))
@@ -329,6 +455,15 @@ describe('serverStore', () => {
       const slack = useServerStore.getState().servers.find((s) => s.id === 'slack-mcp')
       expect(slack?.status).toBe('disconnected')
       expect(slack?.error).toBeUndefined()
+    })
+
+    it('leaves other servers untouched while fetching one (success path)', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const slack = useServerStore.getState().servers.find((s) => s.id === 'slack-mcp')
+      expect(slack?.status).toBe('disconnected')
+      expect(slack?.tools).toEqual([])
     })
 
     it('passes full server config to IPC', async () => {

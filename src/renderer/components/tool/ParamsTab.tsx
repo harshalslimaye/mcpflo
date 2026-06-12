@@ -44,6 +44,7 @@ export function ParamsTab({ tool, serverId }: ParamsTabProps): React.JSX.Element
 
   const executeTool = useServerStore((s) => s.executeTool)
   const latestCall = useServerStore((s) => s.history[toolKey(serverId, tool.name)]?.[0])
+  const liveNotifications = useServerStore((s) => s.liveNotifications[toolKey(serverId, tool.name)])
   const [running, setRunning] = useState(false)
   // Kept here (not in the result view) so it survives across executions — each
   // run swaps in a new record, but the chosen result tab stays put.
@@ -166,19 +167,20 @@ export function ParamsTab({ tool, serverId }: ParamsTabProps): React.JSX.Element
         </button>
       </div>
 
-      {/* Result of the most recent call for this tool. */}
+      {/* Result of the most recent call for this tool. While a call is in
+          flight the same view renders in its executing state, with the
+          Notifications tab fed live. */}
       {(running || latestCall) && (
         <div className="flex flex-col gap-2 border-t border-border pt-4">
           <span className="text-xs text-text-muted uppercase tracking-wider font-medium">
             Result
           </span>
-          {running ? (
-            <span className="text-text-muted text-sm">Executing…</span>
-          ) : (
-            latestCall && (
-              <ToolCallResultView record={latestCall} tab={resultTab} onTabChange={setResultTab} />
-            )
-          )}
+          <ToolCallResultView
+            record={running ? undefined : latestCall}
+            liveNotifications={running ? liveNotifications : undefined}
+            tab={resultTab}
+            onTabChange={setResultTab}
+          />
         </div>
       )}
     </div>

@@ -10,6 +10,7 @@ function rec(over: Partial<ToolCallRecord>): ToolCallRecord {
     toolName: 'echo',
     args: {},
     status: 'success',
+    notifications: [],
     durationMs: 10,
     at: Date.now(),
     ...over
@@ -40,12 +41,13 @@ describe('ToolCallResultView — status line', () => {
     expect(screen.getByText('42 ms')).toBeInTheDocument()
   })
 
-  it('shows a transport error message with no tabs', () => {
+  it('shows a transport error message on the response tabs', () => {
     view(rec({ status: 'error', error: 'connection refused' }))
     expect(screen.getByText('Error')).toBeInTheDocument()
     expect(screen.getByText('connection refused')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Raw' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Pretty' })).not.toBeInTheDocument()
+    // Tabs stay visible — a failed call can still have received notifications.
+    expect(screen.getByRole('button', { name: 'Raw' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument()
   })
 
   it('marks a JSON-RPC error envelope as an error but still shows the tabs', () => {
@@ -212,5 +214,110 @@ describe('ToolCallResultView — tab switching', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Raw' }))
     expect(onTabChange).toHaveBeenCalledWith('raw')
+  })
+})
+
+describe('ToolCallResultView — executing state', () => {
+  const liveProgress = {
+    method: 'notifications/progress',
+    params: { progress: 2, total: 5 },
+    at: 1700000000000
+  }
+
+  function running(
+    tab: ResultTab = 'preview',
+    liveNotifications = [liveProgress]
+  ): ReturnType<typeof render> {
+    return render(
+      <ToolCallResultView tab={tab} onTabChange={vi.fn()} liveNotifications={liveNotifications} />
+    )
+  }
+
+  it('shows an executing status line instead of Success/Error and duration', () => {
+    running()
+    expect(screen.getAllByText('Executing…').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+    expect(screen.queryByText('Error')).not.toBeInTheDocument()
+    expect(screen.queryByText(/\d+ ms/)).not.toBeInTheDocument()
+  })
+
+  it('keeps all tabs visible while running', () => {
+    running()
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Raw' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pretty' })).toBeInTheDocument()
+  })
+
+  it('shows an executing placeholder on the response tabs', () => {
+    running('pretty')
+    expect(screen.queryByRole('button', { name: /copy json/i })).not.toBeInTheDocument()
+    // Status line + body placeholder.
+    expect(screen.getAllByText('Executing…')).toHaveLength(2)
+  })
+
+  it('counts live notifications in the tab label as they arrive', () => {
+    const { rerender } = running()
+    expect(screen.getByRole('button', { name: 'Notifications (1)' })).toBeInTheDocument()
+    rerender(
+      <ToolCallResultView
+        tab="preview"
+        onTabChange={vi.fn()}
+        liveNotifications={[liveProgress, liveProgress]}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'Notifications (2)' })).toBeInTheDocument()
+  })
+
+  it('renders live notifications on the Notifications tab while running', () => {
+    running('notifications')
+    expect(screen.getByText('progress')).toBeInTheDocument()
+    expect(screen.getByText('2 / 5')).toBeInTheDocument()
+  })
+
+  it('shows the present-tense empty state when no notifications arrived yet', () => {
+    running('notifications', [])
+    expect(screen.getByText(/No notifications received yet/)).toBeInTheDocument()
+  })
+})
+
+describe('ToolCallResultView — Notifications tab', () => {
+  const progressNotification = {
+    method: 'notifications/progress',
+    params: { progress: 2, total: 5 },
+    at: 1700000000000
+  }
+
+  it('is always present, unlabelled with a count when there are none', () => {
+    view(rec({ response: envelope }))
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument()
+  })
+
+  it('shows the count in the label when notifications were received', () => {
+    view(rec({ response: envelope, notifications: [progressNotification] }))
+    expect(screen.getByRole('button', { name: 'Notifications (1)' })).toBeInTheDocument()
+  })
+
+  it('shows the teaching empty state on the tab when none were received', () => {
+    view(rec({ response: envelope }), 'notifications')
+    expect(screen.getByText(/No notifications were received during this call/)).toBeInTheDocument()
+  })
+
+  it('renders the received notifications when the tab is active', () => {
+    view(rec({ response: envelope, notifications: [progressNotification] }), 'notifications')
+    expect(screen.getByText('progress')).toBeInTheDocument()
+    expect(screen.getByText('2 / 5')).toBeInTheDocument()
+  })
+
+  it('reports tab selection through onTabChange', () => {
+    const onTabChange = vi.fn()
+    render(
+      <ToolCallResultView
+        record={rec({ response: envelope })}
+        tab="preview"
+        onTabChange={onTabChange}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    expect(onTabChange).toHaveBeenCalledWith('notifications')
   })
 })

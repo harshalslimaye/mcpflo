@@ -53,6 +53,7 @@ describe('ToolDetailView', () => {
       args: { query: 'hi' },
       status: 'success',
       result: { content: [{ type: 'text', text: 'ok' }] },
+      notifications: [],
       durationMs: 9,
       at: Date.now()
     }

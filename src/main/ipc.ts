@@ -35,10 +35,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => clearCapabilities(id))
 
-  // Tool execution
+  // Tool execution. Notifications arriving mid-call are pushed to the calling
+  // window over `mcp:toolNotification`, tagged with the renderer-chosen callId.
   ipcMain.handle(
     'mcp:callTool',
-    (_event, config: ServerConfig, toolName: string, args: Record<string, unknown>) =>
-      callTool(config, toolName, args)
+    (
+      event,
+      config: ServerConfig,
+      toolName: string,
+      args: Record<string, unknown>,
+      callId?: string
+    ) =>
+      callTool(config, toolName, args, (notification) => {
+        if (callId !== undefined && !event.sender.isDestroyed()) {
+          event.sender.send('mcp:toolNotification', { callId, notification })
+        }
+      })
   )
 }

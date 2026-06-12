@@ -159,6 +159,16 @@ describe('assembleParams', () => {
     expect(errors.limit).toBeDefined()
   })
 
+  it('reports a "must be a number" error when a number field value is non-numeric', () => {
+    const numField: PrimitiveField[] = analyzeSchema({
+      type: 'object',
+      properties: { amount: { type: 'number' } }
+    }).fields
+    const { errors, params } = assembleParams(numField, { amount: 'not-a-number' })
+    expect(errors.amount).toBe('Must be a number')
+    expect(params.amount).toBeUndefined()
+  })
+
   it('coerces numeric enums to numbers', () => {
     const numericEnum: PrimitiveField[] = analyzeSchema({
       type: 'object',

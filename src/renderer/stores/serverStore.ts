@@ -3,7 +3,8 @@ import type {
   ServerConfig,
   MCPServer,
   CachedCapabilities,
-  ToolCallOutcome
+  ToolCallOutcome,
+  ToolCallNotification
 } from '../../shared/mcp.types'
 
 // A single recorded tool invocation, kept in memory for the session.
@@ -17,6 +18,9 @@ export interface ToolCallRecord {
   response?: unknown
   // Transport-level error message, when no response arrived.
   error?: string
+  // Notifications (progress, log messages, …) received while the call ran,
+  // in arrival order. Empty array when the call produced none.
+  notifications: ToolCallNotification[]
   durationMs: number
   at: number
 }
@@ -51,6 +55,9 @@ interface ServerStore {
   selectedTool: SelectedTool | null
   // Per-tool call history (newest first), keyed by `toolKey(serverId, toolName)`.
   history: Record<string, ToolCallRecord[]>
+  // Notifications streamed by the currently running call for a tool, keyed by
+  // `toolKey`. An entry exists only while that call is in flight.
+  liveNotifications: Record<string, ToolCallNotification[]>
 
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
@@ -80,6 +87,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   selectedServerId: null,
   selectedTool: null,
   history: {},
+  liveNotifications: {},
 
   hydrate: async () => {
     const [configs, cache] = await Promise.all([
@@ -97,10 +105,23 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     const server = get().servers.find((s) => s.id === serverId)
     if (!server) return
 
+    const key = toolKey(serverId, toolName)
+    // Ties pushed notifications back to this specific invocation, so frames
+    // from concurrent calls on other tools never bleed into this one.
+    const callId = crypto.randomUUID()
+    const notifications: ToolCallNotification[] = []
+    const unsubscribe = window.api.mcp.onToolNotification((event) => {
+      if (event.callId !== callId) return
+      notifications.push(event.notification)
+      set((state) => ({
+        liveNotifications: { ...state.liveNotifications, [key]: [...notifications] }
+      }))
+    })
+
     const at = Date.now()
     let record: ToolCallRecord
     try {
-      const outcome = await window.api.mcp.callTool(server, toolName, args)
+      const outcome = await window.api.mcp.callTool(server, toolName, args, callId)
       record = {
         id: crypto.randomUUID(),
         serverId,
@@ -109,6 +130,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         status: outcomeStatus(outcome),
         response: outcome.response,
         error: outcome.error,
+        notifications,
         durationMs: Date.now() - at,
         at
       }
@@ -120,15 +142,22 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         args,
         status: 'error',
         error: err instanceof Error ? err.message : String(err),
+        notifications,
         durationMs: Date.now() - at,
         at
       }
+    } finally {
+      unsubscribe()
     }
 
-    const key = toolKey(serverId, toolName)
-    set((state) => ({
-      history: { ...state.history, [key]: [record, ...(state.history[key] ?? [])] }
-    }))
+    set((state) => {
+      const live = { ...state.liveNotifications }
+      delete live[key]
+      return {
+        history: { ...state.history, [key]: [record, ...(state.history[key] ?? [])] },
+        liveNotifications: live
+      }
+    })
   },
 
   addServer: async (config) => {

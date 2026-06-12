@@ -28,7 +28,7 @@ function renderTab(t: Tool): ReturnType<typeof render> {
 beforeEach(() => {
   vi.clearAllMocks()
   mockExecuteTool.mockResolvedValue(undefined)
-  useServerStore.setState({ history: {}, executeTool: mockExecuteTool })
+  useServerStore.setState({ history: {}, liveNotifications: {}, executeTool: mockExecuteTool })
 })
 
 describe('ParamsTab — form rendering', () => {
@@ -149,6 +149,33 @@ describe('ParamsTab — execution', () => {
     expect(screen.getByRole('button', { name: 'Executing…' })).toBeDisabled()
   })
 
+  it('shows the result section with all tabs while a call is in flight', () => {
+    mockExecuteTool.mockReturnValue(new Promise(() => {})) // never resolves
+    renderTab(primitiveTool)
+    fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'hi' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Execute' }))
+
+    expect(screen.getByText('Result')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Raw' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument()
+  })
+
+  it('feeds live notifications into the Notifications tab label during a call', () => {
+    mockExecuteTool.mockReturnValue(new Promise(() => {})) // never resolves
+    renderTab(primitiveTool)
+    fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'hi' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Execute' }))
+
+    const frame = { method: 'notifications/progress', params: { progress: 1 }, at: Date.now() }
+    act(() => {
+      useServerStore.setState({
+        liveNotifications: { [toolKey('srv', 'search_tool')]: [frame, frame] }
+      })
+    })
+    expect(screen.getByRole('button', { name: 'Notifications (2)' })).toBeInTheDocument()
+  })
+
   it('renders the latest successful result from history', () => {
     const record: ToolCallRecord = {
       id: '1',
@@ -161,6 +188,7 @@ describe('ParamsTab — execution', () => {
         id: 1,
         result: { content: [{ type: 'text', text: 'hello world' }] }
       },
+      notifications: [],
       durationMs: 12,
       at: Date.now()
     }
@@ -178,6 +206,7 @@ describe('ParamsTab — execution', () => {
       args: { query: 'hi' },
       status: 'error',
       error: 'connection refused',
+      notifications: [],
       durationMs: 4,
       at: Date.now()
     }
@@ -195,6 +224,7 @@ describe('ParamsTab — execution', () => {
       args: {},
       status: 'success',
       response: { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'hi' }] } },
+      notifications: [],
       durationMs: 5,
       at: Date.now()
     }
@@ -212,6 +242,7 @@ describe('ParamsTab — execution', () => {
       args: { query: 'a' },
       status: 'success',
       response: { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'A' }] } },
+      notifications: [],
       durationMs: 5,
       at: Date.now()
     }

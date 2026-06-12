@@ -4,7 +4,8 @@ import type {
   ServerConfig,
   ConnectResult,
   CachedCapabilities,
-  ToolCallOutcome
+  ToolCallOutcome,
+  ToolCallNotificationEvent
 } from '../shared/mcp.types'
 
 const api = {
@@ -23,8 +24,18 @@ const api = {
     callTool: (
       config: ServerConfig,
       toolName: string,
-      args: Record<string, unknown>
-    ): Promise<ToolCallOutcome> => ipcRenderer.invoke('mcp:callTool', config, toolName, args)
+      args: Record<string, unknown>,
+      callId?: string
+    ): Promise<ToolCallOutcome> =>
+      ipcRenderer.invoke('mcp:callTool', config, toolName, args, callId),
+    // Subscribes to mid-call notifications; returns an unsubscribe function.
+    onToolNotification: (callback: (event: ToolCallNotificationEvent) => void): (() => void) => {
+      const listener = (_: unknown, payload: ToolCallNotificationEvent): void => callback(payload)
+      ipcRenderer.on('mcp:toolNotification', listener)
+      return () => {
+        ipcRenderer.removeListener('mcp:toolNotification', listener)
+      }
+    }
   }
 }
 

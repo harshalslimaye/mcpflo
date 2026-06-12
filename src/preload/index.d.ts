@@ -3,7 +3,8 @@ import type {
   ServerConfig,
   ConnectResult,
   CachedCapabilities,
-  ToolCallOutcome
+  ToolCallOutcome,
+  ToolCallNotificationEvent
 } from '../shared/mcp.types'
 
 declare global {
@@ -21,8 +22,10 @@ declare global {
         callTool: (
           config: ServerConfig,
           toolName: string,
-          args: Record<string, unknown>
+          args: Record<string, unknown>,
+          callId?: string
         ) => Promise<ToolCallOutcome>
+        onToolNotification: (callback: (event: ToolCallNotificationEvent) => void) => () => void
       }
     }
   }

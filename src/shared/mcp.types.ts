@@ -93,6 +93,22 @@ export interface ToolCallResult {
   [key: string]: unknown
 }
 
+// A notification frame received off the wire while a tool call is in flight
+// (notifications/progress, notifications/message, …). `params` is the raw
+// JSON-RPC params object, untouched — presentation decides how to render it.
+export interface ToolCallNotification {
+  method: string
+  params?: Record<string, unknown>
+  at: number
+}
+
+// Pushed from main to renderer over the `mcp:toolNotification` channel.
+// `callId` ties the notification back to the invocation that produced it.
+export interface ToolCallNotificationEvent {
+  callId: string
+  notification: ToolCallNotification
+}
+
 // Outcome of a tool invocation as surfaced to the renderer.
 //
 // `response` is the full JSON-RPC response envelope captured off the wire

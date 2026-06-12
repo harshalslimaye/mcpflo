@@ -26,8 +26,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class {
-    constructor(info: unknown) {
-      h.clientCtor(info)
+    constructor(info: unknown, options?: unknown) {
+      h.clientCtor(info, options)
       return Object.assign(this, h.client)
     }
   }
@@ -87,7 +87,22 @@ describe('mcpClient', () => {
       expect(result.tools).toEqual([{ name: 'echo', inputSchema: { type: 'object' } }])
       expect(result.resources).toEqual([{ uri: 'mem://x' }])
       expect(result.prompts).toEqual([])
-      expect(h.clientCtor).toHaveBeenCalledWith({ name: 'mcpflo', version: '1.0.0' })
+      expect(h.clientCtor).toHaveBeenCalledWith(
+        { name: 'mcpflo', version: '1.0.0' },
+        {
+          capabilities: {
+            sampling: {},
+            elicitation: {},
+            roots: { listChanged: true },
+            tasks: {
+              requests: {
+                sampling: { createMessage: {} },
+                elicitation: { create: {} }
+              }
+            }
+          }
+        }
+      )
     })
 
     it('falls back to empty lists when a capability listing fails', async () => {
@@ -132,7 +147,49 @@ describe('mcpClient', () => {
       const outcome = await mod.callTool(stdioConfig, 'echo', { msg: 'hi' })
       expect(outcome.response).toEqual(envelope)
       expect(outcome.error).toBeUndefined()
-      expect(h.client.callTool).toHaveBeenCalledWith({ name: 'echo', arguments: { msg: 'hi' } })
+      // The no-op onprogress makes the SDK attach a progressToken so servers
+      // emit notifications/progress.
+      expect(h.client.callTool).toHaveBeenCalledWith(
+        { name: 'echo', arguments: { msg: 'hi' } },
+        undefined,
+        { onprogress: expect.any(Function) }
+      )
+    })
+
+    it('forwards notification frames to onNotification, skipping noise', async () => {
+      const envelope = { jsonrpc: '2.0', id: 7, result: { content: [] } }
+      h.client.callTool.mockImplementation(async () => {
+        const t = lastTransport()
+        // Before the tools/call request goes out: handshake traffic, dropped.
+        t.onmessage?.({ jsonrpc: '2.0', method: 'notifications/progress', params: { progress: 0 } })
+        t.send({ jsonrpc: '2.0', id: 7, method: 'tools/call' })
+        t.onmessage?.({
+          jsonrpc: '2.0',
+          method: 'notifications/progress',
+          params: { progressToken: 7, progress: 1, total: 5 }
+        })
+        t.onmessage?.({
+          jsonrpc: '2.0',
+          method: 'notifications/message',
+          params: { level: 'info', data: 'step done' }
+        })
+        // Housekeeping methods are dropped even mid-call.
+        t.onmessage?.({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+        t.onmessage?.({ jsonrpc: '2.0', method: 'notifications/resources/list_changed' })
+        // A server-to-client *request* (has an id) is not a notification.
+        t.onmessage?.({ jsonrpc: '2.0', id: 42, method: 'sampling/createMessage', params: {} })
+        t.onmessage?.(envelope)
+        return envelope.result
+      })
+
+      const received: Array<{ method: string }> = []
+      const outcome = await mod.callTool(stdioConfig, 'echo', {}, (n) => received.push(n))
+
+      expect(outcome.response).toEqual(envelope)
+      expect(received.map((n) => n.method)).toEqual([
+        'notifications/progress',
+        'notifications/message'
+      ])
     })
 
     it('ignores response frames whose id does not match the request', async () => {
