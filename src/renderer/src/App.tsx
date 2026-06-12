@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { PrimarySidebar } from '../components/sidebar/PrimarySidebar'
 import { SecondarySidebar } from '../components/sidebar/SecondarySidebar'
 import { ContentArea } from '../components/canvas/ContentArea'
+import { ElicitationHost } from '../components/elicitation/ElicitationHost'
 import { useServerStore } from '../stores/serverStore'
 
 function App(): React.JSX.Element {
@@ -16,6 +17,7 @@ function App(): React.JSX.Element {
       <PrimarySidebar />
       <SecondarySidebar />
       <ContentArea />
+      <ElicitationHost />
     </div>
   )
 }

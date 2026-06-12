@@ -5,7 +5,10 @@ import type {
   ConnectResult,
   CachedCapabilities,
   ToolCallOutcome,
-  ToolCallNotificationEvent
+  ToolCallNotificationEvent,
+  ElicitationRequestEvent,
+  ElicitationClosedEvent,
+  ElicitationResult
 } from '../shared/mcp.types'
 
 const api = {
@@ -35,7 +38,26 @@ const api = {
       return () => {
         ipcRenderer.removeListener('mcp:toolNotification', listener)
       }
-    }
+    },
+    // Subscribes to mid-call elicitation requests; returns an unsubscribe function.
+    onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void): (() => void) => {
+      const listener = (_: unknown, payload: ElicitationRequestEvent): void => callback(payload)
+      ipcRenderer.on('mcp:elicitationRequest', listener)
+      return () => {
+        ipcRenderer.removeListener('mcp:elicitationRequest', listener)
+      }
+    },
+    // Fired when a pending elicitation was settled without the user (server
+    // abort, call ended) and its modal should close.
+    onElicitationClosed: (callback: (event: ElicitationClosedEvent) => void): (() => void) => {
+      const listener = (_: unknown, payload: ElicitationClosedEvent): void => callback(payload)
+      ipcRenderer.on('mcp:elicitationClosed', listener)
+      return () => {
+        ipcRenderer.removeListener('mcp:elicitationClosed', listener)
+      }
+    },
+    respondToElicitation: (elicitationId: string, result: ElicitationResult): Promise<void> =>
+      ipcRenderer.invoke('mcp:respondToElicitation', elicitationId, result)
   }
 }
 

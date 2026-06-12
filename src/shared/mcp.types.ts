@@ -109,6 +109,40 @@ export interface ToolCallNotificationEvent {
   notification: ToolCallNotification
 }
 
+// A form-mode elicitation request from a server (elicitation/create). The
+// schema is restricted by the MCP spec to a flat object of primitive fields.
+// URL-mode requests are rejected by the SDK before reaching us, since we only
+// advertise form support.
+export interface ElicitationParams {
+  mode?: 'form'
+  message: string
+  requestedSchema: ToolInputSchema
+  [key: string]: unknown
+}
+
+// The user's answer to an elicitation. `content` is present only on accept.
+export interface ElicitationResult {
+  action: 'accept' | 'decline' | 'cancel'
+  content?: Record<string, unknown>
+}
+
+// Pushed from main to renderer over `mcp:elicitationRequest`. `callId` ties the
+// request to the tool invocation that triggered it; `elicitationId` is the key
+// the renderer must answer with via `mcp:respondToElicitation`.
+export interface ElicitationRequestEvent {
+  callId: string
+  elicitationId: string
+  serverName: string
+  toolName: string
+  params: ElicitationParams
+}
+
+// Pushed from main to renderer over `mcp:elicitationClosed` when a pending
+// elicitation was settled without the user (server abort, call ended).
+export interface ElicitationClosedEvent {
+  elicitationId: string
+}
+
 // Outcome of a tool invocation as surfaced to the renderer.
 //
 // `response` is the full JSON-RPC response envelope captured off the wire

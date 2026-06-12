@@ -13,11 +13,15 @@ export type FieldKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum'
 export interface PrimitiveField {
   name: string
   kind: FieldKind
+  // Human-readable label; the form falls back to `name` when absent.
+  title?: string
   description?: string
   required: boolean
   // For enum fields: the allowed values and whether they are numeric.
   enumValues?: Array<string | number>
   enumIsNumeric?: boolean
+  // Schema-declared default, used to seed the form.
+  defaultValue?: unknown
 }
 
 export interface SchemaAnalysis {
@@ -32,6 +36,7 @@ export interface SchemaAnalysis {
 interface JsonSchemaProp {
   type?: string | string[]
   enum?: Array<string | number | boolean | null>
+  title?: string
   description?: string
   default?: unknown
 }
@@ -88,10 +93,12 @@ export function analyzeSchema(schema: ToolInputSchema | undefined): SchemaAnalys
     fields.push({
       name,
       kind,
+      title: typeof prop.title === 'string' ? prop.title : undefined,
       description: typeof prop.description === 'string' ? prop.description : undefined,
       required: requiredList.includes(name),
       enumValues,
-      enumIsNumeric: enumValues ? enumValues.every((v) => typeof v === 'number') : undefined
+      enumIsNumeric: enumValues ? enumValues.every((v) => typeof v === 'number') : undefined,
+      defaultValue: prop.default
     })
   }
 
@@ -151,7 +158,12 @@ export type FormValues = Record<string, FormValue>
 export function initialFormValues(fields: PrimitiveField[]): FormValues {
   const values: FormValues = {}
   for (const field of fields) {
-    values[field.name] = field.kind === 'boolean' ? false : ''
+    const def = field.defaultValue
+    if (field.kind === 'boolean') {
+      values[field.name] = typeof def === 'boolean' ? def : false
+    } else {
+      values[field.name] = typeof def === 'string' || typeof def === 'number' ? String(def) : ''
+    }
   }
   return values
 }

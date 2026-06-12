@@ -1,13 +1,14 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
 import { fetchCapabilities, callTool } from './mcpClient'
+import { createPending, resolvePending, cancelPendingForCall } from './elicitations'
 import {
   readAllCapabilities,
   writeCapabilities,
   clearCapabilities,
   removeServerDir
 } from './capabilitiesCache'
-import type { ServerConfig } from '../shared/mcp.types'
+import type { ServerConfig, ElicitationResult } from '../shared/mcp.types'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('mcp:getServers', () => getServers())
@@ -37,19 +38,80 @@ export function registerIpcHandlers(): void {
 
   // Tool execution. Notifications arriving mid-call are pushed to the calling
   // window over `mcp:toolNotification`, tagged with the renderer-chosen callId.
+  // Elicitation requests are pushed over `mcp:elicitationRequest` and held open
+  // until the renderer answers via `mcp:respondToElicitation` (or a cleanup
+  // path settles them as cancel).
   ipcMain.handle(
     'mcp:callTool',
-    (
+    async (
       event,
       config: ServerConfig,
       toolName: string,
       args: Record<string, unknown>,
       callId?: string
-    ) =>
-      callTool(config, toolName, args, (notification) => {
-        if (callId !== undefined && !event.sender.isDestroyed()) {
-          event.sender.send('mcp:toolNotification', { callId, notification })
+    ) => {
+      const outcome = await callTool(
+        config,
+        toolName,
+        args,
+        (notification) => {
+          if (callId !== undefined && !event.sender.isDestroyed()) {
+            event.sender.send('mcp:toolNotification', { callId, notification })
+          }
+        },
+        async (params, signal) => {
+          if (callId === undefined || event.sender.isDestroyed()) {
+            return { action: 'cancel' as const }
+          }
+          const { elicitationId, promise } = createPending(callId)
+          // Server cancelled its request (e.g. its elicitation timeout fired).
+          const onAbort = (): void => {
+            if (
+              resolvePending(elicitationId, { action: 'cancel' }) &&
+              !event.sender.isDestroyed()
+            ) {
+              event.sender.send('mcp:elicitationClosed', { elicitationId })
+            }
+          }
+          signal.addEventListener('abort', onAbort, { once: true })
+          const onDestroyed = (): void => {
+            resolvePending(elicitationId, { action: 'cancel' })
+          }
+          event.sender.once('destroyed', onDestroyed)
+          event.sender.send('mcp:elicitationRequest', {
+            callId,
+            elicitationId,
+            serverName: config.name,
+            toolName,
+            params
+          })
+          try {
+            return await promise
+          } finally {
+            signal.removeEventListener('abort', onAbort)
+            if (!event.sender.isDestroyed()) {
+              event.sender.removeListener('destroyed', onDestroyed)
+            }
+          }
         }
-      })
+      )
+      // The call has settled (result, error, or transport death) — any
+      // elicitation still pending can never be answered meaningfully.
+      if (callId !== undefined) {
+        for (const elicitationId of cancelPendingForCall(callId)) {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('mcp:elicitationClosed', { elicitationId })
+          }
+        }
+      }
+      return outcome
+    }
+  )
+
+  ipcMain.handle(
+    'mcp:respondToElicitation',
+    (_event, elicitationId: string, result: ElicitationResult) => {
+      resolvePending(elicitationId, result)
+    }
   )
 }

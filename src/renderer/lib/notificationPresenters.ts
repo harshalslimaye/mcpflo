@@ -66,7 +66,32 @@ const PRESENTERS: Record<string, Presenter> = {
     badge: 'cancelled',
     badgeClass: 'text-amber-500',
     summary: asString(params.reason) ?? ''
-  })
+  }),
+
+  // Synthetic entries recorded around an elicitation exchange (the wire frames
+  // are requests, not notifications, so callTool emits these for visibility).
+  'elicitation/create': (params) => ({
+    badge: 'elicitation',
+    badgeClass: 'text-accent',
+    summary: asString(params.message) ?? ''
+  }),
+
+  'elicitation/response': (params) => {
+    const action = asString(params.action) ?? 'unknown'
+    return {
+      badge: action,
+      badgeClass:
+        action === 'accept'
+          ? 'text-green-500'
+          : action === 'decline'
+            ? 'text-amber-500'
+            : 'text-text-muted',
+      summary:
+        params.content !== null && typeof params.content === 'object'
+          ? JSON.stringify(params.content)
+          : ''
+    }
+  }
 }
 
 // Unknown methods degrade gracefully: the method name (sans prefix) becomes

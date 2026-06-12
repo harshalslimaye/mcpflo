@@ -3,14 +3,29 @@ import {
   StdioClientTransport,
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js'
+import {
+  ElicitRequestSchema,
+  type ElicitResult,
+  type Result
+} from '@modelcontextprotocol/sdk/types.js'
+import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks'
 import type {
   ServerConfig,
   Tool,
   Resource,
   Prompt,
   ToolCallOutcome,
-  ToolCallNotification
+  ToolCallNotification,
+  ElicitationParams,
+  ElicitationResult
 } from '../shared/mcp.types'
+
+// Answers an elicitation/create request from the server. `signal` aborts when
+// the server cancels the request (e.g. its own elicitation timeout fires).
+export type ElicitationHandler = (
+  params: ElicitationParams,
+  signal: AbortSignal
+) => Promise<ElicitationResult>
 
 export interface ConnectResult {
   tools: Tool[]
@@ -58,7 +73,12 @@ async function openClient(
             elicitation: { create: {} }
           }
         }
-      }
+      },
+      // Backs task-augmented requests (e.g. async elicitation): the SDK serves
+      // tasks/get, tasks/result and tasks/cancel from this store. Per-client and
+      // in-memory — task state dies with the connection, which matches our
+      // connect-per-call lifecycle.
+      taskStore: new InMemoryTaskStore()
     }
   )
   await client.connect(transport)
@@ -107,13 +127,62 @@ export async function callTool(
   config: ServerConfig,
   toolName: string,
   args: Record<string, unknown>,
-  onNotification?: (notification: ToolCallNotification) => void
+  onNotification?: (notification: ToolCallNotification) => void,
+  onElicitation?: ElicitationHandler
 ): Promise<ToolCallOutcome> {
   let requestId: string | number | undefined
   let response: unknown
 
   try {
     const { client, transport } = await openClient(config)
+
+    // Elicitation arrives as a server-to-client *request* (it carries an id),
+    // so the onmessage tap below never records it — emit synthetic
+    // notifications around the exchange to make it visible in call history.
+    client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
+      if (!onElicitation) return { action: 'decline' } satisfies ElicitResult
+      // URL-mode requests never reach here: we advertise form-only support,
+      // so the SDK rejects them with InvalidParams before invoking handlers.
+      const params = request.params as ElicitationParams
+
+      const runElicitation = async (): Promise<ElicitationResult> => {
+        onNotification?.({ method: 'elicitation/create', params, at: Date.now() })
+        const result = await onElicitation(params, extra.signal)
+        onNotification?.({
+          method: 'elicitation/response',
+          params: result as unknown as Record<string, unknown>,
+          at: Date.now()
+        })
+        return result
+      }
+
+      // Task-augmented elicitation: acknowledge with a task immediately, run
+      // the user interaction in the background, and let the server poll
+      // tasks/get / tasks/result (served by the SDK from our task store).
+      const { taskStore } = extra
+      if (request.params.task && taskStore) {
+        const task = await taskStore.createTask({ ttl: extra.taskRequestedTtl ?? null })
+        await taskStore.updateTaskStatus(task.taskId, 'input_required')
+        void runElicitation()
+          .then(
+            (result) =>
+              taskStore.storeTaskResult(task.taskId, 'completed', result as unknown as Result),
+            (err: unknown) =>
+              taskStore.storeTaskResult(task.taskId, 'failed', {
+                action: 'cancel',
+                _meta: { error: err instanceof Error ? err.message : String(err) }
+              })
+          )
+          // The task may have gone terminal under us (e.g. tasks/cancel from
+          // the server); a late result is simply dropped.
+          .catch(() => {})
+        return { task: { ...task, status: 'input_required' } }
+      }
+
+      // Our content type is looser than the SDK's (the renderer's raw-JSON
+      // fallback can produce arbitrary values); the SDK validates on send.
+      return (await runElicitation()) as ElicitResult
+    })
 
     const originalSend = transport.send.bind(transport)
     transport.send = (message) => {
@@ -156,7 +225,13 @@ export async function callTool(
     // The no-op onprogress makes the SDK attach `_meta.progressToken` to the
     // request — servers only emit notifications/progress when a token is
     // present. The frames themselves are captured by the onmessage tap above.
-    await client.callTool({ name: toolName, arguments: args }, undefined, { onprogress: () => {} })
+    // The long timeout keeps the call alive while the user fills in an
+    // elicitation form (the SDK default of 60s would kill it under them).
+    await client.callTool({ name: toolName, arguments: args }, undefined, {
+      onprogress: () => {},
+      timeout: 30 * 60_000,
+      resetTimeoutOnProgress: true
+    })
     return { response }
   } catch (err) {
     // A JSON-RPC error still arrives as a response frame (captured above); only

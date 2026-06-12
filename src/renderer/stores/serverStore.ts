@@ -4,7 +4,9 @@ import type {
   MCPServer,
   CachedCapabilities,
   ToolCallOutcome,
-  ToolCallNotification
+  ToolCallNotification,
+  ElicitationRequestEvent,
+  ElicitationResult
 } from '../../shared/mcp.types'
 
 // A single recorded tool invocation, kept in memory for the session.
@@ -58,11 +60,17 @@ interface ServerStore {
   // Notifications streamed by the currently running call for a tool, keyed by
   // `toolKey`. An entry exists only while that call is in flight.
   liveNotifications: Record<string, ToolCallNotification[]>
+  // Elicitation requests awaiting a user answer, in arrival order. The modal
+  // shows the head of the queue; later requests wait their turn.
+  pendingElicitations: ElicitationRequestEvent[]
 
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
   selectTool: (serverId: string, toolName: string) => void
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
+  enqueueElicitation: (event: ElicitationRequestEvent) => void
+  removeElicitation: (elicitationId: string) => void
+  respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
   addServer: (config: ServerConfig) => Promise<void>
   updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
   removeServer: (id: string) => Promise<void>
@@ -88,6 +96,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   selectedTool: null,
   history: {},
   liveNotifications: {},
+  pendingElicitations: [],
 
   hydrate: async () => {
     const [configs, cache] = await Promise.all([
@@ -158,6 +167,21 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         liveNotifications: live
       }
     })
+  },
+
+  enqueueElicitation: (event) =>
+    set((state) => ({ pendingElicitations: [...state.pendingElicitations, event] })),
+
+  removeElicitation: (elicitationId) =>
+    set((state) => ({
+      pendingElicitations: state.pendingElicitations.filter(
+        (e) => e.elicitationId !== elicitationId
+      )
+    })),
+
+  respondToElicitation: async (elicitationId, result) => {
+    await window.api.mcp.respondToElicitation(elicitationId, result)
+    get().removeElicitation(elicitationId)
   },
 
   addServer: async (config) => {

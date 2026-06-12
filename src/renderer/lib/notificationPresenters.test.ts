@@ -79,6 +79,37 @@ describe('presentNotification', () => {
     expect(p.summary).toBe('')
   })
 
+  describe('elicitation', () => {
+    it('presents an elicitation request with its message', () => {
+      const p = presentNotification(
+        n('elicitation/create', { message: 'What is your name?', requestedSchema: {} })
+      )
+      expect(p.badge).toBe('elicitation')
+      expect(p.badgeClass).toBe('text-accent')
+      expect(p.summary).toBe('What is your name?')
+    })
+
+    it('presents an accepted response with its content', () => {
+      const p = presentNotification(
+        n('elicitation/response', { action: 'accept', content: { name: 'Ada' } })
+      )
+      expect(p.badge).toBe('accept')
+      expect(p.badgeClass).toBe('text-green-500')
+      expect(p.summary).toBe('{"name":"Ada"}')
+    })
+
+    it('presents decline and cancel responses without content', () => {
+      const declined = presentNotification(n('elicitation/response', { action: 'decline' }))
+      expect(declined.badge).toBe('decline')
+      expect(declined.badgeClass).toBe('text-amber-500')
+      expect(declined.summary).toBe('')
+
+      const cancelled = presentNotification(n('elicitation/response', { action: 'cancel' }))
+      expect(cancelled.badge).toBe('cancel')
+      expect(cancelled.badgeClass).toBe('text-text-muted')
+    })
+  })
+
   describe('fallback', () => {
     it('uses the method (sans prefix) as badge and raw params as summary', () => {
       const p = presentNotification(n('notifications/something/new', { a: 1 }))

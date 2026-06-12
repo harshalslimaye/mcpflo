@@ -4,7 +4,10 @@ import type {
   ConnectResult,
   CachedCapabilities,
   ToolCallOutcome,
-  ToolCallNotificationEvent
+  ToolCallNotificationEvent,
+  ElicitationRequestEvent,
+  ElicitationClosedEvent,
+  ElicitationResult
 } from '../shared/mcp.types'
 
 declare global {
@@ -26,6 +29,9 @@ declare global {
           callId?: string
         ) => Promise<ToolCallOutcome>
         onToolNotification: (callback: (event: ToolCallNotificationEvent) => void) => () => void
+        onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void) => () => void
+        onElicitationClosed: (callback: (event: ElicitationClosedEvent) => void) => () => void
+        respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
       }
     }
   }

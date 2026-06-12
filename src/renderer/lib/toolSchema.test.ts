@@ -85,6 +85,53 @@ describe('analyzeSchema', () => {
     expect(hasNonPrimitive).toBe(true)
     expect(fields).toHaveLength(0)
   })
+
+  it('captures titles and defaults when present', () => {
+    const { fields } = analyzeSchema({
+      type: 'object',
+      properties: {
+        name: { type: 'string', title: 'Full name', default: 'Ada' },
+        plain: { type: 'string' }
+      }
+    })
+    const name = fields.find((f) => f.name === 'name')
+    expect(name?.title).toBe('Full name')
+    expect(name?.defaultValue).toBe('Ada')
+    const plain = fields.find((f) => f.name === 'plain')
+    expect(plain?.title).toBeUndefined()
+    expect(plain?.defaultValue).toBeUndefined()
+  })
+})
+
+describe('initialFormValues — defaults', () => {
+  it('seeds form values from schema defaults', () => {
+    const { fields } = analyzeSchema({
+      type: 'object',
+      properties: {
+        name: { type: 'string', default: 'Ada' },
+        age: { type: 'integer', default: 36 },
+        subscribe: { type: 'boolean', default: true },
+        plain: { type: 'string' }
+      }
+    })
+    expect(initialFormValues(fields)).toEqual({
+      name: 'Ada',
+      age: '36',
+      subscribe: true,
+      plain: ''
+    })
+  })
+
+  it('ignores defaults of the wrong shape', () => {
+    const { fields } = analyzeSchema({
+      type: 'object',
+      properties: {
+        name: { type: 'string', default: { nested: true } },
+        flag: { type: 'boolean', default: 'yes' }
+      }
+    })
+    expect(initialFormValues(fields)).toEqual({ name: '', flag: false })
+  })
 })
 
 describe('buildZodSchema', () => {

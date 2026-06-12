@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     listResources: vi.fn(),
     listPrompts: vi.fn(),
     callTool: vi.fn(),
+    setRequestHandler: vi.fn(),
     close: vi.fn()
   },
   clientCtor: vi.fn(),
@@ -100,7 +101,9 @@ describe('mcpClient', () => {
                 elicitation: { create: {} }
               }
             }
-          }
+          },
+          // Backs task-augmented requests; the SDK serves tasks/* from it.
+          taskStore: expect.anything()
         }
       )
     })
@@ -148,11 +151,12 @@ describe('mcpClient', () => {
       expect(outcome.response).toEqual(envelope)
       expect(outcome.error).toBeUndefined()
       // The no-op onprogress makes the SDK attach a progressToken so servers
-      // emit notifications/progress.
+      // emit notifications/progress; the long timeout keeps the call alive
+      // while the user answers an elicitation.
       expect(h.client.callTool).toHaveBeenCalledWith(
         { name: 'echo', arguments: { msg: 'hi' } },
         undefined,
-        { onprogress: expect.any(Function) }
+        { onprogress: expect.any(Function), timeout: 30 * 60_000, resetTimeoutOnProgress: true }
       )
     })
 
@@ -237,6 +241,155 @@ describe('mcpClient', () => {
     it('disconnects the server after the call', async () => {
       await mod.callTool(stdioConfig, 'echo', {})
       expect(h.client.close).toHaveBeenCalled()
+    })
+  })
+
+  describe('elicitation', () => {
+    const elicitParams = {
+      message: 'What is your name?',
+      requestedSchema: {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+        required: ['name']
+      }
+    }
+
+    // The handler callTool registered for elicitation/create on the mock client.
+    function capturedHandler(): (
+      request: unknown,
+      extra: { signal: AbortSignal; taskStore?: unknown; taskRequestedTtl?: number }
+    ) => Promise<unknown> {
+      expect(h.client.setRequestHandler).toHaveBeenCalledTimes(1)
+      return h.client.setRequestHandler.mock.calls[0][1]
+    }
+
+    it('registers a handler for the elicitation/create schema', async () => {
+      const { ElicitRequestSchema } = await import('@modelcontextprotocol/sdk/types.js')
+      await mod.callTool(stdioConfig, 'echo', {})
+      expect(h.client.setRequestHandler).toHaveBeenCalledWith(
+        ElicitRequestSchema,
+        expect.any(Function)
+      )
+    })
+
+    it('routes the request through onElicitation and returns its result', async () => {
+      const onElicitation = vi.fn().mockResolvedValue({
+        action: 'accept',
+        content: { name: 'Ada' }
+      })
+      await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
+
+      const signal = new AbortController().signal
+      const result = await capturedHandler()(
+        { method: 'elicitation/create', params: elicitParams },
+        { signal }
+      )
+
+      expect(onElicitation).toHaveBeenCalledWith(elicitParams, signal)
+      expect(result).toEqual({ action: 'accept', content: { name: 'Ada' } })
+    })
+
+    it('brackets the exchange with synthetic notifications', async () => {
+      const received: Array<{ method: string; params?: Record<string, unknown> }> = []
+      const onElicitation = vi.fn().mockResolvedValue({ action: 'decline' })
+      h.client.callTool.mockImplementation(async () => {
+        await capturedHandler()(
+          { method: 'elicitation/create', params: elicitParams },
+          { signal: new AbortController().signal }
+        )
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {}, (n) => received.push(n), onElicitation)
+
+      expect(received.map((n) => n.method)).toEqual(['elicitation/create', 'elicitation/response'])
+      expect(received[0].params).toEqual(elicitParams)
+      expect(received[1].params).toEqual({ action: 'decline' })
+    })
+
+    it('declines when no onElicitation callback is provided', async () => {
+      await mod.callTool(stdioConfig, 'echo', {})
+      const result = await capturedHandler()(
+        { method: 'elicitation/create', params: elicitParams },
+        { signal: new AbortController().signal }
+      )
+      expect(result).toEqual({ action: 'decline' })
+    })
+
+    describe('task-augmented', () => {
+      const task = {
+        taskId: 'task-1',
+        status: 'working',
+        ttl: 60_000,
+        createdAt: 'now',
+        lastUpdatedAt: 'now'
+      }
+
+      function mockTaskStore(): {
+        createTask: ReturnType<typeof vi.fn>
+        updateTaskStatus: ReturnType<typeof vi.fn>
+        storeTaskResult: ReturnType<typeof vi.fn>
+      } {
+        return {
+          createTask: vi.fn().mockResolvedValue(task),
+          updateTaskStatus: vi.fn().mockResolvedValue(undefined),
+          storeTaskResult: vi.fn().mockResolvedValue(undefined)
+        }
+      }
+
+      it('returns the task immediately and stores the result when the user answers', async () => {
+        let answer: (result: unknown) => void = () => {}
+        const onElicitation = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)))
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
+
+        const taskStore = mockTaskStore()
+        const result = await capturedHandler()(
+          { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
+          { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+        )
+
+        // Acknowledged before the user answered, flagged as awaiting input.
+        expect(taskStore.createTask).toHaveBeenCalledWith({ ttl: 60_000 })
+        expect(taskStore.updateTaskStatus).toHaveBeenCalledWith('task-1', 'input_required')
+        expect(result).toEqual({ task: { ...task, status: 'input_required' } })
+        expect(taskStore.storeTaskResult).not.toHaveBeenCalled()
+
+        answer({ action: 'accept', content: { name: 'Ada' } })
+        await vi.waitFor(() =>
+          expect(taskStore.storeTaskResult).toHaveBeenCalledWith('task-1', 'completed', {
+            action: 'accept',
+            content: { name: 'Ada' }
+          })
+        )
+      })
+
+      it('stores a failed result when the elicitation rejects', async () => {
+        const onElicitation = vi.fn().mockRejectedValue(new Error('renderer gone'))
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
+
+        const taskStore = mockTaskStore()
+        await capturedHandler()(
+          { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
+          { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+        )
+
+        await vi.waitFor(() =>
+          expect(taskStore.storeTaskResult).toHaveBeenCalledWith('task-1', 'failed', {
+            action: 'cancel',
+            _meta: { error: 'renderer gone' }
+          })
+        )
+      })
+
+      it('answers inline when the request is task-augmented but no store is available', async () => {
+        const onElicitation = vi.fn().mockResolvedValue({ action: 'decline' })
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
+        const result = await capturedHandler()(
+          { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
+          { signal: new AbortController().signal }
+        )
+        expect(result).toEqual({ action: 'decline' })
+      })
     })
   })
 
