@@ -1,14 +1,23 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
 import { fetchCapabilities, callTool } from './mcpClient'
-import { createPending, resolvePending, cancelPendingForCall } from './elicitations'
+import {
+  createPending as createPendingElicitation,
+  resolvePending as resolvePendingElicitation,
+  cancelPendingForCall as cancelPendingElicitations
+} from './elicitations'
+import {
+  createPending as createPendingSampling,
+  resolvePending as resolvePendingSampling,
+  cancelPendingForCall as cancelPendingSamplings
+} from './samplings'
 import {
   readAllCapabilities,
   writeCapabilities,
   clearCapabilities,
   removeServerDir
 } from './capabilitiesCache'
-import type { ServerConfig, ElicitationResult } from '../shared/mcp.types'
+import type { ServerConfig, ElicitationResult, SamplingResult } from '../shared/mcp.types'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('mcp:getServers', () => getServers())
@@ -63,11 +72,11 @@ export function registerIpcHandlers(): void {
           if (callId === undefined || event.sender.isDestroyed()) {
             return { action: 'cancel' as const }
           }
-          const { elicitationId, promise } = createPending(callId)
+          const { requestId: elicitationId, promise } = createPendingElicitation(callId)
           // Server cancelled its request (e.g. its elicitation timeout fired).
           const onAbort = (): void => {
             if (
-              resolvePending(elicitationId, { action: 'cancel' }) &&
+              resolvePendingElicitation(elicitationId, { action: 'cancel' }) &&
               !event.sender.isDestroyed()
             ) {
               event.sender.send('mcp:elicitationClosed', { elicitationId })
@@ -75,7 +84,7 @@ export function registerIpcHandlers(): void {
           }
           signal.addEventListener('abort', onAbort, { once: true })
           const onDestroyed = (): void => {
-            resolvePending(elicitationId, { action: 'cancel' })
+            resolvePendingElicitation(elicitationId, { action: 'cancel' })
           }
           event.sender.once('destroyed', onDestroyed)
           event.sender.send('mcp:elicitationRequest', {
@@ -93,14 +102,54 @@ export function registerIpcHandlers(): void {
               event.sender.removeListener('destroyed', onDestroyed)
             }
           }
+        },
+        async (params, signal) => {
+          if (callId === undefined || event.sender.isDestroyed()) {
+            return { action: 'cancel' as const }
+          }
+          const { requestId: samplingId, promise } = createPendingSampling(callId)
+          // Server cancelled its request (e.g. its own timeout fired).
+          const onAbort = (): void => {
+            if (
+              resolvePendingSampling(samplingId, { action: 'cancel' }) &&
+              !event.sender.isDestroyed()
+            ) {
+              event.sender.send('mcp:samplingClosed', { samplingId })
+            }
+          }
+          signal.addEventListener('abort', onAbort, { once: true })
+          const onDestroyed = (): void => {
+            resolvePendingSampling(samplingId, { action: 'cancel' })
+          }
+          event.sender.once('destroyed', onDestroyed)
+          event.sender.send('mcp:samplingRequest', {
+            callId,
+            samplingId,
+            serverName: config.name,
+            toolName,
+            params
+          })
+          try {
+            return await promise
+          } finally {
+            signal.removeEventListener('abort', onAbort)
+            if (!event.sender.isDestroyed()) {
+              event.sender.removeListener('destroyed', onDestroyed)
+            }
+          }
         }
       )
       // The call has settled (result, error, or transport death) — any
-      // elicitation still pending can never be answered meaningfully.
+      // elicitation or sampling still pending can never be answered.
       if (callId !== undefined) {
-        for (const elicitationId of cancelPendingForCall(callId)) {
+        for (const elicitationId of cancelPendingElicitations(callId)) {
           if (!event.sender.isDestroyed()) {
             event.sender.send('mcp:elicitationClosed', { elicitationId })
+          }
+        }
+        for (const samplingId of cancelPendingSamplings(callId)) {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('mcp:samplingClosed', { samplingId })
           }
         }
       }
@@ -111,7 +160,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     'mcp:respondToElicitation',
     (_event, elicitationId: string, result: ElicitationResult) => {
-      resolvePending(elicitationId, result)
+      resolvePendingElicitation(elicitationId, result)
     }
   )
+
+  ipcMain.handle('mcp:respondToSampling', (_event, samplingId: string, result: SamplingResult) => {
+    resolvePendingSampling(samplingId, result)
+  })
 }

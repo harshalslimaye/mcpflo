@@ -66,6 +66,9 @@ function lastTransport(): MockTransport {
 
 describe('mcpClient', () => {
   let mod: typeof import('./mcpClient')
+  // Loaded from the same (post-reset) module instance as `mod`, so schema
+  // references match the ones mcpClient passes to setRequestHandler.
+  let schemas: typeof import('@modelcontextprotocol/sdk/types.js')
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -80,7 +83,20 @@ describe('mcpClient', () => {
     h.client.close.mockResolvedValue(undefined)
     vi.resetModules()
     mod = await import('./mcpClient')
+    schemas = await import('@modelcontextprotocol/sdk/types.js')
   })
+
+  // The handler mcpClient registered for a given server-request schema.
+  function handlerForSchema(
+    schema: unknown
+  ): (
+    request: unknown,
+    extra: { signal: AbortSignal; taskStore?: unknown; taskRequestedTtl?: number }
+  ) => Promise<unknown> {
+    const call = h.client.setRequestHandler.mock.calls.find((c) => c[0] === schema)
+    if (!call) throw new Error('no handler registered for schema')
+    return call[1]
+  }
 
   describe('connectServer', () => {
     it('returns the listed tools, resources and prompts', async () => {
@@ -238,9 +254,34 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('Transport "sse" not yet supported')
     })
 
-    it('disconnects the server after the call', async () => {
+    it('keeps the connection warm after the call', async () => {
       await mod.callTool(stdioConfig, 'echo', {})
-      expect(h.client.close).toHaveBeenCalled()
+      expect(h.client.close).not.toHaveBeenCalled()
+    })
+
+    it('reuses the warm connection across calls instead of respawning', async () => {
+      await mod.callTool(stdioConfig, 'echo', {})
+      await mod.callTool(stdioConfig, 'echo', {})
+      // One spawn + one handshake for both calls.
+      expect(h.transports).toHaveLength(1)
+      expect(h.client.connect).toHaveBeenCalledTimes(1)
+    })
+
+    it('serializes calls to the same server (one active call at a time)', async () => {
+      let active = 0
+      let maxConcurrent = 0
+      h.client.callTool.mockImplementation(async () => {
+        active++
+        maxConcurrent = Math.max(maxConcurrent, active)
+        await Promise.resolve()
+        active--
+        return { content: [] }
+      })
+      await Promise.all([
+        mod.callTool(stdioConfig, 'echo', {}),
+        mod.callTool(stdioConfig, 'echo', {})
+      ])
+      expect(maxConcurrent).toBe(1)
     })
   })
 
@@ -254,20 +295,18 @@ describe('mcpClient', () => {
       }
     }
 
-    // The handler callTool registered for elicitation/create on the mock client.
+    // The handler createSession registered for elicitation/create.
     function capturedHandler(): (
       request: unknown,
       extra: { signal: AbortSignal; taskStore?: unknown; taskRequestedTtl?: number }
     ) => Promise<unknown> {
-      expect(h.client.setRequestHandler).toHaveBeenCalledTimes(1)
-      return h.client.setRequestHandler.mock.calls[0][1]
+      return handlerForSchema(schemas.ElicitRequestSchema)
     }
 
     it('registers a handler for the elicitation/create schema', async () => {
-      const { ElicitRequestSchema } = await import('@modelcontextprotocol/sdk/types.js')
       await mod.callTool(stdioConfig, 'echo', {})
       expect(h.client.setRequestHandler).toHaveBeenCalledWith(
-        ElicitRequestSchema,
+        schemas.ElicitRequestSchema,
         expect.any(Function)
       )
     })
@@ -277,13 +316,18 @@ describe('mcpClient', () => {
         action: 'accept',
         content: { name: 'Ada' }
       })
-      await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
-
       const signal = new AbortController().signal
-      const result = await capturedHandler()(
-        { method: 'elicitation/create', params: elicitParams },
-        { signal }
-      )
+      let result: unknown
+      // The handler reads the session's active call, so it must run mid-call.
+      h.client.callTool.mockImplementation(async () => {
+        result = await capturedHandler()(
+          { method: 'elicitation/create', params: elicitParams },
+          { signal }
+        )
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
 
       expect(onElicitation).toHaveBeenCalledWith(elicitParams, signal)
       expect(result).toEqual({ action: 'accept', content: { name: 'Ada' } })
@@ -308,11 +352,15 @@ describe('mcpClient', () => {
     })
 
     it('declines when no onElicitation callback is provided', async () => {
+      let result: unknown
+      h.client.callTool.mockImplementation(async () => {
+        result = await capturedHandler()(
+          { method: 'elicitation/create', params: elicitParams },
+          { signal: new AbortController().signal }
+        )
+        return { content: [] }
+      })
       await mod.callTool(stdioConfig, 'echo', {})
-      const result = await capturedHandler()(
-        { method: 'elicitation/create', params: elicitParams },
-        { signal: new AbortController().signal }
-      )
       expect(result).toEqual({ action: 'decline' })
     })
 
@@ -340,13 +388,16 @@ describe('mcpClient', () => {
       it('returns the task immediately and stores the result when the user answers', async () => {
         let answer: (result: unknown) => void = () => {}
         const onElicitation = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)))
-        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
-
         const taskStore = mockTaskStore()
-        const result = await capturedHandler()(
-          { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
-          { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
-        )
+        let result: unknown
+        h.client.callTool.mockImplementation(async () => {
+          result = await capturedHandler()(
+            { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
+            { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+          )
+          return { content: [] }
+        })
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
 
         // Acknowledged before the user answered, flagged as awaiting input.
         expect(taskStore.createTask).toHaveBeenCalledWith({ ttl: 60_000 })
@@ -365,13 +416,15 @@ describe('mcpClient', () => {
 
       it('stores a failed result when the elicitation rejects', async () => {
         const onElicitation = vi.fn().mockRejectedValue(new Error('renderer gone'))
-        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
-
         const taskStore = mockTaskStore()
-        await capturedHandler()(
-          { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
-          { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
-        )
+        h.client.callTool.mockImplementation(async () => {
+          await capturedHandler()(
+            { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
+            { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+          )
+          return { content: [] }
+        })
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
 
         await vi.waitFor(() =>
           expect(taskStore.storeTaskResult).toHaveBeenCalledWith('task-1', 'failed', {
@@ -383,21 +436,260 @@ describe('mcpClient', () => {
 
       it('answers inline when the request is task-augmented but no store is available', async () => {
         const onElicitation = vi.fn().mockResolvedValue({ action: 'decline' })
+        let result: unknown
+        h.client.callTool.mockImplementation(async () => {
+          result = await capturedHandler()(
+            { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
+            { signal: new AbortController().signal }
+          )
+          return { content: [] }
+        })
         await mod.callTool(stdioConfig, 'echo', {}, undefined, onElicitation)
-        const result = await capturedHandler()(
-          { method: 'elicitation/create', params: { ...elicitParams, task: { ttl: 60_000 } } },
-          { signal: new AbortController().signal }
-        )
         expect(result).toEqual({ action: 'decline' })
       })
     })
   })
 
+  describe('sampling', () => {
+    const samplingParams = {
+      messages: [{ role: 'user', content: { type: 'text', text: 'Hello' } }],
+      systemPrompt: 'Be brief.',
+      maxTokens: 100
+    }
+
+    function capturedHandler(): (
+      request: unknown,
+      extra: { signal: AbortSignal; taskStore?: unknown; taskRequestedTtl?: number }
+    ) => Promise<unknown> {
+      return handlerForSchema(schemas.CreateMessageRequestSchema)
+    }
+
+    it('registers a handler for the createMessage schema', async () => {
+      await mod.callTool(stdioConfig, 'echo', {})
+      expect(h.client.setRequestHandler).toHaveBeenCalledWith(
+        schemas.CreateMessageRequestSchema,
+        expect.any(Function)
+      )
+    })
+
+    it('returns the assistant message the user supplies', async () => {
+      const onSampling = vi.fn().mockResolvedValue({
+        action: 'accept',
+        content: { type: 'text', text: 'Hi there' },
+        model: 'gpt-test',
+        stopReason: 'endTurn'
+      })
+      const signal = new AbortController().signal
+      let result: unknown
+      h.client.callTool.mockImplementation(async () => {
+        result = await capturedHandler()(
+          { method: 'sampling/createMessage', params: samplingParams },
+          { signal }
+        )
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, onSampling)
+
+      expect(onSampling).toHaveBeenCalledWith(samplingParams, signal)
+      expect(result).toEqual({
+        role: 'assistant',
+        content: { type: 'text', text: 'Hi there' },
+        model: 'gpt-test',
+        stopReason: 'endTurn'
+      })
+    })
+
+    it('defaults the model name when the user omits one', async () => {
+      const onSampling = vi.fn().mockResolvedValue({
+        action: 'accept',
+        content: { type: 'text', text: 'ok' }
+      })
+      let result: unknown
+      h.client.callTool.mockImplementation(async () => {
+        result = await capturedHandler()(
+          { method: 'sampling/createMessage', params: samplingParams },
+          { signal: new AbortController().signal }
+        )
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, onSampling)
+
+      expect(result).toMatchObject({ model: 'mcpflo-manual' })
+    })
+
+    it('brackets the exchange with synthetic notifications', async () => {
+      const received: Array<{ method: string; params?: Record<string, unknown> }> = []
+      const onSampling = vi.fn().mockResolvedValue({
+        action: 'accept',
+        content: { type: 'text', text: 'ok' }
+      })
+      h.client.callTool.mockImplementation(async () => {
+        await capturedHandler()(
+          { method: 'sampling/createMessage', params: samplingParams },
+          { signal: new AbortController().signal }
+        )
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {}, (n) => received.push(n), undefined, onSampling)
+
+      expect(received.map((n) => n.method)).toEqual(['sampling/create', 'sampling/response'])
+      expect(received[0].params).toEqual(samplingParams)
+    })
+
+    it('rejects with an error when the user declines', async () => {
+      const onSampling = vi.fn().mockResolvedValue({ action: 'decline' })
+      let error: unknown
+      h.client.callTool.mockImplementation(async () => {
+        try {
+          await capturedHandler()(
+            { method: 'sampling/createMessage', params: samplingParams },
+            { signal: new AbortController().signal }
+          )
+        } catch (err) {
+          error = err
+        }
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, onSampling)
+
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toMatch(/declined by user/)
+    })
+
+    it('rejects with an error when no onSampling callback is provided', async () => {
+      let error: unknown
+      h.client.callTool.mockImplementation(async () => {
+        try {
+          await capturedHandler()(
+            { method: 'sampling/createMessage', params: samplingParams },
+            { signal: new AbortController().signal }
+          )
+        } catch (err) {
+          error = err
+        }
+        return { content: [] }
+      })
+
+      await mod.callTool(stdioConfig, 'echo', {})
+
+      expect(error).toBeInstanceOf(Error)
+      expect((error as Error).message).toMatch(/No sampling handler/)
+    })
+
+    describe('task-augmented', () => {
+      const task = {
+        taskId: 'task-1',
+        status: 'working',
+        ttl: 60_000,
+        createdAt: 'now',
+        lastUpdatedAt: 'now'
+      }
+
+      function mockTaskStore(): {
+        createTask: ReturnType<typeof vi.fn>
+        updateTaskStatus: ReturnType<typeof vi.fn>
+        storeTaskResult: ReturnType<typeof vi.fn>
+      } {
+        return {
+          createTask: vi.fn().mockResolvedValue(task),
+          updateTaskStatus: vi.fn().mockResolvedValue(undefined),
+          storeTaskResult: vi.fn().mockResolvedValue(undefined)
+        }
+      }
+
+      it('returns the task immediately and stores the completed result on accept', async () => {
+        let answer: (result: unknown) => void = () => {}
+        const onSampling = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)))
+        const taskStore = mockTaskStore()
+        let result: unknown
+        h.client.callTool.mockImplementation(async () => {
+          result = await capturedHandler()(
+            {
+              method: 'sampling/createMessage',
+              params: { ...samplingParams, task: { ttl: 60_000 } }
+            },
+            { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+          )
+          return { content: [] }
+        })
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, onSampling)
+
+        expect(taskStore.createTask).toHaveBeenCalledWith({ ttl: 60_000 })
+        expect(taskStore.updateTaskStatus).toHaveBeenCalledWith('task-1', 'input_required')
+        expect(result).toEqual({ task: { ...task, status: 'input_required' } })
+        expect(taskStore.storeTaskResult).not.toHaveBeenCalled()
+
+        answer({ action: 'accept', content: { type: 'text', text: 'done' }, model: 'm' })
+        await vi.waitFor(() =>
+          expect(taskStore.storeTaskResult).toHaveBeenCalledWith('task-1', 'completed', {
+            role: 'assistant',
+            content: { type: 'text', text: 'done' },
+            model: 'm'
+          })
+        )
+      })
+
+      it('stores a failed result when the user declines', async () => {
+        const onSampling = vi.fn().mockResolvedValue({ action: 'decline' })
+        const taskStore = mockTaskStore()
+        h.client.callTool.mockImplementation(async () => {
+          await capturedHandler()(
+            {
+              method: 'sampling/createMessage',
+              params: { ...samplingParams, task: { ttl: 60_000 } }
+            },
+            { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+          )
+          return { content: [] }
+        })
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, onSampling)
+
+        await vi.waitFor(() =>
+          expect(taskStore.storeTaskResult).toHaveBeenCalledWith('task-1', 'failed', {
+            _meta: { error: 'Sampling declined by user' }
+          })
+        )
+      })
+
+      it('stores a failed result when the sampling rejects', async () => {
+        const onSampling = vi.fn().mockRejectedValue(new Error('renderer gone'))
+        const taskStore = mockTaskStore()
+        h.client.callTool.mockImplementation(async () => {
+          await capturedHandler()(
+            {
+              method: 'sampling/createMessage',
+              params: { ...samplingParams, task: { ttl: 60_000 } }
+            },
+            { signal: new AbortController().signal, taskStore, taskRequestedTtl: 60_000 }
+          )
+          return { content: [] }
+        })
+        await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, onSampling)
+
+        await vi.waitFor(() =>
+          expect(taskStore.storeTaskResult).toHaveBeenCalledWith('task-1', 'failed', {
+            _meta: { error: 'renderer gone' }
+          })
+        )
+      })
+    })
+  })
+
   describe('lifecycle', () => {
-    it('fetchCapabilities disconnects after fetching', async () => {
+    it('fetchCapabilities warms the connection and keeps it open', async () => {
       const result = await mod.fetchCapabilities(stdioConfig)
       expect(result.tools).toHaveLength(1)
-      expect(h.client.close).toHaveBeenCalled()
+      expect(h.client.close).not.toHaveBeenCalled()
+    })
+
+    it('fetchCapabilities reuses an already-warm connection', async () => {
+      await mod.fetchCapabilities(stdioConfig)
+      await mod.fetchCapabilities(stdioConfig)
+      expect(h.client.connect).toHaveBeenCalledTimes(1)
     })
 
     it('disconnectServer is a no-op for an unknown id', async () => {

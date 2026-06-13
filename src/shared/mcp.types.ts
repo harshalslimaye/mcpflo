@@ -143,6 +143,63 @@ export interface ElicitationClosedEvent {
   elicitationId: string
 }
 
+// A single content block in a sampling message (text/image/audio). Mirrors the
+// MCP SDK's content shape; only `text` is rendered specially, the rest fall
+// back to raw JSON.
+export interface SamplingContent {
+  type: string
+  text?: string
+  [key: string]: unknown
+}
+
+// One turn in the conversation a server hands us to "complete".
+export interface SamplingMessage {
+  role: 'user' | 'assistant'
+  content: SamplingContent
+}
+
+// A sampling/createMessage request from a server: it's asking the client to run
+// an LLM completion. MCPFlo answers it by hand (human-in-the-loop) rather than
+// calling a model, keeping the tool deterministic and token-free.
+export interface SamplingParams {
+  messages: SamplingMessage[]
+  systemPrompt?: string
+  maxTokens?: number
+  temperature?: number
+  stopSequences?: string[]
+  includeContext?: string
+  modelPreferences?: unknown
+  metadata?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+// The user's answer to a sampling request. The assistant turn (`content`,
+// `model`, `stopReason`) is present only on accept; decline/cancel become a
+// JSON-RPC error back to the server, since CreateMessageResult has no "action".
+export interface SamplingResult {
+  action: 'accept' | 'decline' | 'cancel'
+  content?: SamplingContent
+  model?: string
+  stopReason?: string
+}
+
+// Pushed from main to renderer over `mcp:samplingRequest`. `callId` ties the
+// request to the tool invocation that triggered it; `samplingId` is the key the
+// renderer must answer with via `mcp:respondToSampling`.
+export interface SamplingRequestEvent {
+  callId: string
+  samplingId: string
+  serverName: string
+  toolName: string
+  params: SamplingParams
+}
+
+// Pushed from main to renderer over `mcp:samplingClosed` when a pending
+// sampling request was settled without the user (server abort, call ended).
+export interface SamplingClosedEvent {
+  samplingId: string
+}
+
 // Outcome of a tool invocation as surfaced to the renderer.
 //
 // `response` is the full JSON-RPC response envelope captured off the wire

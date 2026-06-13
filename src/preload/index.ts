@@ -8,7 +8,10 @@ import type {
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
-  ElicitationResult
+  ElicitationResult,
+  SamplingRequestEvent,
+  SamplingClosedEvent,
+  SamplingResult
 } from '../shared/mcp.types'
 
 const api = {
@@ -57,7 +60,26 @@ const api = {
       }
     },
     respondToElicitation: (elicitationId: string, result: ElicitationResult): Promise<void> =>
-      ipcRenderer.invoke('mcp:respondToElicitation', elicitationId, result)
+      ipcRenderer.invoke('mcp:respondToElicitation', elicitationId, result),
+    // Subscribes to mid-call sampling requests; returns an unsubscribe function.
+    onSamplingRequest: (callback: (event: SamplingRequestEvent) => void): (() => void) => {
+      const listener = (_: unknown, payload: SamplingRequestEvent): void => callback(payload)
+      ipcRenderer.on('mcp:samplingRequest', listener)
+      return () => {
+        ipcRenderer.removeListener('mcp:samplingRequest', listener)
+      }
+    },
+    // Fired when a pending sampling request was settled without the user (server
+    // abort, call ended) and its modal should close.
+    onSamplingClosed: (callback: (event: SamplingClosedEvent) => void): (() => void) => {
+      const listener = (_: unknown, payload: SamplingClosedEvent): void => callback(payload)
+      ipcRenderer.on('mcp:samplingClosed', listener)
+      return () => {
+        ipcRenderer.removeListener('mcp:samplingClosed', listener)
+      }
+    },
+    respondToSampling: (samplingId: string, result: SamplingResult): Promise<void> =>
+      ipcRenderer.invoke('mcp:respondToSampling', samplingId, result)
   }
 }
 

@@ -110,6 +110,52 @@ describe('presentNotification', () => {
     })
   })
 
+  describe('sampling', () => {
+    it('presents a sampling request with its system prompt', () => {
+      const p = presentNotification(
+        n('sampling/create', {
+          systemPrompt: 'Be brief.',
+          messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }]
+        })
+      )
+      expect(p.badge).toBe('sampling')
+      expect(p.badgeClass).toBe('text-accent')
+      expect(p.summary).toBe('Be brief.')
+    })
+
+    it('falls back to a message count when there is no system prompt', () => {
+      const p = presentNotification(
+        n('sampling/create', {
+          messages: [
+            { role: 'user', content: { type: 'text', text: 'a' } },
+            { role: 'assistant', content: { type: 'text', text: 'b' } }
+          ]
+        })
+      )
+      expect(p.summary).toBe('2 message(s)')
+    })
+
+    it('presents an accepted response with the assistant text', () => {
+      const p = presentNotification(
+        n('sampling/response', { action: 'accept', content: { type: 'text', text: 'Hello!' } })
+      )
+      expect(p.badge).toBe('accept')
+      expect(p.badgeClass).toBe('text-green-500')
+      expect(p.summary).toBe('Hello!')
+    })
+
+    it('presents decline and cancel responses without text', () => {
+      const declined = presentNotification(n('sampling/response', { action: 'decline' }))
+      expect(declined.badge).toBe('decline')
+      expect(declined.badgeClass).toBe('text-amber-500')
+      expect(declined.summary).toBe('')
+
+      const cancelled = presentNotification(n('sampling/response', { action: 'cancel' }))
+      expect(cancelled.badge).toBe('cancel')
+      expect(cancelled.badgeClass).toBe('text-text-muted')
+    })
+  })
+
   describe('fallback', () => {
     it('uses the method (sans prefix) as badge and raw params as summary', () => {
       const p = presentNotification(n('notifications/something/new', { a: 1 }))
