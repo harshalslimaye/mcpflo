@@ -6,7 +6,9 @@ import type {
   ToolCallOutcome,
   ToolCallNotification,
   ElicitationRequestEvent,
-  ElicitationResult
+  ElicitationResult,
+  SamplingRequestEvent,
+  SamplingResult
 } from '../../shared/mcp.types'
 
 // A single recorded tool invocation, kept in memory for the session.
@@ -63,6 +65,9 @@ interface ServerStore {
   // Elicitation requests awaiting a user answer, in arrival order. The modal
   // shows the head of the queue; later requests wait their turn.
   pendingElicitations: ElicitationRequestEvent[]
+  // Sampling requests awaiting a user answer, in arrival order. Same queueing
+  // behaviour as elicitations.
+  pendingSamplings: SamplingRequestEvent[]
 
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
@@ -71,6 +76,9 @@ interface ServerStore {
   enqueueElicitation: (event: ElicitationRequestEvent) => void
   removeElicitation: (elicitationId: string) => void
   respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
+  enqueueSampling: (event: SamplingRequestEvent) => void
+  removeSampling: (samplingId: string) => void
+  respondToSampling: (samplingId: string, result: SamplingResult) => Promise<void>
   addServer: (config: ServerConfig) => Promise<void>
   updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
   removeServer: (id: string) => Promise<void>
@@ -97,6 +105,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   history: {},
   liveNotifications: {},
   pendingElicitations: [],
+  pendingSamplings: [],
 
   hydrate: async () => {
     const [configs, cache] = await Promise.all([
@@ -182,6 +191,19 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   respondToElicitation: async (elicitationId, result) => {
     await window.api.mcp.respondToElicitation(elicitationId, result)
     get().removeElicitation(elicitationId)
+  },
+
+  enqueueSampling: (event) =>
+    set((state) => ({ pendingSamplings: [...state.pendingSamplings, event] })),
+
+  removeSampling: (samplingId) =>
+    set((state) => ({
+      pendingSamplings: state.pendingSamplings.filter((s) => s.samplingId !== samplingId)
+    })),
+
+  respondToSampling: async (samplingId, result) => {
+    await window.api.mcp.respondToSampling(samplingId, result)
+    get().removeSampling(samplingId)
   },
 
   addServer: async (config) => {

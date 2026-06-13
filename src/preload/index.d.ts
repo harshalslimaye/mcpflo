@@ -7,7 +7,10 @@ import type {
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
-  ElicitationResult
+  ElicitationResult,
+  SamplingRequestEvent,
+  SamplingClosedEvent,
+  SamplingResult
 } from '../shared/mcp.types'
 
 declare global {
@@ -32,6 +35,9 @@ declare global {
         onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void) => () => void
         onElicitationClosed: (callback: (event: ElicitationClosedEvent) => void) => () => void
         respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
+        onSamplingRequest: (callback: (event: SamplingRequestEvent) => void) => () => void
+        onSamplingClosed: (callback: (event: SamplingClosedEvent) => void) => () => void
+        respondToSampling: (samplingId: string, result: SamplingResult) => Promise<void>
       }
     }
   }

@@ -91,6 +91,38 @@ const PRESENTERS: Record<string, Presenter> = {
           ? JSON.stringify(params.content)
           : ''
     }
+  },
+
+  // Synthetic entries recorded around a sampling exchange (same rationale as
+  // elicitation — the wire frames are requests, not notifications).
+  'sampling/create': (params) => {
+    const messages = Array.isArray(params.messages) ? params.messages : []
+    return {
+      badge: 'sampling',
+      badgeClass: 'text-accent',
+      summary:
+        asString(params.systemPrompt) ??
+        (messages.length > 0 ? `${messages.length} message(s)` : '')
+    }
+  },
+
+  'sampling/response': (params) => {
+    const action = asString(params.action) ?? 'unknown'
+    const content = params.content
+    const text =
+      content !== null && typeof content === 'object'
+        ? (asString((content as Record<string, unknown>).text) ?? JSON.stringify(content))
+        : ''
+    return {
+      badge: action,
+      badgeClass:
+        action === 'accept'
+          ? 'text-green-500'
+          : action === 'decline'
+            ? 'text-amber-500'
+            : 'text-text-muted',
+      summary: action === 'accept' ? text : ''
+    }
   }
 }
 
