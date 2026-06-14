@@ -31,11 +31,11 @@ function renderView(
 }
 
 describe('ResourceContentView', () => {
-  it('renders Preview, Content and Raw tabs', () => {
+  it('offers Preview, Raw and Pretty tabs', () => {
     renderView(record())
     expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Content' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Raw' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pretty' })).toBeInTheDocument()
   })
 
   it('shows a success status line with the duration', () => {
@@ -50,15 +50,29 @@ describe('ResourceContentView', () => {
     expect(screen.getByText('text/plain')).toBeInTheDocument()
   })
 
-  it('renders the verbatim text on the Content tab', () => {
-    renderView(record(), 'content')
-    expect(screen.getByText('hello world')).toBeInTheDocument()
-  })
-
-  it('renders the JSON-RPC envelope on the Raw tab', () => {
+  it('renders the full JSON-RPC envelope on the Raw tab', () => {
     const { container } = renderView(record(), 'raw')
     expect(container.textContent).toContain('jsonrpc')
     expect(container.textContent).toContain('contents')
+    expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
+  })
+
+  it('renders an error envelope verbatim on the Raw tab', () => {
+    const rec = record({
+      status: 'error',
+      response: { jsonrpc: '2.0', error: { code: -32602, message: 'Resource not found' } }
+    })
+    const { container } = renderView(rec, 'raw')
+    expect(container.textContent).toContain('Resource not found')
+    expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
+  })
+
+  it('renders the indented JSON-RPC envelope on the Pretty tab', () => {
+    const { container } = renderView(record(), 'pretty')
+    expect(container.textContent).toContain('jsonrpc')
+    expect(container.textContent).toContain('contents')
+    // Indented with 2 spaces (vs. the compact Raw form).
+    expect(container.querySelector('pre')?.textContent).toContain('\n  ')
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
   })
 
@@ -80,7 +94,7 @@ describe('ResourceContentView', () => {
     expect(img.src).toBe('data:image/png;base64,AAAA')
   })
 
-  it('summarizes a non-image binary blob by size', () => {
+  it('summarizes a non-image binary blob by size on the Preview tab', () => {
     const rec = record({
       response: {
         jsonrpc: '2.0',
@@ -89,7 +103,7 @@ describe('ResourceContentView', () => {
         }
       }
     })
-    renderView(rec, 'content')
+    renderView(rec, 'preview')
     expect(screen.getByText(/Binary resource/)).toBeInTheDocument()
   })
 
