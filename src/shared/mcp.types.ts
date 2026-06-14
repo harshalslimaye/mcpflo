@@ -44,11 +44,23 @@ export interface ToolAnnotations {
   openWorldHint?: boolean
 }
 
+// A tool's preference for task-augmented (SEP-1686) execution. Mirrors the MCP
+// SDK's ToolExecution shape. "required" means the tool MUST be invoked as a
+// task (a plain tools/call is rejected); "optional" allows either; absent or
+// "forbidden" means a normal call. MCPFlo only routes "required" tools through
+// the task path — "optional" ones still use the plain call.
+export type TaskSupport = 'required' | 'optional' | 'forbidden'
+
+export interface ToolExecution {
+  taskSupport?: TaskSupport
+}
+
 export interface Tool {
   name: string
   description?: string
   inputSchema: ToolInputSchema
   annotations?: ToolAnnotations
+  execution?: ToolExecution
 }
 
 export interface Resource {

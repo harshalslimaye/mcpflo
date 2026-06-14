@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
   ServerConfig,
+  TaskSupport,
   ConnectResult,
   CachedCapabilities,
   ToolCallOutcome,
@@ -31,9 +32,10 @@ const api = {
       config: ServerConfig,
       toolName: string,
       args: Record<string, unknown>,
-      callId?: string
+      callId?: string,
+      taskSupport?: TaskSupport
     ): Promise<ToolCallOutcome> =>
-      ipcRenderer.invoke('mcp:callTool', config, toolName, args, callId),
+      ipcRenderer.invoke('mcp:callTool', config, toolName, args, callId, taskSupport),
     // Subscribes to mid-call notifications; returns an unsubscribe function.
     onToolNotification: (callback: (event: ToolCallNotificationEvent) => void): (() => void) => {
       const listener = (_: unknown, payload: ToolCallNotificationEvent): void => callback(payload)

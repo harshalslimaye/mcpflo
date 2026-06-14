@@ -68,6 +68,31 @@ const PRESENTERS: Record<string, Presenter> = {
     summary: asString(params.reason) ?? ''
   }),
 
+  // Synthetic entries recorded as a task-augmented (SEP-1686) tool call moves
+  // through its lifecycle. `params` is the Task object; `taskId` and `status`
+  // are the fields worth surfacing.
+  'tasks/created': (params) => ({
+    badge: 'task',
+    badgeClass: 'text-accent',
+    summary: asString(params.taskId) ?? ''
+  }),
+
+  'tasks/status': (params) => {
+    const status = asString(params.status) ?? 'unknown'
+    return {
+      badge: status,
+      badgeClass:
+        status === 'completed'
+          ? 'text-green-500'
+          : status === 'failed'
+            ? 'text-red-500'
+            : status === 'cancelled'
+              ? 'text-amber-500'
+              : 'text-accent',
+      summary: asString(params.statusMessage) ?? ''
+    }
+  },
+
   // Synthetic entries recorded around an elicitation exchange (the wire frames
   // are requests, not notifications, so callTool emits these for visibility).
   'elicitation/create': (params) => ({

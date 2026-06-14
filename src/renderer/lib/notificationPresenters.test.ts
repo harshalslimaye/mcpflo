@@ -79,6 +79,34 @@ describe('presentNotification', () => {
     expect(p.summary).toBe('')
   })
 
+  describe('tasks', () => {
+    it('presents task creation with its id', () => {
+      const p = presentNotification(n('tasks/created', { taskId: 't-42', status: 'working' }))
+      expect(p.badge).toBe('task')
+      expect(p.summary).toBe('t-42')
+    })
+
+    it('badges a status frame with the task status', () => {
+      const p = presentNotification(n('tasks/status', { taskId: 't-42', status: 'working' }))
+      expect(p.badge).toBe('working')
+      expect(p.badgeClass).toBe('text-accent')
+    })
+
+    it('colors a completed status green and surfaces its message', () => {
+      const p = presentNotification(
+        n('tasks/status', { status: 'completed', statusMessage: 'all done' })
+      )
+      expect(p.badge).toBe('completed')
+      expect(p.badgeClass).toBe('text-green-500')
+      expect(p.summary).toBe('all done')
+    })
+
+    it('colors a failed status red', () => {
+      const p = presentNotification(n('tasks/status', { status: 'failed' }))
+      expect(p.badgeClass).toBe('text-red-500')
+    })
+  })
+
   describe('elicitation', () => {
     it('presents an elicitation request with its message', () => {
       const p = presentNotification(

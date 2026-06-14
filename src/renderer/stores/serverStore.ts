@@ -139,7 +139,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     const at = Date.now()
     let record: ToolCallRecord
     try {
-      const outcome = await window.api.mcp.callTool(server, toolName, args, callId)
+      const taskSupport = server.tools.find((t) => t.name === toolName)?.execution?.taskSupport
+      const outcome = await window.api.mcp.callTool(server, toolName, args, callId, taskSupport)
       record = {
         id: crypto.randomUUID(),
         serverId,

@@ -17,7 +17,12 @@ import {
   clearCapabilities,
   removeServerDir
 } from './capabilitiesCache'
-import type { ServerConfig, ElicitationResult, SamplingResult } from '../shared/mcp.types'
+import type {
+  ServerConfig,
+  TaskSupport,
+  ElicitationResult,
+  SamplingResult
+} from '../shared/mcp.types'
 
 export function registerIpcHandlers(): void {
   ipcMain.handle('mcp:getServers', () => getServers())
@@ -57,7 +62,8 @@ export function registerIpcHandlers(): void {
       config: ServerConfig,
       toolName: string,
       args: Record<string, unknown>,
-      callId?: string
+      callId?: string,
+      taskSupport?: TaskSupport
     ) => {
       const outcome = await callTool(
         config,
@@ -137,7 +143,8 @@ export function registerIpcHandlers(): void {
               event.sender.removeListener('destroyed', onDestroyed)
             }
           }
-        }
+        },
+        taskSupport
       )
       // The call has settled (result, error, or transport death) — any
       // elicitation or sampling still pending can never be answered.

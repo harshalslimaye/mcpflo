@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     listResources: vi.fn(),
     listPrompts: vi.fn(),
     callTool: vi.fn(),
+    experimental: { tasks: { callToolStream: vi.fn() } },
     setRequestHandler: vi.fn(),
     close: vi.fn()
   },
@@ -110,7 +111,6 @@ describe('mcpClient', () => {
           capabilities: {
             sampling: {},
             elicitation: {},
-            roots: { listChanged: true },
             tasks: {
               requests: {
                 sampling: { createMessage: {} },
@@ -122,6 +122,20 @@ describe('mcpClient', () => {
           taskStore: expect.anything()
         }
       )
+    })
+
+    it('preserves the execution.taskSupport hint on tools', async () => {
+      h.client.listTools.mockResolvedValue({
+        tools: [
+          {
+            name: 'research',
+            inputSchema: { type: 'object' },
+            execution: { taskSupport: 'required' }
+          }
+        ]
+      })
+      const result = await mod.connectServer(stdioConfig)
+      expect(result.tools[0].execution).toEqual({ taskSupport: 'required' })
     })
 
     it('falls back to empty lists when a capability listing fails', async () => {
@@ -282,6 +296,141 @@ describe('mcpClient', () => {
         mod.callTool(stdioConfig, 'echo', {})
       ])
       expect(maxConcurrent).toBe(1)
+    })
+  })
+
+  describe('task-augmented calls (SEP-1686)', () => {
+    // Builds the async generator callToolStream returns from a fixed list of
+    // lifecycle frames.
+    function stream(messages: unknown[]): () => AsyncGenerator<unknown> {
+      return async function* () {
+        for (const message of messages) yield message
+      }
+    }
+
+    it('routes taskSupport "required" through callToolStream, not callTool', async () => {
+      h.client.experimental.tasks.callToolStream.mockImplementation(
+        stream([{ type: 'result', result: { content: [{ type: 'text', text: 'done' }] } }])
+      )
+      const outcome = await mod.callTool(
+        stdioConfig,
+        'research',
+        { topic: 'mcp' },
+        undefined,
+        undefined,
+        undefined,
+        'required'
+      )
+      expect(h.client.callTool).not.toHaveBeenCalled()
+      // `task: {}` is passed explicitly so augmentation never depends on the
+      // SDK's `isToolTask` cache (which only fills after listTools on this
+      // client) — see the regression test below.
+      expect(h.client.experimental.tasks.callToolStream).toHaveBeenCalledWith(
+        { name: 'research', arguments: { topic: 'mcp' } },
+        undefined,
+        {
+          task: {},
+          onprogress: expect.any(Function),
+          timeout: 30 * 60_000,
+          resetTimeoutOnProgress: true
+        }
+      )
+      // The inner result is wrapped in an envelope so the renderer parses it
+      // like a plain call's response.
+      expect(outcome.response).toEqual({
+        jsonrpc: '2.0',
+        result: { content: [{ type: 'text', text: 'done' }] }
+      })
+      expect(outcome.error).toBeUndefined()
+    })
+
+    it('augments with task: {} without a prior listTools on the session', async () => {
+      // Regression: the SDK only auto-augments (isToolTask) after listTools has
+      // populated its cache on this client. We call the tool with no preceding
+      // connectServer/listTools, so the only way `task` reaches the wire is our
+      // explicit option.
+      h.client.experimental.tasks.callToolStream.mockImplementation(
+        stream([{ type: 'result', result: { content: [] } }])
+      )
+      await mod.callTool(stdioConfig, 'research', {}, undefined, undefined, undefined, 'required')
+      expect(h.client.listTools).not.toHaveBeenCalled()
+      expect(h.client.experimental.tasks.callToolStream).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        expect.objectContaining({ task: {} })
+      )
+    })
+
+    it('emits synthetic lifecycle notifications from the stream frames', async () => {
+      h.client.experimental.tasks.callToolStream.mockImplementation(
+        stream([
+          { type: 'taskCreated', task: { taskId: 't1', status: 'working' } },
+          { type: 'taskStatus', task: { taskId: 't1', status: 'working' } },
+          { type: 'taskStatus', task: { taskId: 't1', status: 'completed' } },
+          { type: 'result', result: { content: [] } }
+        ])
+      )
+      const received: Array<{ method: string; params?: Record<string, unknown> }> = []
+      await mod.callTool(
+        stdioConfig,
+        'research',
+        {},
+        (n) => received.push(n),
+        undefined,
+        undefined,
+        'required'
+      )
+      expect(received.map((n) => n.method)).toEqual([
+        'tasks/created',
+        'tasks/status',
+        'tasks/status'
+      ])
+      expect(received[2].params).toEqual({ taskId: 't1', status: 'completed' })
+    })
+
+    it('wraps a terminal error frame in an error envelope', async () => {
+      h.client.experimental.tasks.callToolStream.mockImplementation(
+        stream([{ type: 'error', error: { code: -32000, message: 'task failed', data: { x: 1 } } }])
+      )
+      const outcome = await mod.callTool(
+        stdioConfig,
+        'research',
+        {},
+        undefined,
+        undefined,
+        undefined,
+        'required'
+      )
+      expect(outcome.response).toEqual({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'task failed', data: { x: 1 } }
+      })
+      expect(outcome.error).toBeUndefined()
+    })
+
+    it('returns a transport error when the stream throws before any frame', async () => {
+      h.client.experimental.tasks.callToolStream.mockImplementation(async function* () {
+        throw new Error('connection lost')
+        yield // unreachable, but satisfies the generator contract
+      })
+      const outcome = await mod.callTool(
+        stdioConfig,
+        'research',
+        {},
+        undefined,
+        undefined,
+        undefined,
+        'required'
+      )
+      expect(outcome.response).toBeUndefined()
+      expect(outcome.error).toBe('connection lost')
+    })
+
+    it('uses the plain call path for taskSupport "optional"', async () => {
+      h.client.callTool.mockResolvedValue({ content: [] })
+      await mod.callTool(stdioConfig, 'echo', {}, undefined, undefined, undefined, 'optional')
+      expect(h.client.callTool).toHaveBeenCalled()
+      expect(h.client.experimental.tasks.callToolStream).not.toHaveBeenCalled()
     })
   })
 
