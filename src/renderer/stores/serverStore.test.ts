@@ -136,7 +136,8 @@ describe('serverStore', () => {
         expect.objectContaining({ id: 'github-mcp' }),
         'create_issue',
         { title: 'x' },
-        expect.any(String)
+        expect.any(String),
+        undefined
       )
     })
 

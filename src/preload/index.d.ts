@@ -1,6 +1,7 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
   ServerConfig,
+  TaskSupport,
   ConnectResult,
   CachedCapabilities,
   ToolCallOutcome,
@@ -29,7 +30,8 @@ declare global {
           config: ServerConfig,
           toolName: string,
           args: Record<string, unknown>,
-          callId?: string
+          callId?: string,
+          taskSupport?: TaskSupport
         ) => Promise<ToolCallOutcome>
         onToolNotification: (callback: (event: ToolCallNotificationEvent) => void) => () => void
         onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void) => () => void

@@ -16,6 +16,7 @@ import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks'
 import type {
   ServerConfig,
   Tool,
+  TaskSupport,
   Resource,
   Prompt,
   ToolCallOutcome,
@@ -127,7 +128,9 @@ async function createSession(config: ServerConfig): Promise<Session> {
       capabilities: {
         sampling: {},
         elicitation: {},
-        roots: { listChanged: true },
+        // roots intentionally not advertised in v1 — MCPFlo has no UI to
+        // configure them yet, so claiming support would leave servers calling
+        // roots/list and getting an empty list. Revisit in v2.
         tasks: {
           requests: {
             sampling: { createMessage: {} },
@@ -358,7 +361,11 @@ export async function connectServer(config: ServerConfig): Promise<ConnectResult
 const IGNORED_NOTIFICATION_METHODS = new Set([
   'notifications/tools/list_changed',
   'notifications/resources/list_changed',
-  'notifications/prompts/list_changed'
+  'notifications/prompts/list_changed',
+  // Task status arrives both as a wire notification (seen by the tap) and as a
+  // stream frame the SDK derives from it. The task path emits its own synthetic
+  // `tasks/status` from the stream, so drop the wire copy to avoid duplicates.
+  'notifications/tasks/status'
 ])
 
 // Invokes a tool on a server over its warm, pooled connection (spawned on first
@@ -372,7 +379,8 @@ export async function callTool(
   args: Record<string, unknown>,
   onNotification?: (notification: ToolCallNotification) => void,
   onElicitation?: ElicitationHandler,
-  onSampling?: SamplingHandler
+  onSampling?: SamplingHandler,
+  taskSupport?: TaskSupport
 ): Promise<ToolCallOutcome> {
   let session: Session
   try {
@@ -384,7 +392,7 @@ export async function callTool(
   }
 
   const run = session.queue.then(() =>
-    runToolCall(session, toolName, args, onNotification, onElicitation, onSampling)
+    runToolCall(session, toolName, args, onNotification, onElicitation, onSampling, taskSupport)
   )
   // Keep the serialization chain alive regardless of this call's outcome so a
   // failure here doesn't wedge later calls. `run` itself never rejects.
@@ -401,11 +409,20 @@ async function runToolCall(
   args: Record<string, unknown>,
   onNotification?: (notification: ToolCallNotification) => void,
   onElicitation?: ElicitationHandler,
-  onSampling?: SamplingHandler
+  onSampling?: SamplingHandler,
+  taskSupport?: TaskSupport
 ): Promise<ToolCallOutcome> {
   const call: ActiveCall = { onNotification, onElicitation, onSampling }
+  // Set `active` for *both* paths: the transport tap, elicitation and sampling
+  // handlers all key off it, so an in-task clarification still routes here.
   session.active = call
   try {
+    // SEP-1686: a tool marked `required` rejects a plain tools/call and must be
+    // invoked as a task. "optional" tools work as plain calls, so only
+    // "required" takes the task path.
+    if (taskSupport === 'required') {
+      return await runTaskToolCall(session, toolName, args, onNotification)
+    }
     // The no-op onprogress makes the SDK attach `_meta.progressToken` to the
     // request — servers only emit notifications/progress when a token is
     // present. The frames themselves are captured by the onmessage tap. The
@@ -425,6 +442,71 @@ async function runToolCall(
   } finally {
     session.active = null
   }
+}
+
+// Invokes a task-required (SEP-1686) tool via the experimental tasks API. The
+// SDK drives the task lifecycle and yields a stream of frames; we surface each
+// stage as a synthetic notification (so the Notifications tab lights up like it
+// does for elicitation/sampling) and wrap the terminal result in a JSON-RPC
+// envelope so the renderer parses it exactly like a plain call's response.
+//
+// Progress and side-channel server requests (elicitation/sampling that the tool
+// raises mid-run) are not part of this stream — they flow through the transport
+// tap and registered request handlers, which read `session.active`.
+async function runTaskToolCall(
+  session: Session,
+  toolName: string,
+  args: Record<string, unknown>,
+  onNotification?: (notification: ToolCallNotification) => void
+): Promise<ToolCallOutcome> {
+  const stream = session.client.experimental.tasks.callToolStream(
+    { name: toolName, arguments: args },
+    undefined,
+    // `task: {}` explicitly augments the request as a task. We already know this
+    // tool is `required`, so we must not rely on the SDK's auto-detection
+    // (`isToolTask`), which only returns true after `listTools()` has run on this
+    // very client instance — a guarantee MCPFlo's pooled, disk-cached session
+    // doesn't make. Without it the request goes out un-augmented and the server
+    // rejects it ("requires task augmentation").
+    { task: {}, onprogress: () => {}, timeout: 30 * 60_000, resetTimeoutOnProgress: true }
+  )
+  let response: unknown
+  for await (const message of stream) {
+    switch (message.type) {
+      case 'taskCreated':
+        onNotification?.({
+          method: 'tasks/created',
+          params: message.task as unknown as Record<string, unknown>,
+          at: Date.now()
+        })
+        break
+      case 'taskStatus':
+        onNotification?.({
+          method: 'tasks/status',
+          params: message.task as unknown as Record<string, unknown>,
+          at: Date.now()
+        })
+        break
+      case 'result':
+        // Wrap the inner CallToolResult in an envelope shape so it renders the
+        // same as a plain call (the renderer reads `response.result`).
+        response = { jsonrpc: '2.0', result: message.result }
+        break
+      case 'error':
+        // A terminal protocol error (e.g. the tool failed the task). Surface it
+        // as an error envelope so it renders like a JSON-RPC error frame.
+        response = {
+          jsonrpc: '2.0',
+          error: {
+            code: message.error.code,
+            message: message.error.message,
+            data: message.error.data
+          }
+        }
+        break
+    }
+  }
+  return { response }
 }
 
 // Fetches a snapshot of a server's capabilities, warming the connection so the
