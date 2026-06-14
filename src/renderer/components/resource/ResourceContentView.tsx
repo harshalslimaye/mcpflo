@@ -5,7 +5,7 @@ import type { ResourceContent, ResourceReadResult } from '../../../shared/mcp.ty
 import { highlightJson } from '../tool/highlightJson'
 import { CopyButton } from '../tool/jsonView'
 
-export type ResourceResultTab = 'preview' | 'content' | 'raw'
+export type ResourceResultTab = 'preview' | 'raw' | 'pretty'
 
 interface ResourceContentViewProps {
   // Absent while a read is in flight — the view then renders its reading state.
@@ -20,7 +20,7 @@ function base64SizeKb(data: string): number {
 }
 
 // If `text` is parseable JSON whose root is an object or array, return it
-// re-serialized with 2-space indentation; otherwise null (render as plain text).
+// re-serialized with 2-space indentation; otherwise null (not beautifiable).
 function tryFormatJson(text: string): string | null {
   const trimmed = text.trim()
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null
@@ -36,11 +36,29 @@ function tryFormatJson(text: string): string | null {
 const errorBox =
   'font-mono text-xs leading-relaxed border border-red-500/40 bg-red-500/5 text-red-500 rounded p-3 overflow-auto max-h-80 whitespace-pre-wrap break-words'
 
+const codeBox =
+  'font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 overflow-auto max-h-80 whitespace-pre-wrap break-words text-text-primary'
+
 function MetaLine({ content }: { content: ResourceContent }): React.JSX.Element {
   return (
     <div className="flex items-baseline gap-2 text-xs text-text-muted">
       <span className="font-mono break-all">{content.uri}</span>
       {content.mimeType && <span className="opacity-70 shrink-0">{content.mimeType}</span>}
+    </div>
+  )
+}
+
+function EntryShell({
+  content,
+  children
+}: {
+  content: ResourceContent
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="flex flex-col gap-2 border border-border rounded bg-bg-elevated p-3">
+      <MetaLine content={content} />
+      {children}
     </div>
   )
 }
@@ -79,9 +97,7 @@ function PreviewEntry({ content }: { content: ResourceContent }): React.JSX.Elem
     const json = tryFormatJson(content.text)
     body =
       json !== null ? (
-        <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 overflow-auto max-h-80 whitespace-pre-wrap break-words text-text-primary">
-          {json}
-        </pre>
+        <pre className={codeBox}>{json}</pre>
       ) : (
         <div className="text-sm whitespace-pre-wrap break-words text-text-primary">
           {content.text}
@@ -99,33 +115,7 @@ function PreviewEntry({ content }: { content: ResourceContent }): React.JSX.Elem
     body = <div className="text-xs text-text-muted">Empty resource.</div>
   }
 
-  return (
-    <div className="flex flex-col gap-2 border border-border rounded bg-bg-elevated p-3">
-      <MetaLine content={content} />
-      {body}
-    </div>
-  )
-}
-
-// Data-focused rendering of one content entry: metadata plus the verbatim text
-// (or a blob summary), no media rendering or JSON reformatting.
-function ContentEntry({ content }: { content: ResourceContent }): React.JSX.Element {
-  return (
-    <div className="flex flex-col gap-2 border border-border rounded bg-bg-elevated p-3">
-      <MetaLine content={content} />
-      {content.text !== undefined ? (
-        <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 overflow-auto max-h-80 whitespace-pre-wrap break-words text-text-primary">
-          {content.text}
-        </pre>
-      ) : content.blob !== undefined ? (
-        <div className="text-xs text-text-muted">
-          Binary resource · {base64SizeKb(content.blob)} KB
-        </div>
-      ) : (
-        <div className="text-xs text-text-muted">Empty resource.</div>
-      )}
-    </div>
-  )
+  return <EntryShell content={content}>{body}</EntryShell>
 }
 
 export function ResourceContentView({
@@ -137,8 +127,8 @@ export function ResourceContentView({
 
   const tabs: { key: ResourceResultTab; label: string }[] = [
     { key: 'preview', label: 'Preview' },
-    { key: 'content', label: 'Content' },
-    { key: 'raw', label: 'Raw' }
+    { key: 'raw', label: 'Raw' },
+    { key: 'pretty', label: 'Pretty' }
   ]
 
   const statusLine = record ? (
@@ -187,9 +177,9 @@ export function ResourceContentView({
   )
 }
 
-// Renders the Preview / Content / Raw view of a read result. A transport failure
-// (no envelope) and a JSON-RPC error envelope both surface as an error box on
-// every tab.
+// Renders the Preview / Raw / Pretty view of a read result. Raw and Pretty both
+// show the full JSON-RPC envelope (compact vs. indented + highlighted); Preview
+// surfaces a transport failure or a JSON-RPC error envelope as an error box.
 function ResponseBody({
   record,
   tab
@@ -201,7 +191,21 @@ function ResponseBody({
     return <pre className={errorBox}>{record.error ?? 'No response received.'}</pre>
   }
 
-  const pretty = JSON.stringify(record.response, null, 2)
+  // Raw and Pretty both show the whole envelope (including an error envelope, so
+  // neither collapses to an error box) — Raw serialized as-is, Pretty indented
+  // and syntax-highlighted.
+  if (tab === 'raw' || tab === 'pretty') {
+    const json =
+      tab === 'pretty' ? JSON.stringify(record.response, null, 2) : JSON.stringify(record.response)
+    return (
+      <div className="relative">
+        <CopyButton text={json} />
+        <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-elevated p-3 pr-16 overflow-auto max-h-96 whitespace-pre-wrap break-words text-text-primary">
+          {tab === 'pretty' ? highlightJson(json) : json}
+        </pre>
+      </div>
+    )
+  }
 
   // The ReadResourceResult lives inside the JSON-RPC envelope; an error envelope
   // carries `error` instead and has no contents to render.
@@ -210,18 +214,6 @@ function ResponseBody({
     envelope.result !== null && typeof envelope.result === 'object'
       ? (envelope.result as ResourceReadResult)
       : undefined
-  const contents = result && Array.isArray(result.contents) ? result.contents : []
-
-  if (tab === 'raw') {
-    return (
-      <div className="relative">
-        <CopyButton text={pretty} />
-        <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-elevated p-3 pr-16 overflow-auto max-h-96 whitespace-pre-wrap break-words text-text-primary">
-          {highlightJson(pretty)}
-        </pre>
-      </div>
-    )
-  }
 
   if (!result) {
     // JSON-RPC error envelope — no contents; show the protocol error.
@@ -230,19 +222,16 @@ function ResponseBody({
     )
   }
 
+  const contents = Array.isArray(result.contents) ? result.contents : []
   if (contents.length === 0) {
     return <div className="py-8 text-center text-sm text-text-muted">No content returned.</div>
   }
 
   return (
     <div className="flex flex-col gap-2">
-      {contents.map((content, i) =>
-        tab === 'preview' ? (
-          <PreviewEntry key={i} content={content} />
-        ) : (
-          <ContentEntry key={i} content={content} />
-        )
-      )}
+      {contents.map((content, i) => (
+        <PreviewEntry key={i} content={content} />
+      ))}
     </div>
   )
 }
