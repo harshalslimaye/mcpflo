@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Tool } from '../../../shared/mcp.types'
 import { useServerStore, toolKey } from '../../stores/serverStore'
+import { analyzeSchema } from '../../lib/toolSchema'
 import { ToolHeader } from './ToolHeader'
 import { ParamsTab } from './ParamsTab'
 import { HistoryTab } from './HistoryTab'
@@ -26,6 +27,16 @@ export function ToolDetailView({
 }: ToolDetailViewProps): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<TabKey>('params')
   const history = useServerStore((s) => s.history[toolKey(serverId, tool.name)]) ?? []
+  // A request to pre-fill the Params form with a past call's arguments, raised by
+  // clicking a History entry. `nonce` is bumped each click so re-selecting the
+  // same record (e.g. to reset edits) re-applies it. The history shown here is
+  // already scoped to this tool, so any record clicked belongs to it.
+  const [prefill, setPrefill] = useState<{ args: Record<string, unknown>; nonce: number } | null>(
+    null
+  )
+  // A tool with no parameters has no form to fill, so History entries aren't
+  // clickable for it — clicking one does nothing.
+  const { isEmpty } = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
 
   return (
     // Height-constrained so the History rail can fill the full content height.
@@ -59,7 +70,7 @@ export function ToolDetailView({
             {/* Params stays mounted so form state survives tab switches; it's
                 only reset when the selected tool changes (view is remounted). */}
             <div className={activeTab === 'params' ? '' : 'hidden'}>
-              <ParamsTab tool={tool} serverId={serverId} />
+              <ParamsTab tool={tool} serverId={serverId} prefill={prefill} />
             </div>
             {activeTab === 'schema' && <SchemaTab schema={tool.inputSchema} />}
           </div>
@@ -69,7 +80,15 @@ export function ToolDetailView({
               History
             </h2>
             <div className="border border-border rounded bg-bg-elevated flex-1 min-h-0 overflow-y-auto">
-              <HistoryTab records={history} />
+              <HistoryTab
+                records={history}
+                onSelectRecord={
+                  isEmpty
+                    ? undefined
+                    : (record) =>
+                        setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+                }
+              />
             </div>
           </aside>
         </div>
