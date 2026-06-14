@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
-import { fetchCapabilities, callTool } from './mcpClient'
+import { fetchCapabilities, callTool, readResource } from './mcpClient'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -162,6 +162,12 @@ export function registerIpcHandlers(): void {
       }
       return outcome
     }
+  )
+
+  // Resource read. A single request → response with no mid-call side channels,
+  // so unlike mcp:callTool there's no callId / notification plumbing.
+  ipcMain.handle('mcp:readResource', (_event, config: ServerConfig, uri: string) =>
+    readResource(config, uri)
   )
 
   ipcMain.handle(

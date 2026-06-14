@@ -1,6 +1,7 @@
 import { Server } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { ToolDetailView } from '../tool/ToolDetailView'
+import { ResourceDetailView } from '../resource/ResourceDetailView'
 
 function EmptyState(): React.JSX.Element {
   return (
@@ -18,22 +19,42 @@ function EmptyState(): React.JSX.Element {
 
 export function ContentArea(): React.JSX.Element {
   const selectedTool = useServerStore((s) => s.selectedTool)
+  const selectedResource = useServerStore((s) => s.selectedResource)
   const servers = useServerStore((s) => s.servers)
 
-  const server = selectedTool ? servers.find((s) => s.id === selectedTool.serverId) : undefined
-  const tool = server?.tools.find((t) => t.name === selectedTool?.toolName)
-
-  if (!server || !tool) {
-    return <EmptyState />
+  // Selection is mutually exclusive, so at most one of these branches matches.
+  // Resources are checked first; the order is otherwise immaterial.
+  if (selectedResource) {
+    const server = servers.find((s) => s.id === selectedResource.serverId)
+    const resource = server?.resources.find((r) => r.uri === selectedResource.uri)
+    if (server && resource) {
+      // Remount per resource so local view state (result tab) resets.
+      return (
+        <ResourceDetailView
+          key={`${server.id}::${resource.uri}`}
+          resource={resource}
+          serverId={server.id}
+          serverName={server.name}
+        />
+      )
+    }
   }
 
-  // Remount per tool so all local view state (active tab, form values) resets.
-  return (
-    <ToolDetailView
-      key={`${server.id}::${tool.name}`}
-      tool={tool}
-      serverId={server.id}
-      serverName={server.name}
-    />
-  )
+  if (selectedTool) {
+    const server = servers.find((s) => s.id === selectedTool.serverId)
+    const tool = server?.tools.find((t) => t.name === selectedTool.toolName)
+    if (server && tool) {
+      // Remount per tool so all local view state (active tab, form values) resets.
+      return (
+        <ToolDetailView
+          key={`${server.id}::${tool.name}`}
+          tool={tool}
+          serverId={server.id}
+          serverName={server.name}
+        />
+      )
+    }
+  }
+
+  return <EmptyState />
 }

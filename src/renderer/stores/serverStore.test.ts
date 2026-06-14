@@ -23,6 +23,7 @@ const mockApi = {
     fetchCapabilities: vi.fn(),
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
     callTool: vi.fn(),
+    readResource: vi.fn(),
     onToolNotification: vi.fn()
   }
 }
@@ -47,6 +48,9 @@ describe('serverStore', () => {
       response: { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }
     })
     mockApi.mcp.onToolNotification.mockReturnValue(() => {})
+    mockApi.mcp.readResource.mockResolvedValue({
+      response: { jsonrpc: '2.0', result: { contents: [{ uri: 'mem://x', text: 'ok' }] } }
+    })
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -54,7 +58,9 @@ describe('serverStore', () => {
       servers: [],
       selectedServerId: null,
       selectedTool: null,
+      selectedResource: null,
       history: {},
+      resourceHistory: {},
       liveNotifications: {}
     })
   })
@@ -123,6 +129,30 @@ describe('serverStore', () => {
       useServerStore.getState().selectTool('github-mcp', 'create_issue')
       useServerStore.getState().selectTool('github-mcp', 'list_issues')
       expect(useServerStore.getState().selectedTool?.toolName).toBe('list_issues')
+    })
+
+    it('clears a selected resource (the two are mutually exclusive)', () => {
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      expect(useServerStore.getState().selectedResource).toBeNull()
+      expect(useServerStore.getState().selectedTool?.toolName).toBe('create_issue')
+    })
+  })
+
+  describe('selectResource', () => {
+    it('sets the selected resource with its owning server id', () => {
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      expect(useServerStore.getState().selectedResource).toEqual({
+        serverId: 'github-mcp',
+        uri: 'mem://x'
+      })
+    })
+
+    it('clears a selected tool (the two are mutually exclusive)', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      expect(useServerStore.getState().selectedTool).toBeNull()
+      expect(useServerStore.getState().selectedResource?.uri).toBe('mem://x')
     })
   })
 
@@ -212,7 +242,7 @@ describe('serverStore', () => {
       expect(records[0].args).toEqual({ n: 2 })
     })
 
-    it('does nothing for an unknown server', async () => {
+    it('does nothing for an unknown server (executeTool)', async () => {
       await useServerStore.getState().executeTool('missing', 'create_issue', {})
       expect(mockApi.mcp.callTool).not.toHaveBeenCalled()
       expect(useServerStore.getState().history).toEqual({})
@@ -324,6 +354,68 @@ describe('serverStore', () => {
     })
   })
 
+  describe('readResource', () => {
+    const key = 'github-mcp::mem://x'
+
+    it('calls IPC with the server config and uri', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      expect(mockApi.mcp.readResource).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'github-mcp' }),
+        'mem://x'
+      )
+    })
+
+    it('records a successful read in resource history', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      const records = useServerStore.getState().resourceHistory[key]
+      expect(records).toHaveLength(1)
+      expect(records[0].status).toBe('success')
+      expect(records[0].uri).toBe('mem://x')
+    })
+
+    it('marks the read as an error for a JSON-RPC error response', async () => {
+      mockApi.mcp.readResource.mockResolvedValue({
+        response: { jsonrpc: '2.0', error: { code: -32602, message: 'Resource not found' } }
+      })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      expect(useServerStore.getState().resourceHistory[key][0].status).toBe('error')
+    })
+
+    it('records a transport error returned by the outcome', async () => {
+      mockApi.mcp.readResource.mockResolvedValue({ error: 'connection refused' })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      const record = useServerStore.getState().resourceHistory[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('connection refused')
+    })
+
+    it('records an error when the IPC call rejects', async () => {
+      mockApi.mcp.readResource.mockRejectedValue(new Error('ipc failed'))
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      const record = useServerStore.getState().resourceHistory[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('ipc failed')
+    })
+
+    it('prepends newer reads so the latest is first', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      expect(useServerStore.getState().resourceHistory[key]).toHaveLength(2)
+    })
+
+    it('does nothing for an unknown server', async () => {
+      await useServerStore.getState().readResource('missing', 'mem://x')
+      expect(mockApi.mcp.readResource).not.toHaveBeenCalled()
+      expect(useServerStore.getState().resourceHistory).toEqual({})
+    })
+  })
+
   describe('addServer', () => {
     it('calls IPC and appends server to state', async () => {
       await useServerStore.getState().addServer(githubConfig)
@@ -408,6 +500,32 @@ describe('serverStore', () => {
       const history = useServerStore.getState().history
       expect(history['github-mcp::create_issue']).toBeUndefined()
       expect(history['slack-mcp::post_message']).toHaveLength(1)
+    })
+
+    it('clears selectedResource if it belonged to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().selectedResource).toBeNull()
+    })
+
+    it('preserves selectedResource if a different server is removed', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      await useServerStore.getState().removeServer('slack-mcp')
+      expect(useServerStore.getState().selectedResource?.serverId).toBe('github-mcp')
+    })
+
+    it('prunes resource read history belonging to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      await useServerStore.getState().readResource('github-mcp', 'mem://x')
+      await useServerStore.getState().readResource('slack-mcp', 'mem://y')
+      await useServerStore.getState().removeServer('github-mcp')
+      const resourceHistory = useServerStore.getState().resourceHistory
+      expect(resourceHistory['github-mcp::mem://x']).toBeUndefined()
+      expect(resourceHistory['slack-mcp::mem://y']).toHaveLength(1)
     })
   })
 

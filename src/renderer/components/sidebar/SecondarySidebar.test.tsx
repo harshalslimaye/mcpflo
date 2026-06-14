@@ -42,6 +42,7 @@ beforeEach(() => {
     servers: mockServers,
     selectedServerId: null,
     selectedTool: null,
+    selectedResource: null,
     fetchCapabilities: mockFetchCapabilities,
     refreshCapabilities: mockRefreshCapabilities
   })
@@ -233,7 +234,7 @@ describe('SecondarySidebar', () => {
     expect(screen.queryByText('Delete Server')).not.toBeInTheDocument()
   })
 
-  it('labels an unnamed resource with its uri and keeps it non-clickable', () => {
+  it('labels an unnamed resource with its uri and selects it by that uri', () => {
     useServerStore.setState({
       servers: [{ ...mockServers[0], resources: [{ uri: 'memory://graph' }] }]
     })
@@ -241,8 +242,32 @@ describe('SecondarySidebar', () => {
     fireEvent.click(screen.getByText('Memory MCP'))
     fireEvent.click(screen.getByText('Resources'))
     fireEvent.click(screen.getByText('memory://graph'))
-    // Resources are display-only — clicking must not select a tool.
-    expect(useServerStore.getState().selectedTool).toBeNull()
+    expect(useServerStore.getState().selectedResource).toEqual({
+      serverId: 'memory-mcp',
+      uri: 'memory://graph'
+    })
+  })
+
+  it('selects a resource in the store when a resource item is clicked', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Resources'))
+    // The resource is named "Graph" but is identified (and selected) by its uri.
+    fireEvent.click(screen.getByText('Graph'))
+    expect(useServerStore.getState().selectedResource).toEqual({
+      serverId: 'memory-mcp',
+      uri: 'memory://graph'
+    })
+  })
+
+  it('marks the selected resource with aria-current', () => {
+    useServerStore.setState({
+      selectedResource: { serverId: 'memory-mcp', uri: 'memory://graph' }
+    })
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP'))
+    fireEvent.click(screen.getByText('Resources'))
+    expect(screen.getByText('Graph').closest('button')).toHaveAttribute('aria-current', 'true')
   })
 
   it('marks the selected tool with aria-current', () => {

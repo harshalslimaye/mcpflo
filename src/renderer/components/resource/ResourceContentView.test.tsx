@@ -1,0 +1,123 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { ResourceContentView, type ResourceResultTab } from './ResourceContentView'
+import type { ResourceReadRecord } from '../../stores/serverStore'
+
+function record(over: Partial<ResourceReadRecord> = {}): ResourceReadRecord {
+  return {
+    id: 'r1',
+    serverId: 'srv',
+    uri: 'demo://x',
+    status: 'success',
+    response: {
+      jsonrpc: '2.0',
+      result: { contents: [{ uri: 'demo://x', mimeType: 'text/plain', text: 'hello world' }] }
+    },
+    durationMs: 5,
+    at: Date.now(),
+    ...over
+  }
+}
+
+function renderView(
+  rec: ResourceReadRecord | undefined,
+  tab: ResourceResultTab = 'preview'
+): { onTabChange: ReturnType<typeof vi.fn> } & ReturnType<typeof render> {
+  const onTabChange = vi.fn()
+  return {
+    onTabChange,
+    ...render(<ResourceContentView record={rec} tab={tab} onTabChange={onTabChange} />)
+  }
+}
+
+describe('ResourceContentView', () => {
+  it('renders Preview, Content and Raw tabs', () => {
+    renderView(record())
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Content' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Raw' })).toBeInTheDocument()
+  })
+
+  it('shows a success status line with the duration', () => {
+    renderView(record({ durationMs: 42 }))
+    expect(screen.getByText('Success')).toBeInTheDocument()
+    expect(screen.getByText('42 ms')).toBeInTheDocument()
+  })
+
+  it('renders text content with its mimeType on the Preview tab', () => {
+    renderView(record(), 'preview')
+    expect(screen.getByText('hello world')).toBeInTheDocument()
+    expect(screen.getByText('text/plain')).toBeInTheDocument()
+  })
+
+  it('renders the verbatim text on the Content tab', () => {
+    renderView(record(), 'content')
+    expect(screen.getByText('hello world')).toBeInTheDocument()
+  })
+
+  it('renders the JSON-RPC envelope on the Raw tab', () => {
+    const { container } = renderView(record(), 'raw')
+    expect(container.textContent).toContain('jsonrpc')
+    expect(container.textContent).toContain('contents')
+    expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
+  })
+
+  it('calls onTabChange when a tab is clicked', () => {
+    const { onTabChange } = renderView(record(), 'preview')
+    fireEvent.click(screen.getByRole('button', { name: 'Raw' }))
+    expect(onTabChange).toHaveBeenCalledWith('raw')
+  })
+
+  it('renders an image resource as an <img> on the Preview tab', () => {
+    const rec = record({
+      response: {
+        jsonrpc: '2.0',
+        result: { contents: [{ uri: 'demo://img', mimeType: 'image/png', blob: 'AAAA' }] }
+      }
+    })
+    renderView(rec, 'preview')
+    const img = screen.getByRole('img') as HTMLImageElement
+    expect(img.src).toBe('data:image/png;base64,AAAA')
+  })
+
+  it('summarizes a non-image binary blob by size', () => {
+    const rec = record({
+      response: {
+        jsonrpc: '2.0',
+        result: {
+          contents: [{ uri: 'demo://bin', mimeType: 'application/octet-stream', blob: 'AAAA' }]
+        }
+      }
+    })
+    renderView(rec, 'content')
+    expect(screen.getByText(/Binary resource/)).toBeInTheDocument()
+  })
+
+  it('shows a no-content message when the result has no entries', () => {
+    const rec = record({ response: { jsonrpc: '2.0', result: { contents: [] } } })
+    renderView(rec, 'preview')
+    expect(screen.getByText('No content returned.')).toBeInTheDocument()
+  })
+
+  it('shows the protocol error for a JSON-RPC error envelope', () => {
+    const rec = record({
+      status: 'error',
+      response: { jsonrpc: '2.0', error: { code: -32602, message: 'Resource not found' } }
+    })
+    renderView(rec, 'preview')
+    expect(screen.getByText('Error')).toBeInTheDocument()
+    expect(screen.getByText(/Resource not found/)).toBeInTheDocument()
+  })
+
+  it('shows the transport error when no response arrived', () => {
+    const rec = record({ status: 'error', response: undefined, error: 'connection refused' })
+    renderView(rec, 'preview')
+    expect(screen.getByText('connection refused')).toBeInTheDocument()
+  })
+
+  it('renders a Reading… state when no record is present', () => {
+    renderView(undefined)
+    // Shown both in the status line and the body placeholder.
+    expect(screen.getAllByText('Reading…').length).toBeGreaterThan(0)
+  })
+})

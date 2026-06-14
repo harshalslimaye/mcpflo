@@ -16,12 +16,17 @@ const server: MCPServer = {
       inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: [] }
     }
   ],
-  resources: [],
+  resources: [{ uri: 'memory://graph', name: 'Graph', description: 'The knowledge graph' }],
   prompts: []
 }
 
 beforeEach(() => {
-  useServerStore.setState({ servers: [], selectedServerId: null, selectedTool: null })
+  useServerStore.setState({
+    servers: [],
+    selectedServerId: null,
+    selectedTool: null,
+    selectedResource: null
+  })
 })
 
 describe('ContentArea — empty state', () => {
@@ -68,5 +73,29 @@ describe('ContentArea — tool detail', () => {
     expect(screen.getByText('search_nodes')).toBeInTheDocument()
     expect(screen.getByText('Memory MCP')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Execute' })).toBeInTheDocument()
+  })
+})
+
+describe('ContentArea — resource detail', () => {
+  it('renders the resource detail view for the selected resource', () => {
+    useServerStore.setState({
+      servers: [server],
+      selectedResource: { serverId: 'memory-mcp', uri: 'memory://graph' }
+    })
+    render(<ContentArea />)
+    expect(screen.getByText('Graph')).toBeInTheDocument()
+    expect(screen.getByText('Memory MCP')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Read' })).toBeInTheDocument()
+    // The uri is shown read-only.
+    expect(screen.getByRole('textbox', { name: 'Resource URI' })).toBeDisabled()
+  })
+
+  it('falls back to the empty state when the selected resource no longer exists', () => {
+    useServerStore.setState({
+      servers: [server],
+      selectedResource: { serverId: 'memory-mcp', uri: 'memory://gone' }
+    })
+    render(<ContentArea />)
+    expect(screen.getByText('Select an MCP Server')).toBeInTheDocument()
   })
 })

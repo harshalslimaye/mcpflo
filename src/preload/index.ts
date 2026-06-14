@@ -6,6 +6,7 @@ import type {
   ConnectResult,
   CachedCapabilities,
   ToolCallOutcome,
+  ResourceReadOutcome,
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
@@ -36,6 +37,8 @@ const api = {
       taskSupport?: TaskSupport
     ): Promise<ToolCallOutcome> =>
       ipcRenderer.invoke('mcp:callTool', config, toolName, args, callId, taskSupport),
+    readResource: (config: ServerConfig, uri: string): Promise<ResourceReadOutcome> =>
+      ipcRenderer.invoke('mcp:readResource', config, uri),
     // Subscribes to mid-call notifications; returns an unsubscribe function.
     onToolNotification: (callback: (event: ToolCallNotificationEvent) => void): (() => void) => {
       const listener = (_: unknown, payload: ToolCallNotificationEvent): void => callback(payload)
