@@ -20,6 +20,7 @@ import type {
   Resource,
   Prompt,
   ToolCallOutcome,
+  ResourceReadOutcome,
   ToolCallNotification,
   ElicitationParams,
   ElicitationResult,
@@ -507,6 +508,35 @@ async function runTaskToolCall(
     }
   }
   return { response }
+}
+
+// Reads a resource's contents over the server's warm, pooled connection. Unlike
+// a tool call this needs none of the per-call machinery (no `active` slot, no
+// transport tap, no serialization): resources/read is a single request →
+// response with no progress/elicitation/sampling side channels. It can run
+// concurrently with an in-flight tool call — the read's response carries its own
+// id, so the tool call's tap never mistakes it for that call's output. The SDK
+// returns only the inner result, so we wrap it in a JSON-RPC envelope to match
+// the shape the renderer parses for tool calls (giving it a Raw view for free).
+export async function readResource(
+  config: ServerConfig,
+  uri: string
+): Promise<ResourceReadOutcome> {
+  let session: Session
+  try {
+    session = await getSession(config)
+  } catch (err) {
+    // A pre-response failure (spawn/connection error, unsupported transport)
+    // never produced a JSON-RPC envelope.
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+
+  try {
+    const result = await session.client.readResource({ uri })
+    return { response: { jsonrpc: '2.0', result } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // Fetches a snapshot of a server's capabilities, warming the connection so the

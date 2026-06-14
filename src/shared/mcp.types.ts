@@ -223,6 +223,32 @@ export interface ToolCallOutcome {
   error?: string
 }
 
+// A single content entry of a resources/read result. Mirrors the MCP SDK's
+// ResourceContents shape: text resources carry `text`, binary ones carry a
+// base64 `blob`; `uri` echoes which resource the entry belongs to.
+export interface ResourceContent {
+  uri: string
+  mimeType?: string
+  text?: string
+  blob?: string
+  [key: string]: unknown
+}
+
+// Result of reading a resource — mirrors the MCP SDK's ReadResourceResult shape.
+export interface ResourceReadResult {
+  contents: ResourceContent[]
+  [key: string]: unknown
+}
+
+// Outcome of a resource read as surfaced to the renderer. Mirrors
+// `ToolCallOutcome`: `response` is the JSON-RPC envelope ({ jsonrpc, result } or
+// { jsonrpc, error }); `error` carries a transport-level message when no
+// response arrived (e.g. a connection failure).
+export interface ResourceReadOutcome {
+  response?: unknown
+  error?: string
+}
+
 // Capabilities persisted to disk (servers/<id>/capabilities.json) so they're
 // available before fetching and across app restarts.
 export interface CachedCapabilities {

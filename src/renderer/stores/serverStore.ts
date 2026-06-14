@@ -4,6 +4,7 @@ import type {
   MCPServer,
   CachedCapabilities,
   ToolCallOutcome,
+  ResourceReadOutcome,
   ToolCallNotification,
   ElicitationRequestEvent,
   ElicitationResult,
@@ -29,9 +30,27 @@ export interface ToolCallRecord {
   at: number
 }
 
+// A single recorded resource read, kept in memory for the session. Mirrors
+// `ToolCallRecord` minus the tool-only fields (args, notifications): a read has
+// no inputs and no mid-call side channels.
+export interface ResourceReadRecord {
+  id: string
+  serverId: string
+  uri: string
+  status: 'success' | 'error'
+  // Full JSON-RPC response envelope, when one was received.
+  response?: unknown
+  // Transport-level error message, when no response arrived.
+  error?: string
+  durationMs: number
+  at: number
+}
+
 // An outcome counts as an error when the connection failed, the server returned
-// a JSON-RPC error, or the tool itself reported `isError`.
-function outcomeStatus(outcome: ToolCallOutcome): 'success' | 'error' {
+// a JSON-RPC error, or the tool itself reported `isError`. Resource reads share
+// the same { response, error } shape, so this classifies both (a read result
+// carries `contents`, never `isError`, so it lands on the success path).
+function outcomeStatus(outcome: ToolCallOutcome | ResourceReadOutcome): 'success' | 'error' {
   if (outcome.error) return 'error'
   const response = outcome.response
   if (!response || typeof response !== 'object') return 'error'
@@ -46,6 +65,11 @@ export function toolKey(serverId: string, toolName: string): string {
   return `${serverId}::${toolName}`
 }
 
+// Read history is keyed per resource; uris are only unique within a server.
+export function resourceKey(serverId: string, uri: string): string {
+  return `${serverId}::${uri}`
+}
+
 // Identifies a selected tool. Tool names are only unique within a server, so
 // the owning server id is part of the key.
 export interface SelectedTool {
@@ -53,12 +77,22 @@ export interface SelectedTool {
   toolName: string
 }
 
+// Identifies a selected resource. Uris are only unique within a server, so the
+// owning server id is part of the key.
+export interface SelectedResource {
+  serverId: string
+  uri: string
+}
+
 interface ServerStore {
   servers: MCPServer[]
   selectedServerId: string | null
   selectedTool: SelectedTool | null
+  selectedResource: SelectedResource | null
   // Per-tool call history (newest first), keyed by `toolKey(serverId, toolName)`.
   history: Record<string, ToolCallRecord[]>
+  // Per-resource read history (newest first), keyed by `resourceKey(serverId, uri)`.
+  resourceHistory: Record<string, ResourceReadRecord[]>
   // Notifications streamed by the currently running call for a tool, keyed by
   // `toolKey`. An entry exists only while that call is in flight.
   liveNotifications: Record<string, ToolCallNotification[]>
@@ -72,7 +106,9 @@ interface ServerStore {
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
   selectTool: (serverId: string, toolName: string) => void
+  selectResource: (serverId: string, uri: string) => void
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
+  readResource: (serverId: string, uri: string) => Promise<void>
   enqueueElicitation: (event: ElicitationRequestEvent) => void
   removeElicitation: (elicitationId: string) => void
   respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
@@ -102,7 +138,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   servers: [],
   selectedServerId: null,
   selectedTool: null,
+  selectedResource: null,
   history: {},
+  resourceHistory: {},
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
@@ -117,7 +155,13 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   selectServer: (id) => set({ selectedServerId: id }),
 
-  selectTool: (serverId, toolName) => set({ selectedTool: { serverId, toolName } }),
+  // Tool and resource selection are mutually exclusive — the content area shows
+  // exactly one detail view — so selecting one clears the other.
+  selectTool: (serverId, toolName) =>
+    set({ selectedTool: { serverId, toolName }, selectedResource: null }),
+
+  selectResource: (serverId, uri) =>
+    set({ selectedResource: { serverId, uri }, selectedTool: null }),
 
   executeTool: async (serverId, toolName, args) => {
     const server = get().servers.find((s) => s.id === serverId)
@@ -179,6 +223,45 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })
   },
 
+  readResource: async (serverId, uri) => {
+    const server = get().servers.find((s) => s.id === serverId)
+    if (!server) return
+
+    const key = resourceKey(serverId, uri)
+    const at = Date.now()
+    let record: ResourceReadRecord
+    try {
+      const outcome = await window.api.mcp.readResource(server, uri)
+      record = {
+        id: crypto.randomUUID(),
+        serverId,
+        uri,
+        status: outcomeStatus(outcome),
+        response: outcome.response,
+        error: outcome.error,
+        durationMs: Date.now() - at,
+        at
+      }
+    } catch (err) {
+      record = {
+        id: crypto.randomUUID(),
+        serverId,
+        uri,
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - at,
+        at
+      }
+    }
+
+    set((state) => ({
+      resourceHistory: {
+        ...state.resourceHistory,
+        [key]: [record, ...(state.resourceHistory[key] ?? [])]
+      }
+    }))
+  },
+
   enqueueElicitation: (event) =>
     set((state) => ({ pendingElicitations: [...state.pendingElicitations, event] })),
 
@@ -225,8 +308,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       servers: state.servers.filter((s) => s.id !== id),
       selectedServerId: state.selectedServerId === id ? null : state.selectedServerId,
       selectedTool: state.selectedTool?.serverId === id ? null : state.selectedTool,
+      selectedResource: state.selectedResource?.serverId === id ? null : state.selectedResource,
       history: Object.fromEntries(
         Object.entries(state.history).filter(([key]) => !key.startsWith(`${id}::`))
+      ),
+      resourceHistory: Object.fromEntries(
+        Object.entries(state.resourceHistory).filter(([key]) => !key.startsWith(`${id}::`))
       )
     }))
   },

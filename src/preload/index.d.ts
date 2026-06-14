@@ -5,6 +5,7 @@ import type {
   ConnectResult,
   CachedCapabilities,
   ToolCallOutcome,
+  ResourceReadOutcome,
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
@@ -33,6 +34,7 @@ declare global {
           callId?: string,
           taskSupport?: TaskSupport
         ) => Promise<ToolCallOutcome>
+        readResource: (config: ServerConfig, uri: string) => Promise<ResourceReadOutcome>
         onToolNotification: (callback: (event: ToolCallNotificationEvent) => void) => () => void
         onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void) => () => void
         onElicitationClosed: (callback: (event: ElicitationClosedEvent) => void) => () => void

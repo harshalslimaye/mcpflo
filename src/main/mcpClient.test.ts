@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     listResources: vi.fn(),
     listPrompts: vi.fn(),
     callTool: vi.fn(),
+    readResource: vi.fn(),
     experimental: { tasks: { callToolStream: vi.fn() } },
     setRequestHandler: vi.fn(),
     close: vi.fn()
@@ -81,6 +82,7 @@ describe('mcpClient', () => {
     h.client.listResources.mockResolvedValue({ resources: [{ uri: 'mem://x' }] })
     h.client.listPrompts.mockResolvedValue({ prompts: [] })
     h.client.callTool.mockResolvedValue({ content: [] })
+    h.client.readResource.mockResolvedValue({ contents: [] })
     h.client.close.mockResolvedValue(undefined)
     vi.resetModules()
     mod = await import('./mcpClient')
@@ -296,6 +298,39 @@ describe('mcpClient', () => {
         mod.callTool(stdioConfig, 'echo', {})
       ])
       expect(maxConcurrent).toBe(1)
+    })
+  })
+
+  describe('readResource', () => {
+    it('wraps the SDK result in a synthesized JSON-RPC envelope', async () => {
+      const result = {
+        contents: [{ uri: 'mem://x', mimeType: 'text/plain', text: 'hello' }]
+      }
+      h.client.readResource.mockResolvedValue(result)
+      const outcome = await mod.readResource(stdioConfig, 'mem://x')
+      expect(outcome.response).toEqual({ jsonrpc: '2.0', result })
+      expect(outcome.error).toBeUndefined()
+      expect(h.client.readResource).toHaveBeenCalledWith({ uri: 'mem://x' })
+    })
+
+    it('returns a transport-level error when the read throws', async () => {
+      h.client.readResource.mockRejectedValue(new Error('resource not found'))
+      const outcome = await mod.readResource(stdioConfig, 'mem://missing')
+      expect(outcome.response).toBeUndefined()
+      expect(outcome.error).toBe('resource not found')
+    })
+
+    it('returns an error for an unsupported transport (no envelope)', async () => {
+      const outcome = await mod.readResource(sseConfig, 'mem://x')
+      expect(outcome.response).toBeUndefined()
+      expect(outcome.error).toBe('Transport "sse" not yet supported')
+    })
+
+    it('reuses the warm pooled connection across reads', async () => {
+      await mod.readResource(stdioConfig, 'mem://a')
+      await mod.readResource(stdioConfig, 'mem://b')
+      // One spawn (connect) shared by both reads.
+      expect(h.client.connect).toHaveBeenCalledTimes(1)
     })
   })
 
