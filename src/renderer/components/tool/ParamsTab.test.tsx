@@ -327,6 +327,60 @@ describe('ParamsTab — raw JSON toggle', () => {
   })
 })
 
+describe('ParamsTab — prefill from history', () => {
+  it('populates each form field from the prefill arguments', () => {
+    render(
+      <ParamsTab
+        tool={primitiveTool}
+        serverId="srv"
+        prefill={{ args: { query: 'hello', limit: 5 }, nonce: 1 }}
+      />
+    )
+    expect((screen.getByRole('textbox', { name: 'query' }) as HTMLInputElement).value).toBe('hello')
+    expect((screen.getByRole('spinbutton', { name: 'limit' }) as HTMLInputElement).value).toBe('5')
+  })
+
+  it('does not affect the Raw JSON toggle — the form stays in form mode', () => {
+    render(
+      <ParamsTab tool={primitiveTool} serverId="srv" prefill={{ args: { query: 'x' }, nonce: 1 }} />
+    )
+    expect(screen.queryByRole('textbox', { name: 'Params JSON' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'query' })).toBeInTheDocument()
+  })
+
+  it('does not auto-execute on prefill', () => {
+    render(
+      <ParamsTab
+        tool={primitiveTool}
+        serverId="srv"
+        prefill={{ args: { query: 'hi' }, nonce: 1 }}
+      />
+    )
+    expect(mockExecuteTool).not.toHaveBeenCalled()
+  })
+
+  it('re-applies the same record on a new nonce, discarding the user edit', () => {
+    const { rerender } = render(
+      <ParamsTab
+        tool={primitiveTool}
+        serverId="srv"
+        prefill={{ args: { query: 'first' }, nonce: 1 }}
+      />
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'query' }), {
+      target: { value: 'edited' }
+    })
+    rerender(
+      <ParamsTab
+        tool={primitiveTool}
+        serverId="srv"
+        prefill={{ args: { query: 'first' }, nonce: 2 }}
+      />
+    )
+    expect((screen.getByRole('textbox', { name: 'query' }) as HTMLInputElement).value).toBe('first')
+  })
+})
+
 describe('ParamsTab — non-primitive schema', () => {
   const complexTool = tool({
     type: 'object',

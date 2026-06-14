@@ -73,6 +73,48 @@ describe('ToolDetailView', () => {
     expect((screen.getByRole('textbox', { name: 'query' }) as HTMLInputElement).value).toBe('kept')
   })
 
+  it('pre-fills the Params form when a History entry is clicked', () => {
+    const record: ToolCallRecord = {
+      id: '1',
+      serverId: 'memory-mcp',
+      toolName: 'search_nodes',
+      args: { query: 'from history' },
+      status: 'success',
+      notifications: [],
+      durationMs: 9,
+      at: Date.now()
+    }
+    useServerStore.setState({ history: { [toolKey('memory-mcp', 'search_nodes')]: [record] } })
+    render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByText('{"query":"from history"}'))
+    expect((screen.getByRole('textbox', { name: 'query' }) as HTMLInputElement).value).toBe(
+      'from history'
+    )
+  })
+
+  it('makes History entries non-clickable when the tool takes no parameters', () => {
+    const noParamTool: Tool = {
+      name: 'ping',
+      inputSchema: { type: 'object', properties: {} }
+    }
+    const record: ToolCallRecord = {
+      id: '1',
+      serverId: 'memory-mcp',
+      toolName: 'ping',
+      args: {},
+      status: 'success',
+      notifications: [],
+      durationMs: 3,
+      at: Date.now()
+    }
+    useServerStore.setState({ history: { [toolKey('memory-mcp', 'ping')]: [record] } })
+    render(<ToolDetailView tool={noParamTool} serverId="memory-mcp" serverName="Memory MCP" />)
+    // The history entry is rendered but is not an interactive button — there is
+    // no form to pre-fill, so clicking does nothing.
+    expect(screen.getByText('no arguments')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /no arguments/ })).not.toBeInTheDocument()
+  })
+
   it('renders header badges for a tool that declares all annotation hints', () => {
     const annotated: Tool = {
       name: 'delete_node',

@@ -16,6 +16,10 @@ import {
 interface ParamsTabProps {
   tool: Tool
   serverId: string
+  // A request to pre-fill the form with a past call's arguments (raised by
+  // clicking a History entry). `nonce` changes per click so the same record can
+  // be re-applied after the user has edited the form.
+  prefill?: { args: Record<string, unknown>; nonce: number } | null
 }
 
 type Mode = 'form' | 'json'
@@ -38,7 +42,7 @@ function parseJsonObject(text: string):
   return { ok: true, value: parsed as Record<string, unknown> }
 }
 
-export function ParamsTab({ tool, serverId }: ParamsTabProps): React.JSX.Element {
+export function ParamsTab({ tool, serverId, prefill }: ParamsTabProps): React.JSX.Element {
   const analysis = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
   const { fields, hasNonPrimitive, isEmpty } = analysis
 
@@ -67,6 +71,18 @@ export function ParamsTab({ tool, serverId }: ParamsTabProps): React.JSX.Element
 
   function setField(name: string, value: FormValues[string]): void {
     setValues((prev) => ({ ...prev, [name]: value }))
+  }
+
+  // Clicking a History entry pre-fills the form with that call's arguments. We
+  // adjust state during render off the prefill nonce (React's "store previous
+  // prop" pattern) rather than in an effect. Only the form `values` are touched
+  // — via the same JSON → form mapping the toggle uses — so the Raw JSON
+  // mode/textarea, and thus the toggle, stay untouched, and nothing executes:
+  // the user still hits Execute manually.
+  const [prefillNonce, setPrefillNonce] = useState<number | undefined>(undefined)
+  if (prefill && prefill.nonce !== prefillNonce) {
+    setPrefillNonce(prefill.nonce)
+    setValues(jsonToValues(fields, prefill.args))
   }
 
   function handleToggleMode(toJson: boolean): void {
