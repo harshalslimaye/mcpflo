@@ -470,23 +470,22 @@ dot.green   : 7×7; bg green + 3px green-soft ring
 - History is **per-tool**: `history[toolKey(serverId, tool.name)]` (ToolDetailView line 29)
 - Click → `onSelectRecord` → prefill params (ToolDetailView lines 84–91)
 
-### Target (visual)
-- [ ] Rail width `w-80` (320px) → `w-[304px]`; bg → `bg-bg-surface`; `border-l border-border`
-- [ ] Header: `px-4 pt-[15px] pb-2.5 flex items-center gap-2.5`; title `text-[11px] font-bold tracking-[0.12em] text-fg-faint flex-1`; count pill (`font-mono text-[10px] text-fg-faint bg-bg-elevated border border-border-soft rounded-full px-[7px] py-px`); "clear" button (`font-mono text-[11px] text-fg-faint hover:text-accent`)
-- [ ] Scope toggle: `flex gap-[3px] mx-4 mb-2 bg-bg-elevated border border-border-soft rounded-[8px] p-[3px]`; buttons `flex-1 text-[11.5px] text-text-muted py-[5px] rounded-[6px]`; active `bg-accent-soft text-accent`
-- [ ] List: `flex-1 overflow-y-auto px-3 pt-0.5 pb-4`
-- [ ] Items → cards (replace `divide-y` rows): `border border-transparent rounded-[8px] px-[11px] py-[9px] mb-1 hover:bg-card-2 hover:border-border-soft`; active `bg-accent-soft border-accent-line`
-  - [ ] Top row: green dot (7×7 + ring) + tool name (`font-mono text-[12px] font-semibold text-text-primary flex-1 truncate`) + duration (`font-mono text-[10.5px] text-fg-faint`)
-  - [ ] Bottom row: payload (`font-mono text-[11px] text-code truncate opacity-85`)
-  - [ ] **Remove the timestamp** display
-- [ ] Error status → red dot (keep current error handling)
+### DECISION (settled): per-tool, no tabs
+Global history was considered and **rejected** — in a per-tool detail rail it's mostly
+redundant with the sidebar, the prefill loop only works cleanly for the current tool, and
+a cross-tool feed belongs in its own surface. So: keep the existing **per-tool** data,
+**no All/This tool toggle**, show a count + clear, restyle to cards. **Timestamp kept**
+(per-tool entries need a distinguisher — the mockup dropped it only because its global
+list was tool-tagged).
 
-### Target (data) — OPEN DECISION
-- [ ] **Per-tool (current) vs global (mockup)** — the `All / This tool` toggle and tool-tagged rows imply a **global** history. Resolve before coding:
-  - **Per-tool:** keep `serverStore` as-is; the scope toggle is cosmetic or "This tool" only; tool name in each card is redundant (could drop). Smallest change.
-  - **Global:** add a flattened, cross-tool history selector to `serverStore`; "All" shows every tool's calls (tool name meaningful), "This tool" filters to the selected one; clicking a *different* tool's entry would need to switch tools or be disabled. Larger change; matches mockup.
-- [ ] Preserve click-to-prefill; if global + "All", define behavior for foreign-tool clicks
-- [ ] "clear" action: wire to a store method (clear this tool's / all history) — confirm scope
+### Target — DONE
+- [x] Rail `w-[304px]`, `border-l border-border pl-6`
+- [x] Header: "HISTORY" title + count pill (`bg-bg-elevated border border-border-soft rounded-full`) + "clear" button (`hover:text-accent`)
+- [x] **No** scope toggle (per decision)
+- [x] Items → cards (`rounded-[8px] border border-transparent px-[11px] py-[9px]`, `hover:bg-card-2 hover:border-border-soft`); top row = green halo dot + timestamp + duration; bottom = payload in `text-code opacity-85`
+- [x] Error status → red dot; success dot uses `bg-green` + green-soft ring
+- [x] `clearHistory(serverId, toolName)` added to `serverStore`; wired to the clear button
+- [x] Click-to-prefill preserved; tests updated (`HistoryTab.test` dot class, new `ToolDetailView` count+clear test). Suite 518 green; verified live.
 
 ---
 

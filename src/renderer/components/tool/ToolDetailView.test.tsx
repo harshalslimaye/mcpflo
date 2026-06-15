@@ -65,6 +65,24 @@ describe('ToolDetailView', () => {
     expect(screen.getByText('{"query":"hi"}')).toBeInTheDocument()
   })
 
+  it('shows the history count and clears it with the clear button', () => {
+    const record: ToolCallRecord = {
+      id: '1',
+      serverId: 'memory-mcp',
+      toolName: 'search_nodes',
+      args: { query: 'hi' },
+      status: 'success',
+      notifications: [],
+      durationMs: 9,
+      at: Date.now()
+    }
+    useServerStore.setState({ history: { [toolKey('memory-mcp', 'search_nodes')]: [record] } })
+    render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    expect(screen.getByText('1')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'clear' }))
+    expect(screen.getByText('No calls yet.')).toBeInTheDocument()
+  })
+
   it('preserves Params form state across tab switches', () => {
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
     fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'kept' } })

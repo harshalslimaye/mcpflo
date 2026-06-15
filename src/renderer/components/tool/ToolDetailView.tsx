@@ -36,6 +36,7 @@ export function ToolDetailView({
   const latestCall = useServerStore((s) => s.history[key]?.[0])
   const liveNotifications = useServerStore((s) => s.liveNotifications[key])
   const executeTool = useServerStore((s) => s.executeTool)
+  const clearHistory = useServerStore((s) => s.clearHistory)
 
   // A tool with no parameters has no form to fill, so History entries aren't
   // clickable for it.
@@ -79,11 +80,27 @@ export function ToolDetailView({
             )}
           </div>
 
-          <aside className="w-80 shrink-0 flex flex-col gap-2 min-h-0">
-            <h2 className="text-text-muted text-xs uppercase tracking-wider font-medium shrink-0">
-              History
-            </h2>
-            <div className="border border-border rounded bg-bg-elevated flex-1 min-h-0 overflow-y-auto">
+          <aside className="w-[304px] shrink-0 flex flex-col min-h-0 border-l border-border pl-6">
+            <div className="flex items-center gap-2.5 px-1 pb-2.5 shrink-0">
+              <h2 className="flex-1 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-faint">
+                History
+              </h2>
+              {history.length > 0 && (
+                <>
+                  <span className="rounded-full border border-border-soft bg-bg-elevated px-[7px] py-px font-mono text-[10px] text-fg-faint">
+                    {history.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => clearHistory(serverId, tool.name)}
+                    className="font-mono text-[11px] text-fg-faint transition-colors hover:text-accent"
+                  >
+                    clear
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <HistoryTab
                 records={history}
                 onSelectRecord={
