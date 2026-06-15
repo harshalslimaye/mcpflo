@@ -493,17 +493,17 @@ list was tool-tagged).
 
 **Files:** `base.css`, optionally Electron main/window config
 
-### Scrollbars
-- [ ] `base.css` `::-webkit-scrollbar-thumb` currently uses `var(--accent)` (lines ~90–100).
-      Change to `var(--scroll)` / hover `var(--scroll-hover)` to match the mockup
-      (`width:10px; thumb radius 6px; 3px transparent inset border; track transparent`)
+### Scrollbars — DONE
+- [x] `base.css` `::-webkit-scrollbar-thumb` swapped from `var(--accent)` → `var(--scroll)`,
+      hover → `var(--scroll-hover)`. Verified live: thumb is now subtle grey (`#3a3a3a`), not coral.
 
-### Titlebar (optional — confirm first)
-- [ ] Mockup has an in-app 34px titlebar (`.titlebar`, traffic lights + centered "MCPFlo",
-      `bg:var(--panel-2)`, bottom border). The real app uses the **native** macOS title bar.
-- [ ] **Decision needed:** build a custom frameless titlebar (`titleBarStyle: 'hiddenInset'`
-      in the BrowserWindow + a draggable in-app bar) or skip and keep native. Default: **skip**
-      unless you want the exact chrome.
+### Titlebar — SKIPPED (decided)
+- App uses the **native** macOS title bar (already shows traffic lights + "MCPFlo"). Building a
+  frameless in-app titlebar adds window-management complexity for no functional gain — skipped.
+
+### Optional follow-ups (not spec-critical, deferred)
+- `Toggle` switch restyle to the mockup's 34×19 accent-soft track (shared with elicitation modal).
+- Result block cards — exact `.block`/`.block-tag` padding in `ContentBlockPreview`.
 
 ---
 

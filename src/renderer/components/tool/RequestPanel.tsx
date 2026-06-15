@@ -208,13 +208,12 @@ export function RequestPanel({
         )}
       </div>
 
-      {/* footer: status hint · ⌘↵ · Execute */}
+      {/* footer: status hint · Execute */}
       <div className="flex items-center gap-3 border-t border-border-soft bg-bg-elevated px-4 py-[13px]">
         <span className="font-mono text-[11.5px] text-fg-faint">
           {executeDisabled && !running ? 'Fill required fields' : 'Ready'}
         </span>
         <div className="flex-1" />
-        <span className="font-mono text-[11.5px] text-fg-faint">⌘↵</span>
         <button
           type="button"
           onClick={handleExecute}

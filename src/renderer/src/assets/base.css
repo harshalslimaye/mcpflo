@@ -122,8 +122,8 @@ body {
 }
 
 /* ── Scrollbars ──
-   Always visible, tinted to the theme palette. Electron is always Chromium,
-   so ::-webkit-scrollbar is reliable. */
+   Quiet, theme-tinted grey (the --scroll tokens), always visible. Electron is
+   always Chromium, so ::-webkit-scrollbar is reliable. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -135,7 +135,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--accent);
+  background-color: var(--scroll);
   border-radius: 9999px;
   /* Transparent border insets the visible bar from the container edge. */
   border: 3px solid transparent;
@@ -143,5 +143,5 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--accent-hover);
+  background-color: var(--scroll-hover);
 }
