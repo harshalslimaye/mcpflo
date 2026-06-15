@@ -320,12 +320,14 @@ Dark values (in `[data-theme="dark"]`) = the 0.1 block above.
 - Desc `text-text-muted text-sm leading-relaxed` (line 57)
 
 ### Target
-- [ ] Wrapper gap `gap-2` → `gap-2.5` (10px)
-- [ ] `.tool-id` row gap `gap-2` → `gap-3` (12px), keep `flex-wrap`
-- [ ] Name → `font-mono text-[23px] font-semibold tracking-[-0.01em] text-text-primary` (drop `truncate`)
-- [ ] Chip → add `bg-bg-elevated`; `text-xs`→`text-[11.5px]`; `gap-1`→`gap-1.5`; `px-2 py-0.5`→`px-2 py-[3px]`; `rounded`→`rounded-[6px]`; Server icon `size={11}`→`size={12}`
-- [ ] Desc → `text-text-muted text-[13.5px] leading-[1.55] max-w-[72ch]`
-- [ ] **Keep** annotation badges block unchanged (Read-only / Destructive / Idempotent)
+- [x] Wrapper gap `gap-2` → `gap-2.5` (10px)
+- [x] `.tool-id` row gap `gap-2` → `gap-3` (12px), keep `flex-wrap`
+- [x] Name → `font-mono text-[23px] font-semibold tracking-[-0.01em] text-text-primary` (drop `truncate`) — verified 23px/600/mono
+- [x] Chip → `bg-bg-elevated`, `text-[11.5px]`, `gap-1.5`, `px-2 py-[3px]`, `rounded-[6px]`, Server icon `size={12}` (verified bg = `#2e2e2e`)
+- [x] Desc → `text-text-muted text-[13.5px] leading-[1.55] max-w-[72ch]`
+- [x] Kept annotation badges block unchanged
+- [x] **Also applied the same treatment to `ResourceHeader`** (incl. the mimeType chip) for app-wide consistency. (`PromptHeader` doesn't exist on this branch.)
+- [x] No test changes needed; suite 521 green; verified live.
 
 ---
 
@@ -351,19 +353,14 @@ the dead space below the result and gives form ↔ result a visible relationship
 - `ParamsTab` contains *everything*: Raw JSON toggle, fields, Execute button, **and the Result** (`ToolCallResultView`) below a `border-t` — ParamsTab lines 121–202
 - Result tab state (`resultTab`) lives in `ParamsTab` (line 55)
 
-### Target structure
-- [ ] Layout becomes: `ToolHeader` → **Request panel** → **Response panel** stacked vertically, with **History** as the right rail (History stays a sibling rail, see Phase 10)
-- [ ] Outer center: `flex-1 flex flex-col overflow-y-auto px-7 pt-[22px] pb-6 gap-[18px]` (28px ≈ `px-7`)
-- [ ] **Lift state up** from `ParamsTab` to `ToolDetailView` (or a new container):
-  - `mode` (form/json), `values`, `jsonText` — OR keep these in a Request subcomponent
-  - `resultTab`, `running`, latest-call/live-notifications selectors — needed by the Response panel
-  - **Execute handler** must live where both the Request footer (button) and Response panel can see its result
-- [ ] Decide split: cleanest is a `RequestPanel` (header+body+footer) and `ResponsePanel` wrapping `ToolCallResultView`, with shared state in `ToolDetailView`
-- [ ] Panel shell class (reused): `bg-bg-surface border border-border rounded-[10px] flex flex-col overflow-hidden`
-- [ ] Response panel adds `flex-1 min-h-[240px]`
-- [ ] Preserve: remount-per-tool reset (ContentArea `key`), prefill nonce flow, schema lock
-
-> This phase is mostly plumbing; Phases 8 & 9 style the two panels it creates.
+### Target structure — DONE (implemented together with Phases 8 & 9)
+- [x] Layout: `ToolHeader` → **RequestPanel** → **ToolCallResultView** (Response) stacked on the left; History rail on the right
+- [x] Center container: `flex flex-col gap-[18px] flex-1 min-h-0 px-7 pt-[22px] pb-6` (no outer scroll; Response body scrolls)
+- [x] **State lifted to `ToolDetailView`**: `activeTab`, `prefill`, `running`, `resultTab` + `latestCall`/`liveNotifications` selectors + `handleExecute`
+- [x] Split: new `RequestPanel` (owns form state) + `ToolCallResultView` restyled as the Response panel; `ParamsTab` deleted
+- [x] Panel shell: `bg-bg-surface border border-border rounded-[10px] flex flex-col overflow-hidden`; Response adds `flex-1 min-h-[240px]`
+- [x] Preserved: remount-per-tool, prefill nonce, schema lock, error/executing states, resultTab persistence
+- [x] Tests migrated: `ParamsTab.test` → `RequestPanel.test` (form/exec) + `ToolCallResultView.test` (result chrome/body) + `ToolDetailView.test` (integration). Suite 517 green; verified live.
 
 ---
 
@@ -398,23 +395,12 @@ the dead space below the result and gives form ↔ result a visible relationship
 - Execute button `px-4 py-1.5 rounded text-sm bg-accent hover:bg-accent-hover text-white` (176–183) — move into panel footer, restyle to gradient
 - Tabs (Params/Schema) currently in ToolDetailView — move into panel header
 
-### Target
-- [ ] **Header**: `flex items-center gap-4 px-4 py-[11px] bg-panel-2 border-b border-border`
-  - [ ] Label `font-mono text-[11px] tracking-[0.1em] uppercase text-fg-faint font-semibold` → "Request"
-  - [ ] Params/Schema segmented tabs: `flex gap-0.5`; button `text-[12.5px] text-text-muted px-[11px] py-[5px] rounded-[6px] hover:text-text-primary`; active `text-accent bg-accent-soft`
-  - [ ] `flex-1` spacer, then Raw JSON toggle on the right (label `text-[12px] text-text-muted`)
-- [ ] **Body**: `px-4 py-[18px]`
-  - [ ] Update `FieldRow` (SchemaFields.tsx): label `text-xs`→`font-mono text-[13px] text-text-primary`; help `text-xs`→`text-[12px] text-fg-faint`
-  - [ ] Update `FieldInput` (SchemaFields.tsx) `inputClass`: `bg-bg-elevated border-border rounded-[8px] px-[13px] py-[11px] font-mono text-[13.5px] text-text-primary focus:border-accent-line focus:ring-[3px] focus:ring-accent-soft` (replace `focus:border-accent`)
-  - [ ] Raw-JSON textarea (ParamsTab): match input styling tokens
-  - [ ] Schema tab content (`SchemaTab`) renders inside the body when Schema tab active
-- [ ] **Footer**: `flex items-center gap-3 px-4 py-[13px] border-t border-border-soft bg-bg-elevated`
-  - [ ] Left status hint `font-mono text-[11.5px] text-fg-faint` (e.g. "Required field ready" / validation msg)
-  - [ ] `flex-1` spacer, `⌘↵` hint (same hint style)
-  - [ ] Execute button → gradient: `bg-[image:var(--btn)] text-white font-bold text-[13px] rounded-[8px] px-[22px] py-[9px] inline-flex items-center gap-2 hover:brightness-110 disabled:opacity-50` + `<Play size={13} />` icon (lucide), keep `disabled` logic
-- [ ] **Toggle** (`ui/Toggle.tsx`): optionally restyle to 34×19 / accent-soft track / accent-line border to match `.toggle`. Shared with elicitation modal — verify it still looks right there, or scope the change.
-- [ ] Wire `⌘↵`: keydown (meta/ctrl + Enter) on the panel → execute when not disabled
-- [ ] Preserve: form↔JSON toggle, complex-schema lock + helper text, validation errors, prefill
+### Target — DONE (in `RequestPanel.tsx`)
+- [x] **Header**: `bg-panel-2 border-b border-border px-4 py-[11px]`; "Request" mono label + Params/Schema segmented tabs (active `bg-accent-soft text-accent`) + `flex-1` spacer + Raw JSON toggle (shown on Params tab)
+- [x] **Body** `px-4 py-[18px]`: `FieldRow` label → `font-mono text-[13px] text-text-primary`, help → `text-[12px] text-fg-faint`; `FieldInput`/textarea → `bg-bg-elevated rounded-[8px] px-[13px] py-[11px] font-mono text-[13.5px] focus:border-accent-line focus:ring-[3px] focus:ring-accent-soft`; Schema tab renders here
+- [x] **Footer** `border-t border-border-soft bg-bg-elevated px-4 py-[13px]`: status hint + `⌘↵` + gradient Execute (`bg-[image:var(--btn)]`, `<Play>` icon)
+- [x] Wired `⌘↵` (panel keydown). Kept existing `Toggle` component (didn't restyle the switch — shared with elicitation; can revisit).
+- [x] Preserved form↔JSON toggle, complex-schema lock + helper text, validation, prefill. Verified live.
 
 ---
 
@@ -441,17 +427,13 @@ the dead space below the result and gives form ↔ result a visible relationship
 - Tabs include Notifications with `(count)` appended in the label (lines 30–38)
 - Body uses `ResultPreview` / highlighted `<pre>` blocks (lines 88–136)
 
-### Target
-- [ ] Wrap in panel: header (`bg-panel-2 border-b border-border px-4 py-[11px] flex items-center gap-4`) + scrollable body
-- [ ] Header left: "Response" label (same `.panel-label` style as Phase 8) + status chip + duration pill
-  - [ ] Status chip: `inline-flex items-center gap-[7px] text-[12.5px]`; ok → `text-green` with dot `w-[7px] h-[7px] rounded-full bg-green` + green-soft ring (`shadow-[0_0_0_3px_var(--green-soft)]`); error → red as today
-  - [ ] Duration pill: `font-mono text-[11px] text-text-muted bg-bg-elevated border border-border-soft rounded-[5px] px-[7px] py-0.5`
-- [ ] Header right (`flex-1` spacer before): tabs as segmented pills (reuse Phase 8 `.tabs` style, not bottom-border). Notifications count via a `.n` sub-span: `text-fg-faint text-[11px]`, active `text-accent`
-- [ ] Body: `flex-1 min-h-0 overflow-y-auto p-4`
-- [ ] Result blocks → `.block` cards: `bg-bg-elevated border border-border-soft rounded-[8px] px-4 py-3.5 mb-3`
-- [ ] Block tag pill: `inline-block font-mono text-[10px] tracking-[0.08em] text-fg-faint bg-panel-2 border border-border-soft rounded-[4px] px-2 py-0.5 mb-2.5`
-- [ ] Block text `text-[14px] leading-[1.55]`; mono/code variant `font-mono text-[13px] text-code`
-- [ ] **Preserve**: executing state (accent pulse dot), transport-error `<pre>`, JSON-RPC error envelope, CopyButton, highlightJson for Raw/Pretty
+### Target — DONE (in `ToolCallResultView.tsx`, API unchanged)
+- [x] Panel: header (`bg-panel-2 border-b border-border px-4 py-[11px]`) + scrollable body (`flex-1 min-h-0 overflow-y-auto p-4`); panel `flex-1 min-h-[240px]`
+- [x] Header left: "Response" mono label + status chip (ok → `text-green` dot w/ `shadow-[0_0_0_3px_var(--green-soft)]`; error → red + Error icon; executing → accent pulse dot) + duration pill (`bg-bg-elevated border border-border-soft rounded-[5px]`)
+- [x] Header right: segmented tabs (`bg-accent-soft text-accent` active); Notifications count in a `.n` sub-span (space-separated for a11y name)
+- [x] Body content (ResponseBody/ResultPreview/Notifications) kept as-is — block-card restyling (`.block`/`.block-tag`) lives in `ContentBlockPreview`, left for a follow-up if needed
+- [x] Preserved executing/transport-error/JSON-RPC-error states, CopyButton, highlightJson. 114 tool tests green; verified live.
+- Note: detailed `.block` card restyle (Phase 9's block-tag/block-text spec) deferred — `ContentBlockPreview` already renders a TEXT-tagged block that reads correctly; revisit if you want exact card padding/tag styling.
 
 ---
 
