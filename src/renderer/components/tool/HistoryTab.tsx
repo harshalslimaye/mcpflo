@@ -24,21 +24,26 @@ export function HistoryTab({ records = [], onSelectRecord }: HistoryTabProps): R
   }
 
   return (
-    <ul className="flex flex-col divide-y divide-border">
+    <ul className="flex flex-col gap-1 px-1 pb-4">
       {records.map((record) => {
+        const isError = record.status === 'error'
         const content = (
           <>
-            <div className="flex items-center gap-2 text-xs">
+            <div className="mb-[5px] flex items-center gap-2">
               <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  record.status === 'error' ? 'bg-red-500' : 'bg-green-500'
+                className={`h-[7px] w-[7px] shrink-0 rounded-full ${
+                  isError ? 'bg-red-500' : 'bg-green shadow-[0_0_0_3px_var(--green-soft)]'
                 }`}
               />
-              <span className="text-text-primary">{new Date(record.at).toLocaleTimeString()}</span>
-              <span className="ml-auto text-text-muted">{record.durationMs} ms</span>
+              <span className="flex-1 truncate font-mono text-[11px] text-text-primary">
+                {new Date(record.at).toLocaleTimeString()}
+              </span>
+              <span className="shrink-0 font-mono text-[10.5px] text-fg-faint">
+                {record.durationMs} ms
+              </span>
             </div>
             <span
-              className="text-xs text-text-muted font-mono truncate"
+              className="block truncate font-mono text-[11px] text-code opacity-85"
               title={summarizeArgs(record.args)}
             >
               {summarizeArgs(record.args)}
@@ -46,18 +51,20 @@ export function HistoryTab({ records = [], onSelectRecord }: HistoryTabProps): R
           </>
         )
 
+        const cardClass = 'rounded-[8px] border border-transparent px-[11px] py-[9px]'
+
         return (
           <li key={record.id}>
             {onSelectRecord ? (
               <button
                 type="button"
                 onClick={() => onSelectRecord(record)}
-                className="w-full flex flex-col gap-1 px-3 py-2 text-left hover:bg-bg-elevated cursor-pointer transition-colors"
+                className={`${cardClass} w-full cursor-pointer text-left transition-colors hover:border-border-soft hover:bg-card-2`}
               >
                 {content}
               </button>
             ) : (
-              <div className="flex flex-col gap-1 px-3 py-2">{content}</div>
+              <div className={cardClass}>{content}</div>
             )}
           </li>
         )

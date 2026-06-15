@@ -108,6 +108,7 @@ interface ServerStore {
   selectTool: (serverId: string, toolName: string) => void
   selectResource: (serverId: string, uri: string) => void
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
+  clearHistory: (serverId: string, toolName: string) => void
   readResource: (serverId: string, uri: string) => Promise<void>
   enqueueElicitation: (event: ElicitationRequestEvent) => void
   removeElicitation: (elicitationId: string) => void
@@ -220,6 +221,15 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         history: { ...state.history, [key]: [record, ...(state.history[key] ?? [])] },
         liveNotifications: live
       }
+    })
+  },
+
+  clearHistory: (serverId, toolName) => {
+    const key = toolKey(serverId, toolName)
+    set((state) => {
+      const next = { ...state.history }
+      delete next[key]
+      return { history: next }
     })
   },
 

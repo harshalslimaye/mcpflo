@@ -12,13 +12,13 @@ export function FieldRow({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs text-text-muted font-mono">
+    <div className="flex flex-col gap-1.5">
+      <label className="font-mono text-[13px] text-text-primary">
         {field.title ?? field.name}
         {field.required && <span className="text-accent ml-0.5">*</span>}
       </label>
       {field.description && (
-        <p className="text-xs text-text-muted opacity-70 leading-snug">{field.description}</p>
+        <p className="text-[12px] text-fg-faint leading-snug">{field.description}</p>
       )}
       {children}
     </div>
@@ -35,7 +35,7 @@ export function FieldInput({
   onChange: (value: FormValues[string]) => void
 }): React.JSX.Element {
   const inputClass =
-    'w-full px-3 py-1.5 rounded border border-border bg-bg-elevated text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors'
+    'w-full rounded-[8px] border border-border bg-bg-elevated px-[13px] py-[11px] font-mono text-[13.5px] text-text-primary placeholder:text-text-muted outline-none transition-colors focus:border-accent-line focus:ring-[3px] focus:ring-accent-soft'
 
   if (field.kind === 'boolean') {
     return <Toggle checked={value === true} onChange={onChange} aria-label={field.name} />
