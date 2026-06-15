@@ -15,7 +15,7 @@ interface ServerRowItemProps {
 }
 
 const STATUS_DOT: Record<ServerStatus, string> = {
-  connected: 'bg-green-500',
+  connected: 'bg-green shadow-[0_0_0_3px_var(--green-soft)]',
   connecting: 'bg-yellow-400 animate-pulse',
   disconnected: 'bg-zinc-500',
   error: 'bg-red-500'
@@ -41,7 +41,7 @@ export function ServerRowItem({
     <button
       onClick={disabled ? undefined : onToggle}
       disabled={disabled}
-      className={`group w-full flex items-center gap-1.5 py-1 pr-2 text-left transition-colors
+      className={`group w-full flex items-center gap-1.5 py-1 pr-2 text-left transition-colors rounded-[5px]
         ${indent}
         ${
           disabled
@@ -57,7 +57,11 @@ export function ServerRowItem({
       <span className={`shrink-0 ${depth === 0 ? 'text-text-primary' : 'text-text-muted'}`}>
         {icon}
       </span>
-      <span className={`flex-1 truncate text-xs ${depth === 0 ? 'font-medium' : ''}`}>{label}</span>
+      <span
+        className={`flex-1 truncate ${depth === 0 ? 'text-[13.5px] font-semibold' : 'text-xs'}`}
+      >
+        {label}
+      </span>
 
       {onRefresh && (
         <span
@@ -109,7 +113,7 @@ export function ServerRowItem({
       {status && (
         <span
           title={status}
-          className={`shrink-0 w-1.5 h-1.5 rounded-full ${STATUS_DOT[status]}`}
+          className={`shrink-0 w-[7px] h-[7px] rounded-full ${STATUS_DOT[status]}`}
         />
       )}
       {count !== undefined && <span className="text-xs text-text-muted">{count}</span>}

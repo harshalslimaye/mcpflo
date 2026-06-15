@@ -56,7 +56,7 @@ describe('SecondarySidebar', () => {
 
   it('renders Add Server button', () => {
     render(<SecondarySidebar />)
-    expect(screen.getByText('+ Add Server')).toBeInTheDocument()
+    expect(screen.getByText('Add Server')).toBeInTheDocument()
   })
 
   it('renders all server names', () => {
@@ -133,15 +133,72 @@ describe('SecondarySidebar', () => {
     expect(screen.queryByText('Memory MCP')).not.toBeInTheDocument()
   })
 
+  it('renders the filter input', () => {
+    render(<SecondarySidebar />)
+    expect(screen.getByPlaceholderText('Filter tools, resources…')).toBeInTheDocument()
+  })
+
+  it('filters tools by name and auto-expands matches', () => {
+    render(<SecondarySidebar />)
+    fireEvent.change(screen.getByPlaceholderText('Filter tools, resources…'), {
+      target: { value: 'create' }
+    })
+    // No manual expansion clicks — filtering force-expands matching servers/groups.
+    expect(screen.getByText('create_entities')).toBeInTheDocument()
+    expect(screen.queryByText('search_nodes')).not.toBeInTheDocument()
+  })
+
+  it('matches resources too', () => {
+    render(<SecondarySidebar />)
+    fireEvent.change(screen.getByPlaceholderText('Filter tools, resources…'), {
+      target: { value: 'graph' }
+    })
+    expect(screen.getByText('Graph')).toBeInTheDocument()
+  })
+
+  it('hides servers with no matching capabilities while filtering', () => {
+    render(<SecondarySidebar />)
+    fireEvent.change(screen.getByPlaceholderText('Filter tools, resources…'), {
+      target: { value: 'create' }
+    })
+    expect(screen.queryByText('Slack MCP')).not.toBeInTheDocument()
+  })
+
+  it('shows nothing when the filter matches no capabilities', () => {
+    render(<SecondarySidebar />)
+    fireEvent.change(screen.getByPlaceholderText('Filter tools, resources…'), {
+      target: { value: 'zzz-no-match' }
+    })
+    expect(screen.queryByText('create_entities')).not.toBeInTheDocument()
+    expect(screen.queryByText('Memory MCP')).not.toBeInTheDocument()
+  })
+
+  it('restores the collapsed tree when the filter is cleared', () => {
+    render(<SecondarySidebar />)
+    const input = screen.getByPlaceholderText('Filter tools, resources…')
+    fireEvent.change(input, { target: { value: 'create' } })
+    fireEvent.change(input, { target: { value: '' } })
+    expect(screen.getByText('Memory MCP')).toBeInTheDocument()
+    // Back to default (collapsed) state — groups not shown.
+    expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+  })
+
+  it('focuses the filter input on ⌘K', () => {
+    render(<SecondarySidebar />)
+    const input = screen.getByPlaceholderText('Filter tools, resources…')
+    fireEvent.keyDown(window, { key: 'k', metaKey: true })
+    expect(input).toHaveFocus()
+  })
+
   it('opens AddServerModal when Add Server is clicked', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('+ Add Server'))
+    fireEvent.click(screen.getByText('Add Server'))
     expect(screen.getByText('Add MCP Server')).toBeInTheDocument()
   })
 
   it('closes AddServerModal when modal is dismissed', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('+ Add Server'))
+    fireEvent.click(screen.getByText('Add Server'))
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByText('Add MCP Server')).not.toBeInTheDocument()
   })

@@ -12,6 +12,21 @@
   --text-muted:   #666666;
   --accent:       #cc785c;
   --accent-hover: #b8674d;
+
+  /* derived tokens (redesign) */
+  --rail:         #ece6dc;
+  --panel-2:      #f3eee6;
+  --card-2:       #e5dfd4;
+  --border-soft:  #ece7df;
+  --fg-faint:     #999999;
+  --accent-soft:  rgba(204, 120, 92, 0.13);
+  --accent-line:  rgba(204, 120, 92, 0.45);
+  --green:        #3f9d63;
+  --green-soft:   rgba(63, 157, 99, 0.14);
+  --code:         #b8674d;
+  --scroll:       #d8d2c6;
+  --scroll-hover: #c8c2b6;
+  --btn:          linear-gradient(180deg, #cc785c, #b8674d);
 }
 
 /* ── Dark theme ── */
@@ -24,6 +39,21 @@
   --text-muted:   #999999;
   --accent:       #cc785c;
   --accent-hover: #d4896b;
+
+  /* derived tokens (redesign) */
+  --rail:         #141414;
+  --panel-2:      #2a2a2a;
+  --card-2:       #343434;
+  --border-soft:  #2d2d2d;
+  --fg-faint:     #6f6f6f;
+  --accent-soft:  rgba(204, 120, 92, 0.15);
+  --accent-line:  rgba(204, 120, 92, 0.50);
+  --green:        #5cc77d;
+  --green-soft:   rgba(92, 199, 125, 0.14);
+  --code:         #d4896b;
+  --scroll:       #3a3a3a;
+  --scroll-hover: #4a4a4a;
+  --btn:          linear-gradient(180deg, #d4896b, #cc785c);
 }
 
 /* ── Tailwind v4 theme mapping ── */
@@ -36,15 +66,32 @@
   --color-text-muted:   var(--text-muted);
   --color-accent:       var(--accent);
   --color-accent-hover: var(--accent-hover);
+
+  /* derived tokens (redesign) */
+  --color-rail:         var(--rail);
+  --color-panel-2:      var(--panel-2);
+  --color-card-2:       var(--card-2);
+  --color-border-soft:  var(--border-soft);
+  --color-fg-faint:     var(--fg-faint);
+  --color-accent-soft:  var(--accent-soft);
+  --color-accent-line:  var(--accent-line);
+  --color-green:        var(--green);
+  --color-green-soft:   var(--green-soft);
+  --color-code:         var(--code);
 }
 
-/* ── Base reset ── */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  font-weight: normal;
+/* ── Base reset ──
+   Must live in @layer base: an unlayered `* { margin: 0 }` outranks Tailwind's
+   layered utilities (unlayered always beats layered in the cascade), which would
+   silently kill every `m*` / `-m*` margin utility app-wide. */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    font-weight: normal;
+  }
 }
 
 ul {

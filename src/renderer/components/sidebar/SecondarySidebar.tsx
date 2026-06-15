@@ -1,9 +1,20 @@
-import { useState } from 'react'
-import { Server, Wrench, Database, MessageSquare, Zap, FileText, Hash } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Server,
+  Wrench,
+  Database,
+  MessageSquare,
+  Zap,
+  FileText,
+  Hash,
+  Plus,
+  Search
+} from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { AddServerModal } from '../servers/AddServerModal'
 import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { ServerRowItem } from './ServerRowItem'
+import { CategoryRow } from './CategoryRow'
 import { CapabilityItem } from './CapabilityItem'
 import type { SelectedTool, SelectedResource } from '../../stores/serverStore'
 import type { MCPServer, Tool, Resource, Prompt } from '../../../shared/mcp.types'
@@ -14,19 +25,28 @@ const GROUP_META: Record<
   GroupKey,
   { label: string; icon: React.ReactNode; itemIcon: React.ReactNode }
 > = {
-  tools: { label: 'Tools', icon: <Wrench size={13} />, itemIcon: <Zap size={11} /> },
-  resources: { label: 'Resources', icon: <Database size={13} />, itemIcon: <FileText size={11} /> },
-  prompts: { label: 'Prompts', icon: <MessageSquare size={13} />, itemIcon: <Hash size={11} /> }
+  tools: { label: 'Tools', icon: <Wrench size={13} />, itemIcon: <Zap size={13} /> },
+  resources: { label: 'Resources', icon: <Database size={13} />, itemIcon: <FileText size={13} /> },
+  prompts: { label: 'Prompts', icon: <MessageSquare size={13} />, itemIcon: <Hash size={13} /> }
 }
 
 function groupId(serverId: string, group: GroupKey): string {
   return `${serverId}-${group}`
 }
 
+// Display label used both for rendering and for filter matching. Tools/prompts
+// carry a name; resources fall back to their uri.
+function itemLabel(item: Tool | Resource | Prompt): string {
+  const uri = 'uri' in item ? item.uri : undefined
+  return item.name ?? uri ?? ''
+}
+
 interface ServerTreeProps {
   server: MCPServer
   expanded: boolean
   expandedGroups: Set<string>
+  // Normalized (trimmed, lowercased) filter query. Empty means no filtering.
+  filter: string
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
   onToggleServer: () => void
@@ -41,6 +61,7 @@ function ServerTree({
   server,
   expanded,
   expandedGroups,
+  filter,
   selectedTool,
   selectedResource,
   onToggleServer,
@@ -49,45 +70,62 @@ function ServerTree({
   onSelectResource,
   onRefresh,
   onDelete
-}: ServerTreeProps): React.JSX.Element {
-  const groups: { key: GroupKey; items: (Tool | Resource | Prompt)[] }[] = [
+}: ServerTreeProps): React.JSX.Element | null {
+  const filtering = filter.length > 0
+
+  const baseGroups = [
     { key: 'tools', items: server.tools },
     { key: 'resources', items: server.resources },
     { key: 'prompts', items: server.prompts }
-  ]
+  ] satisfies { key: GroupKey; items: (Tool | Resource | Prompt)[] }[]
+
+  const groups = baseGroups.map((g) => ({
+    ...g,
+    visible: filtering
+      ? g.items.filter((i) => itemLabel(i).toLowerCase().includes(filter))
+      : g.items
+  }))
+
+  // While filtering, drop whole servers that have no matching capabilities.
+  if (filtering && groups.every((g) => g.visible.length === 0)) return null
+
+  // Matching servers/groups display expanded regardless of the user's manual
+  // expansion state; clearing the filter restores it (we never mutate the Sets).
+  const serverExpanded = filtering || expanded
 
   return (
-    <div className="border-t border-border">
+    <div>
       <ServerRowItem
         icon={<Server size={13} />}
         label={server.name}
         depth={0}
-        expanded={expanded}
+        expanded={serverExpanded}
         status={server.status}
         onToggle={onToggleServer}
         onRefresh={onRefresh}
         onDelete={onDelete}
       />
 
-      {expanded &&
-        groups.map(({ key, items }) => {
+      {serverExpanded &&
+        groups.map(({ key, items, visible }) => {
+          // While filtering, only show groups that have matches.
+          if (filtering && visible.length === 0) return null
           const meta = GROUP_META[key]
-          const isGroupExpanded = expandedGroups.has(groupId(server.id, key))
+          const isGroupExpanded = filtering ? true : expandedGroups.has(groupId(server.id, key))
 
           return (
             <div key={key}>
-              <ServerRowItem
+              <CategoryRow
                 icon={meta.icon}
                 label={meta.label}
                 count={items.length}
-                depth={1}
                 expanded={isGroupExpanded}
                 disabled={items.length === 0}
                 onToggle={() => onToggleGroup(key)}
               />
 
               {isGroupExpanded &&
-                items.map((item) => {
+                visible.map((item) => {
                   const uri = 'uri' in item ? item.uri : undefined
                   const label = item.name ?? uri ?? ''
                   // Tools and resources open a detail view; prompts stay
@@ -133,6 +171,22 @@ export function SecondarySidebar(): React.JSX.Element {
   const [pendingDelete, setPendingDelete] = useState<MCPServer | null>(null)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [filter, setFilter] = useState('')
+  const filterInputRef = useRef<HTMLInputElement>(null)
+  // Normalized query handed to each tree; empty means no filtering.
+  const query = filter.trim().toLowerCase()
+
+  // ⌘K / Ctrl+K focuses the filter input from anywhere in the app.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent): void {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        filterInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   function toggleServer(id: string): void {
     const willExpand = !expandedServers.has(id)
@@ -162,39 +216,61 @@ export function SecondarySidebar(): React.JSX.Element {
 
   return (
     <>
-      <div className="flex flex-col w-60 h-full bg-bg-primary border-r border-border shrink-0 overflow-y-auto">
-        <div className="px-3 pt-4 pb-2">
-          <span className="text-text-muted text-xs uppercase tracking-wider font-medium">
+      <div className="flex flex-col w-[268px] h-full bg-bg-surface border-r border-border shrink-0">
+        <div className="px-4 pt-4 pb-2.5">
+          <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-fg-faint mb-3">
             MCP Servers
-          </span>
-        </div>
-
-        <div className="px-3 pb-3">
+          </h2>
           <button
             onClick={() => setShowAddModal(true)}
-            className="text-accent text-sm hover:text-accent-hover transition-colors"
+            className="flex items-center gap-[7px] py-1 text-accent text-[13px] font-semibold hover:text-accent-hover transition-colors"
           >
-            + Add Server
+            <Plus size={14} />
+            Add Server
           </button>
         </div>
 
-        <div className="flex flex-col">
-          {servers.map((server) => (
-            <ServerTree
-              key={server.id}
-              server={server}
-              expanded={expandedServers.has(server.id)}
-              expandedGroups={expandedGroups}
-              selectedTool={selectedTool}
-              selectedResource={selectedResource}
-              onToggleServer={() => toggleServer(server.id)}
-              onToggleGroup={(group) => toggleGroup(server.id, group)}
-              onSelectTool={(toolName) => selectTool(server.id, toolName)}
-              onSelectResource={(uri) => selectResource(server.id, uri)}
-              onRefresh={() => refreshCapabilities(server.id)}
-              onDelete={() => setPendingDelete(server)}
-            />
-          ))}
+        <div className="mx-3 mt-1 mb-3 flex items-center gap-2 rounded-[8px] border border-border bg-bg-elevated px-2.5 py-[7px]">
+          <Search size={13} className="shrink-0 text-fg-faint" />
+          <input
+            ref={filterInputRef}
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setFilter('')
+                e.currentTarget.blur()
+              }
+            }}
+            placeholder="Filter tools, resources…"
+            className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-text-primary outline-none placeholder:text-fg-faint"
+          />
+          <kbd className="rounded-[4px] border border-border px-1.5 py-px font-mono text-[10px] text-fg-faint">
+            ⌘K
+          </kbd>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="flex flex-col px-3 pt-0.5 pb-4">
+            {servers.map((server) => (
+              <ServerTree
+                key={server.id}
+                server={server}
+                expanded={expandedServers.has(server.id)}
+                expandedGroups={expandedGroups}
+                filter={query}
+                selectedTool={selectedTool}
+                selectedResource={selectedResource}
+                onToggleServer={() => toggleServer(server.id)}
+                onToggleGroup={(group) => toggleGroup(server.id, group)}
+                onSelectTool={(toolName) => selectTool(server.id, toolName)}
+                onSelectResource={(uri) => selectResource(server.id, uri)}
+                onRefresh={() => refreshCapabilities(server.id)}
+                onDelete={() => setPendingDelete(server)}
+              />
+            ))}
+          </div>
         </div>
       </div>
 

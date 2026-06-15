@@ -56,14 +56,14 @@ describe('ServerRowItem', () => {
     expect(container.firstChild).toHaveClass('pl-6')
   })
 
-  it('applies font-medium at depth 0', () => {
+  it('applies font-semibold at depth 0', () => {
     render(<ServerRowItem {...defaultProps} depth={0} />)
-    expect(screen.getByText('Memory MCP')).toHaveClass('font-medium')
+    expect(screen.getByText('Memory MCP')).toHaveClass('font-semibold')
   })
 
-  it('does not apply font-medium at depth 1', () => {
+  it('does not apply font-semibold at depth 1', () => {
     render(<ServerRowItem {...defaultProps} depth={1} />)
-    expect(screen.getByText('Memory MCP')).not.toHaveClass('font-medium')
+    expect(screen.getByText('Memory MCP')).not.toHaveClass('font-semibold')
   })
 
   it('renders status dot when status is provided', () => {
