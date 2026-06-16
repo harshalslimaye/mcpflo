@@ -3,10 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <title>MCPFlo</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+         `script-src` allows `unsafe-eval` because the JSON-Schema validator
+         (AJV, via @rjsf/validator-ajv8) compiles validators at runtime with
+         `new Function`. Tool schemas arrive dynamically from MCP servers, so
+         build-time precompilation isn't possible. The renderer otherwise loads
+         only local bundled code. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
   </head>
 
