@@ -82,7 +82,7 @@ describe('ResourceDetailView', () => {
     renderView()
     expect(screen.getByText('Success')).toBeInTheDocument()
     expect(screen.getByText('# Title')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Preview' }).className).toContain('border-accent')
+    expect(screen.getByRole('button', { name: 'Preview' }).className).toContain('text-accent')
   })
 
   it('renders an error result from history', () => {
@@ -104,8 +104,17 @@ describe('ResourceDetailView', () => {
     expect(screen.getByText('No reads yet.')).toBeInTheDocument()
   })
 
-  it('hides the result section until a read has happened', () => {
+  it('hides the result panel until a read has happened', () => {
     renderView()
-    expect(screen.queryByText('Result')).not.toBeInTheDocument()
+    expect(screen.queryByText('Response')).not.toBeInTheDocument()
+  })
+
+  it('clears the read history when clear is clicked', () => {
+    useServerStore.setState({
+      resourceHistory: { [resourceKey('srv', resource.uri)]: [successRecord()] }
+    })
+    renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'clear' }))
+    expect(screen.getByText('No reads yet.')).toBeInTheDocument()
   })
 })
