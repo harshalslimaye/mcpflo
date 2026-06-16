@@ -33,11 +33,13 @@ function tryFormatJson(text: string): string | null {
   }
 }
 
+// No inner max-height/overflow: the panel body is the single scroll container,
+// so Preview / Raw / Pretty all scroll identically.
 const errorBox =
-  'font-mono text-xs leading-relaxed border border-red-500/40 bg-red-500/5 text-red-500 rounded p-3 overflow-auto max-h-80 whitespace-pre-wrap break-words'
+  'font-mono text-xs leading-relaxed border border-red-500/40 bg-red-500/5 text-red-500 rounded p-3 whitespace-pre-wrap break-words'
 
 const codeBox =
-  'font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 overflow-auto max-h-80 whitespace-pre-wrap break-words text-text-primary'
+  'font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 whitespace-pre-wrap break-words text-text-primary'
 
 function MetaLine({ content }: { content: ResourceContent }): React.JSX.Element {
   return (
@@ -131,49 +133,71 @@ export function ResourceContentView({
     { key: 'pretty', label: 'Pretty' }
   ]
 
-  const statusLine = record ? (
-    <div className="flex items-center gap-2 text-xs">
-      <span className={`w-1.5 h-1.5 rounded-full ${isError ? 'bg-red-500' : 'bg-green-500'}`} />
-      {isError && <AlertCircle size={12} className="text-red-500" aria-label="Error icon" />}
-      <span className={isError ? 'text-red-500' : 'text-text-primary'}>
-        {isError ? 'Error' : 'Success'}
-      </span>
-      <span className="text-text-muted">{record.durationMs} ms</span>
-    </div>
-  ) : (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-      <span className="text-text-muted">Reading…</span>
-    </div>
-  )
-
   return (
-    <div className="flex flex-col gap-3">
-      {statusLine}
+    <section className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
+      {/* header: RESPONSE · status · duration · tabs */}
+      <div className="flex items-center gap-4 border-b border-border bg-panel-2 px-4 py-[11px]">
+        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-faint">
+          Response
+        </span>
 
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => onTabChange(t.key)}
-            className={`px-2.5 py-1.5 text-xs transition-colors border-b-2 -mb-px ${
-              tab === t.key
-                ? 'border-accent text-text-primary'
-                : 'border-transparent text-text-muted hover:text-text-primary'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+        {record ? (
+          <>
+            <span
+              className={`inline-flex items-center gap-[7px] text-[12.5px] ${
+                isError ? 'text-red-500' : 'text-green'
+              }`}
+            >
+              <span
+                className={`h-[7px] w-[7px] rounded-full ${
+                  isError ? 'bg-red-500' : 'bg-green shadow-[0_0_0_3px_var(--green-soft)]'
+                }`}
+              />
+              {isError && (
+                <AlertCircle size={12} className="text-red-500" aria-label="Error icon" />
+              )}
+              {isError ? 'Error' : 'Success'}
+            </span>
+            <span className="rounded-[5px] border border-border-soft bg-bg-elevated px-[7px] py-0.5 font-mono text-[11px] text-text-muted">
+              {record.durationMs} ms
+            </span>
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-[7px] text-[12.5px] text-text-muted">
+            <span className="h-[7px] w-[7px] animate-pulse rounded-full bg-accent" />
+            Reading…
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        <div className="flex gap-0.5">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => onTabChange(t.key)}
+              className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
+                tab === t.key
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {record ? (
-        <ResponseBody record={record} tab={tab} />
-      ) : (
-        <p className="py-6 text-center text-sm text-text-muted">Reading…</p>
-      )}
-    </div>
+      {/* body */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {record ? (
+          <ResponseBody record={record} tab={tab} />
+        ) : (
+          <p className="py-6 text-center text-sm text-text-muted">Reading…</p>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -200,7 +224,7 @@ function ResponseBody({
     return (
       <div className="relative">
         <CopyButton text={json} />
-        <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-elevated p-3 pr-16 overflow-auto max-h-96 whitespace-pre-wrap break-words text-text-primary">
+        <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-elevated p-3 pr-16 whitespace-pre-wrap break-words text-text-primary">
           {tab === 'pretty' ? highlightJson(json) : json}
         </pre>
       </div>

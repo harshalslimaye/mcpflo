@@ -30,7 +30,7 @@ describe('ResourceHistory', () => {
     const { container } = render(
       <ResourceHistory records={[rec({ id: 'ok' }), rec({ id: 'bad', status: 'error' })]} />
     )
-    expect(container.querySelector('.bg-green-500')).not.toBeNull()
+    expect(container.querySelector('.bg-green')).not.toBeNull()
     expect(container.querySelector('.bg-red-500')).not.toBeNull()
   })
 })

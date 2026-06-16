@@ -18,18 +18,30 @@ export function ResourceHistory({ records = [] }: ResourceHistoryProps): React.J
   // Every entry is the same resource (this rail is per-resource), so the row
   // shows only when and how the read went — not the uri.
   return (
-    <ul className="flex flex-col divide-y divide-border">
-      {records.map((record) => (
-        <li key={record.id} className="flex items-center gap-2 px-3 py-2 text-xs">
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              record.status === 'error' ? 'bg-red-500' : 'bg-green-500'
-            }`}
-          />
-          <span className="text-text-primary">{new Date(record.at).toLocaleTimeString()}</span>
-          <span className="ml-auto text-text-muted">{record.durationMs} ms</span>
-        </li>
-      ))}
+    <ul className="flex flex-col gap-1 px-1 pb-4">
+      {records.map((record) => {
+        const isError = record.status === 'error'
+        return (
+          <li
+            key={record.id}
+            className="rounded-[8px] border border-transparent px-[11px] py-[9px]"
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-[7px] w-[7px] shrink-0 rounded-full ${
+                  isError ? 'bg-red-500' : 'bg-green shadow-[0_0_0_3px_var(--green-soft)]'
+                }`}
+              />
+              <span className="flex-1 truncate font-mono text-[11px] text-text-primary">
+                {new Date(record.at).toLocaleTimeString()}
+              </span>
+              <span className="shrink-0 font-mono text-[10.5px] text-fg-faint">
+                {record.durationMs} ms
+              </span>
+            </div>
+          </li>
+        )
+      })}
     </ul>
   )
 }
