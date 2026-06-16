@@ -1,10 +1,10 @@
-import { AlertCircle } from 'lucide-react'
 import type { ToolCallRecord } from '../../stores/serverStore'
 import type { ToolCallNotification, ToolCallResult } from '../../../shared/mcp.types'
+import { ResultPanel } from '../shared/ResultPanel'
 import { ResultPreview } from './ContentBlockPreview'
 import { NotificationsTab } from './ToolCallNotifications'
-import { highlightJson } from './highlightJson'
-import { CopyButton } from './jsonView'
+import { highlightJson } from '../shared/json/highlightJson'
+import { CopyButton } from '../shared/json/CopyButton'
 
 export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications'
 
@@ -25,7 +25,6 @@ export function ToolCallResultView({
   tab,
   onTabChange
 }: ToolCallResultViewProps): React.JSX.Element {
-  const isError = record?.status === 'error'
   const notifications = record?.notifications ?? liveNotifications ?? []
   const notificationCount = notifications.length
 
@@ -37,82 +36,21 @@ export function ToolCallResultView({
   ]
 
   return (
-    <section className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
-      {/* header: RESPONSE · status · duration · tabs */}
-      <div className="flex items-center gap-4 border-b border-border bg-panel-2 px-4 py-[11px]">
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-faint">
-          Response
-        </span>
-
-        {record ? (
-          <>
-            <span
-              className={`inline-flex items-center gap-[7px] text-[12.5px] ${
-                isError ? 'text-red-500' : 'text-green'
-              }`}
-            >
-              <span
-                className={`h-[7px] w-[7px] rounded-full ${
-                  isError ? 'bg-red-500' : 'bg-green shadow-[0_0_0_3px_var(--green-soft)]'
-                }`}
-              />
-              {isError && (
-                <AlertCircle size={12} className="text-red-500" aria-label="Error icon" />
-              )}
-              {isError ? 'Error' : 'Success'}
-            </span>
-            <span className="rounded-[5px] border border-border-soft bg-bg-elevated px-[7px] py-0.5 font-mono text-[11px] text-text-muted">
-              {record.durationMs} ms
-            </span>
-          </>
-        ) : (
-          <span className="inline-flex items-center gap-[7px] text-[12.5px] text-text-muted">
-            <span className="h-[7px] w-[7px] animate-pulse rounded-full bg-accent" />
-            Executing…
-          </span>
-        )}
-
-        <div className="flex-1" />
-
-        <div className="flex gap-0.5">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => onTabChange(t.key)}
-              className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-                tab === t.key
-                  ? 'bg-accent-soft text-accent'
-                  : 'text-text-muted hover:text-text-primary'
-              }`}
-            >
-              {t.label}
-              {t.count !== undefined && t.count > 0 && (
-                <>
-                  {' '}
-                  <span
-                    className={`text-[11px] ${tab === t.key ? 'text-accent' : 'text-fg-faint'}`}
-                  >
-                    ({t.count})
-                  </span>
-                </>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* body */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {tab === 'notifications' ? (
-          <NotificationsTab notifications={notifications} live={record === undefined} />
-        ) : record ? (
-          <ResponseBody record={record} tab={tab} />
-        ) : (
-          <p className="py-6 text-center text-sm text-text-muted">Executing…</p>
-        )}
-      </div>
-    </section>
+    <ResultPanel
+      busyLabel="Executing…"
+      record={record}
+      tabs={tabs}
+      activeTab={tab}
+      onTabChange={onTabChange}
+    >
+      {tab === 'notifications' ? (
+        <NotificationsTab notifications={notifications} live={record === undefined} />
+      ) : record ? (
+        <ResponseBody record={record} tab={tab} />
+      ) : (
+        <p className="py-6 text-center text-sm text-text-muted">Executing…</p>
+      )}
+    </ResultPanel>
   )
 }
 

@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { ToolCallNotification } from '../../../shared/mcp.types'
 import { presentNotification } from '../../lib/notificationPresenters'
-import { highlightJson } from './highlightJson'
-import { CopyButton } from './jsonView'
+import { highlightJson } from '../shared/json/highlightJson'
+import { CopyButton } from '../shared/json/CopyButton'
 
 function formatTime(at: number): string {
   return new Date(at).toLocaleTimeString(undefined, { hour12: false })

@@ -3,9 +3,15 @@ import type { Tool } from '../../../shared/mcp.types'
 import { useServerStore, toolKey } from '../../stores/serverStore'
 import { analyzeSchema } from '../../lib/toolSchema'
 import { ToolHeader } from './ToolHeader'
-import { RequestPanel, type RequestTab } from './RequestPanel'
+import { ToolRequestPanel, type RequestTab } from './ToolRequestPanel'
 import { ToolCallResultView, type ResultTab } from './ToolCallResultView'
-import { HistoryTab } from './HistoryTab'
+import { History } from '../shared/History'
+import { HistoryRail } from '../shared/HistoryRail'
+
+function summarizeArgs(args: Record<string, unknown>): string {
+  const json = JSON.stringify(args)
+  return json === '{}' ? 'no arguments' : json
+}
 
 interface ToolDetailViewProps {
   tool: Tool
@@ -59,7 +65,7 @@ export function ToolDetailView({
         {/* Request + Response stacked on the left; History rail on the right. */}
         <div className="flex gap-6 items-stretch flex-1 min-h-0">
           <div className="flex-1 min-w-0 flex flex-col gap-[18px]">
-            <RequestPanel
+            <ToolRequestPanel
               tool={tool}
               activeTab={activeTab}
               onTabChange={setActiveTab}
@@ -80,38 +86,26 @@ export function ToolDetailView({
             )}
           </div>
 
-          <aside className="w-[304px] shrink-0 flex flex-col min-h-0 border-l border-border pl-6">
-            <div className="flex items-center gap-2.5 px-1 pb-2.5 shrink-0">
-              <h2 className="flex-1 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-faint">
-                History
-              </h2>
-              {history.length > 0 && (
-                <>
-                  <span className="rounded-full border border-border-soft bg-bg-elevated px-[7px] py-px font-mono text-[10px] text-fg-faint">
-                    {history.length}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => clearHistory(serverId, tool.name)}
-                    className="font-mono text-[11px] text-fg-faint transition-colors hover:text-accent"
-                  >
-                    clear
-                  </button>
-                </>
+          <HistoryRail count={history.length} onClear={() => clearHistory(serverId, tool.name)}>
+            <History
+              records={history}
+              emptyLabel="No calls yet."
+              renderDetail={(record) => (
+                <span
+                  className="block truncate font-mono text-[11px] text-code opacity-85"
+                  title={summarizeArgs(record.args)}
+                >
+                  {summarizeArgs(record.args)}
+                </span>
               )}
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <HistoryTab
-                records={history}
-                onSelectRecord={
-                  isEmpty
-                    ? undefined
-                    : (record) =>
-                        setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
-                }
-              />
-            </div>
-          </aside>
+              onSelectRecord={
+                isEmpty
+                  ? undefined
+                  : (record) =>
+                      setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+              }
+            />
+          </HistoryRail>
         </div>
       </div>
     </div>

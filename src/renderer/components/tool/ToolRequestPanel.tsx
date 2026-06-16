@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Play } from 'lucide-react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
+import { RequestPanel } from '../shared/RequestPanel'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
@@ -11,7 +11,7 @@ import { validator } from './rjsf/validator'
 export type RequestTab = 'params' | 'schema'
 type Mode = 'form' | 'json'
 
-interface RequestPanelProps {
+interface ToolRequestPanelProps {
   tool: Tool
   // The tab toggle is owned by the parent so the panel header and the body stay
   // in sync; the form state itself lives here.
@@ -47,14 +47,14 @@ function parseJsonObject(
   return { ok: true, value: parsed as Record<string, unknown> }
 }
 
-export function RequestPanel({
+export function ToolRequestPanel({
   tool,
   activeTab,
   onTabChange,
   prefill,
   running,
   onExecute
-}: RequestPanelProps): React.JSX.Element {
+}: ToolRequestPanelProps): React.JSX.Element {
   const schema = tool.inputSchema as RJSFSchema
   // A schema with no declared properties has no form to render.
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
@@ -124,111 +124,91 @@ export function RequestPanel({
     onExecute(payload)
   }
 
+  const headerEnd = (
+    <>
+      <div className="flex gap-0.5">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => onTabChange(tab.key)}
+            className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
+              activeTab === tab.key
+                ? 'bg-accent-soft text-accent'
+                : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1" />
+      {activeTab === 'params' && !isEmpty && (
+        <div className="flex items-center gap-2">
+          <Toggle
+            checked={mode === 'json'}
+            onChange={handleToggleMode}
+            aria-label="Edit as raw JSON"
+          />
+          <span className="text-[12px] text-text-muted">Raw JSON</span>
+        </div>
+      )}
+    </>
+  )
+
   return (
-    <section
-      className="flex flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface"
-      onKeyDown={(e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-          e.preventDefault()
-          handleExecute()
-        }
+    <RequestPanel
+      headerEnd={headerEnd}
+      statusHint={executeDisabled && !running ? 'Fill required fields' : 'Ready'}
+      run={{
+        label: 'Execute',
+        busyLabel: 'Executing…',
+        busy: running,
+        disabled: executeDisabled,
+        onRun: handleExecute
       }}
     >
-      {/* header: REQUEST · Params/Schema tabs · Raw JSON toggle */}
-      <div className="flex items-center gap-4 border-b border-border bg-panel-2 px-4 py-[11px]">
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-faint">
-          Request
-        </span>
-        <div className="flex gap-0.5">
-          {TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => onTabChange(tab.key)}
-              className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-                activeTab === tab.key
-                  ? 'bg-accent-soft text-accent'
-                  : 'text-text-muted hover:text-text-primary'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        {activeTab === 'params' && !isEmpty && (
-          <div className="flex items-center gap-2">
-            <Toggle
-              checked={mode === 'json'}
-              onChange={handleToggleMode}
-              aria-label="Edit as raw JSON"
-            />
-            <span className="text-[12px] text-text-muted">Raw JSON</span>
-          </div>
-        )}
-      </div>
+      {activeTab === 'schema' ? (
+        <SchemaTab schema={tool.inputSchema} />
+      ) : (
+        <div className="flex flex-col gap-4">
+          {switchError && <p className="text-xs text-red-400">{switchError}</p>}
 
-      {/* body */}
-      <div className="px-4 py-[18px]">
-        {activeTab === 'schema' ? (
-          <SchemaTab schema={tool.inputSchema} />
-        ) : (
-          <div className="flex flex-col gap-4">
-            {switchError && <p className="text-xs text-red-400">{switchError}</p>}
-
-            {mode === 'form' ? (
-              isEmpty ? (
-                <p className="text-sm text-text-muted">This tool takes no parameters.</p>
-              ) : (
-                <RjsfForm
-                  schema={schema}
-                  validator={validator}
-                  formData={formData}
-                  liveValidate
-                  showErrorList={false}
-                  noHtml5Validate
-                  onChange={(e: IChangeEvent) =>
-                    setFormData((e.formData ?? {}) as Record<string, unknown>)
-                  }
-                >
-                  {/* Replace RJSF's submit button — the footer Execute button is
-                      the trigger. */}
-                  <></>
-                </RjsfForm>
-              )
+          {mode === 'form' ? (
+            isEmpty ? (
+              <p className="text-sm text-text-muted">This tool takes no parameters.</p>
             ) : (
-              <div className="flex flex-col gap-1">
-                <textarea
-                  aria-label="Params JSON"
-                  value={jsonText}
-                  onChange={(e) => setJsonText(e.target.value)}
-                  rows={12}
-                  spellCheck={false}
-                  className="w-full resize-y rounded-[8px] border border-border bg-bg-elevated px-[13px] py-[11px] font-mono text-[13.5px] text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent-line focus:ring-[3px] focus:ring-accent-soft"
-                />
-                {!jsonValid && <p className="text-xs text-red-400">{jsonParse.error}</p>}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* footer: status hint · Execute */}
-      <div className="flex items-center gap-3 border-t border-border-soft bg-bg-elevated px-4 py-[13px]">
-        <span className="font-mono text-[11.5px] text-fg-faint">
-          {executeDisabled && !running ? 'Fill required fields' : 'Ready'}
-        </span>
-        <div className="flex-1" />
-        <button
-          type="button"
-          onClick={handleExecute}
-          disabled={executeDisabled}
-          className="inline-flex items-center gap-2 rounded-[8px] bg-[image:var(--btn)] px-[22px] py-[9px] text-[13px] font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition-[filter] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Play size={13} fill="currentColor" />
-          {running ? 'Executing…' : 'Execute'}
-        </button>
-      </div>
-    </section>
+              <RjsfForm
+                schema={schema}
+                validator={validator}
+                formData={formData}
+                liveValidate
+                showErrorList={false}
+                noHtml5Validate
+                onChange={(e: IChangeEvent) =>
+                  setFormData((e.formData ?? {}) as Record<string, unknown>)
+                }
+              >
+                {/* Replace RJSF's submit button — the footer Execute button is
+                    the trigger. */}
+                <></>
+              </RjsfForm>
+            )
+          ) : (
+            <div className="flex flex-col gap-1">
+              <textarea
+                aria-label="Params JSON"
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+                rows={12}
+                spellCheck={false}
+                className="w-full resize-y rounded-[8px] border border-border bg-bg-elevated px-[13px] py-[11px] font-mono text-[13.5px] text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent-line focus:ring-[3px] focus:ring-accent-soft"
+              />
+              {!jsonValid && <p className="text-xs text-red-400">{jsonParse.error}</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </RequestPanel>
   )
 }
