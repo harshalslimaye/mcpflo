@@ -1,5 +1,6 @@
 import { Server, FileText } from 'lucide-react'
 import type { Resource } from '../../../shared/mcp.types'
+import { Header, type MetaChip } from '../shared/Header'
 
 interface ResourceHeaderProps {
   resource: Resource
@@ -11,29 +12,10 @@ export function ResourceHeader({ resource, serverName }: ResourceHeaderProps): R
   // fall back to the uri when it's absent.
   const title = resource.name ?? resource.uri
 
-  return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="font-mono text-[23px] font-semibold tracking-[-0.01em] text-text-primary">
-          {title}
-        </h1>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-[6px] border border-border bg-bg-elevated px-2 py-[3px] text-[11.5px] text-text-muted">
-          <Server size={12} />
-          {serverName}
-        </span>
-        {resource.mimeType && (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-[6px] border border-border bg-bg-elevated px-2 py-[3px] text-[11.5px] text-text-muted">
-            <FileText size={12} />
-            {resource.mimeType}
-          </span>
-        )}
-      </div>
+  const chips: MetaChip[] = [{ icon: <Server size={12} />, label: serverName }]
+  if (resource.mimeType) {
+    chips.push({ icon: <FileText size={12} />, label: resource.mimeType })
+  }
 
-      {resource.description && (
-        <p className="text-text-muted text-[13.5px] leading-[1.55] max-w-[72ch]">
-          {resource.description}
-        </p>
-      )}
-    </div>
-  )
+  return <Header title={title} chips={chips} description={resource.description} />
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { RequestPanel } from './RequestPanel'
+import { ToolRequestPanel } from './ToolRequestPanel'
 import type { Tool } from '../../../shared/mcp.types'
 
 function tool(inputSchema: Tool['inputSchema']): Tool {
@@ -24,10 +24,10 @@ const mockOnTabChange = vi.fn()
 
 function renderPanel(
   t: Tool,
-  props: Partial<React.ComponentProps<typeof RequestPanel>> = {}
+  props: Partial<React.ComponentProps<typeof ToolRequestPanel>> = {}
 ): ReturnType<typeof render> {
   return render(
-    <RequestPanel
+    <ToolRequestPanel
       tool={t}
       activeTab="params"
       onTabChange={mockOnTabChange}
@@ -42,7 +42,7 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('RequestPanel — form rendering', () => {
+describe('ToolRequestPanel — form rendering', () => {
   it('renders an input for each primitive kind', () => {
     renderPanel(primitiveTool)
     expect(screen.getByRole('textbox', { name: 'query' })).toBeInTheDocument()
@@ -85,7 +85,7 @@ describe('RequestPanel — form rendering', () => {
   })
 })
 
-describe('RequestPanel — validation', () => {
+describe('ToolRequestPanel — validation', () => {
   it('disables Execute while a required field is empty', () => {
     renderPanel(primitiveTool)
     expect(screen.getByRole('button', { name: /Execute/ })).toBeDisabled()
@@ -137,7 +137,7 @@ describe('RequestPanel — validation', () => {
   })
 })
 
-describe('RequestPanel — execution', () => {
+describe('ToolRequestPanel — execution', () => {
   it('executes from raw-JSON mode with the parsed object as payload', () => {
     renderPanel(primitiveTool)
     fireEvent.click(screen.getByRole('switch', { name: 'Edit as raw JSON' }))
@@ -172,7 +172,7 @@ describe('RequestPanel — execution', () => {
   })
 })
 
-describe('RequestPanel — no parameters', () => {
+describe('ToolRequestPanel — no parameters', () => {
   it('shows a message, keeps Execute enabled, and executes with an empty object', () => {
     renderPanel(tool({ type: 'object' }))
     expect(screen.getByText('This tool takes no parameters.')).toBeInTheDocument()
@@ -183,7 +183,7 @@ describe('RequestPanel — no parameters', () => {
   })
 })
 
-describe('RequestPanel — raw JSON toggle', () => {
+describe('ToolRequestPanel — raw JSON toggle', () => {
   it('rejects valid JSON that is not an object and disables Execute', () => {
     renderPanel(primitiveTool)
     fireEvent.click(screen.getByRole('switch', { name: 'Edit as raw JSON' }))
@@ -228,7 +228,7 @@ describe('RequestPanel — raw JSON toggle', () => {
   })
 })
 
-describe('RequestPanel — prefill from history', () => {
+describe('ToolRequestPanel — prefill from history', () => {
   it('populates each form field from the prefill arguments', () => {
     renderPanel(primitiveTool, { prefill: { args: { query: 'hello', limit: 5 }, nonce: 1 } })
     expect((screen.getByRole('textbox', { name: 'query' }) as HTMLInputElement).value).toBe('hello')
@@ -254,7 +254,7 @@ describe('RequestPanel — prefill from history', () => {
       target: { value: 'edited' }
     })
     rerender(
-      <RequestPanel
+      <ToolRequestPanel
         tool={primitiveTool}
         activeTab="params"
         onTabChange={mockOnTabChange}
@@ -267,7 +267,7 @@ describe('RequestPanel — prefill from history', () => {
   })
 })
 
-describe('RequestPanel — complex schema (now form-editable)', () => {
+describe('ToolRequestPanel — complex schema (now form-editable)', () => {
   it('renders a form for a nested-object schema instead of locking to JSON', () => {
     renderPanel(
       tool({
@@ -333,7 +333,6 @@ describe('RequestPanel — complex schema (now form-editable)', () => {
     // reason even when every required field is filled.
     renderPanel(
       tool({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         $schema: 'http://json-schema.org/draft-07/schema#',
         type: 'object',
         properties: { message: { type: 'string', description: 'Message to echo' } },

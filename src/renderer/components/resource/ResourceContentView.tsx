@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { AlertCircle } from 'lucide-react'
 import type { ResourceReadRecord } from '../../stores/serverStore'
 import type { ResourceContent, ResourceReadResult } from '../../../shared/mcp.types'
-import { highlightJson } from '../tool/highlightJson'
-import { CopyButton } from '../tool/jsonView'
+import { ResultPanel } from '../shared/ResultPanel'
+import { highlightJson } from '../shared/json/highlightJson'
+import { CopyButton } from '../shared/json/CopyButton'
 
 export type ResourceResultTab = 'preview' | 'raw' | 'pretty'
 
@@ -125,8 +125,6 @@ export function ResourceContentView({
   tab,
   onTabChange
 }: ResourceContentViewProps): React.JSX.Element {
-  const isError = record?.status === 'error'
-
   const tabs: { key: ResourceResultTab; label: string }[] = [
     { key: 'preview', label: 'Preview' },
     { key: 'raw', label: 'Raw' },
@@ -134,70 +132,19 @@ export function ResourceContentView({
   ]
 
   return (
-    <section className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
-      {/* header: RESPONSE · status · duration · tabs */}
-      <div className="flex items-center gap-4 border-b border-border bg-panel-2 px-4 py-[11px]">
-        <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-faint">
-          Response
-        </span>
-
-        {record ? (
-          <>
-            <span
-              className={`inline-flex items-center gap-[7px] text-[12.5px] ${
-                isError ? 'text-red-500' : 'text-green'
-              }`}
-            >
-              <span
-                className={`h-[7px] w-[7px] rounded-full ${
-                  isError ? 'bg-red-500' : 'bg-green shadow-[0_0_0_3px_var(--green-soft)]'
-                }`}
-              />
-              {isError && (
-                <AlertCircle size={12} className="text-red-500" aria-label="Error icon" />
-              )}
-              {isError ? 'Error' : 'Success'}
-            </span>
-            <span className="rounded-[5px] border border-border-soft bg-bg-elevated px-[7px] py-0.5 font-mono text-[11px] text-text-muted">
-              {record.durationMs} ms
-            </span>
-          </>
-        ) : (
-          <span className="inline-flex items-center gap-[7px] text-[12.5px] text-text-muted">
-            <span className="h-[7px] w-[7px] animate-pulse rounded-full bg-accent" />
-            Reading…
-          </span>
-        )}
-
-        <div className="flex-1" />
-
-        <div className="flex gap-0.5">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => onTabChange(t.key)}
-              className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-                tab === t.key
-                  ? 'bg-accent-soft text-accent'
-                  : 'text-text-muted hover:text-text-primary'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* body */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {record ? (
-          <ResponseBody record={record} tab={tab} />
-        ) : (
-          <p className="py-6 text-center text-sm text-text-muted">Reading…</p>
-        )}
-      </div>
-    </section>
+    <ResultPanel
+      busyLabel="Reading…"
+      record={record}
+      tabs={tabs}
+      activeTab={tab}
+      onTabChange={onTabChange}
+    >
+      {record ? (
+        <ResponseBody record={record} tab={tab} />
+      ) : (
+        <p className="py-6 text-center text-sm text-text-muted">Reading…</p>
+      )}
+    </ResultPanel>
   )
 }
 
