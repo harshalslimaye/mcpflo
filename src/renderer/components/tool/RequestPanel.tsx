@@ -1,17 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Play } from 'lucide-react'
+import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
+import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
 import { SchemaTab } from './SchemaTab'
-import { FieldRow, FieldInput } from './SchemaFields'
-import {
-  analyzeSchema,
-  assembleParams,
-  initialFormValues,
-  jsonToValues,
-  valuesToJson,
-  type FormValues
-} from '../../lib/toolSchema'
+import { RjsfForm } from './rjsf/RjsfForm'
+import { validator } from './rjsf/validator'
 
 export type RequestTab = 'params' | 'schema'
 type Mode = 'form' | 'json'
@@ -60,42 +55,55 @@ export function RequestPanel({
   running,
   onExecute
 }: RequestPanelProps): React.JSX.Element {
-  const analysis = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
-  const { fields, hasNonPrimitive, isEmpty } = analysis
+  const schema = tool.inputSchema as RJSFSchema
+  // A schema with no declared properties has no form to render.
+  const isEmpty = Object.keys(schema.properties ?? {}).length === 0
 
-  // Schemas with non-primitive properties can't be represented by the form, so
-  // they open in (and are locked to) raw-JSON mode.
-  const [mode, setMode] = useState<Mode>(hasNonPrimitive ? 'json' : 'form')
-  const [values, setValues] = useState<FormValues>(() => initialFormValues(fields))
-  const [jsonText, setJsonText] = useState<string>(() =>
-    valuesToJson(fields, initialFormValues(fields))
-  )
+  // Seed the form with schema-declared defaults so our validity check matches
+  // what RJSF renders. Required booleans are seeded to `false`: a toggle always
+  // has a value, so an untouched required boolean would otherwise read as
+  // "missing" and wedge Execute even though the UI shows a valid (off) state.
+  const initialData = useMemo<Record<string, unknown>>(() => {
+    const seeded =
+      (getDefaultFormState(validator, schema, {}, schema) as Record<string, unknown>) ?? {}
+    const props = (schema.properties ?? {}) as Record<string, { type?: unknown }>
+    for (const key of Array.isArray(schema.required) ? schema.required : []) {
+      if (props[key]?.type === 'boolean' && seeded[key] === undefined) seeded[key] = false
+    }
+    return seeded
+  }, [schema])
+
+  const [mode, setMode] = useState<Mode>('form')
+  const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
+  const [jsonText, setJsonText] = useState<string>(() => JSON.stringify(initialData, null, 2))
   const [switchError, setSwitchError] = useState<string | null>(null)
 
-  const { params, errors } = useMemo(() => assembleParams(fields, values), [fields, values])
-  const formValid = Object.keys(errors).length === 0
+  // RJSF validates the whole schema (nested objects, arrays, unions, …); empty
+  // schemas are trivially valid.
+  const formValid = useMemo(
+    () => isEmpty || validator.isValid(schema, formData, schema),
+    [isEmpty, schema, formData]
+  )
 
   const jsonParse = useMemo(() => parseJsonObject(jsonText), [jsonText])
   const jsonValid = jsonParse.ok
 
-  function setField(name: string, value: FormValues[string]): void {
-    setValues((prev) => ({ ...prev, [name]: value }))
-  }
-
   // Clicking a History entry pre-fills the form with that call's arguments. We
   // adjust state during render off the prefill nonce (React's "store previous
-  // prop" pattern). Only the form `values` are touched, so the Raw JSON
-  // mode/textarea stay untouched, and nothing executes.
+  // prop" pattern). Only the form `formData` is touched, so Raw JSON mode and
+  // its textarea stay untouched, and nothing executes.
   const [prefillNonce, setPrefillNonce] = useState<number | undefined>(undefined)
   if (prefill && prefill.nonce !== prefillNonce) {
     setPrefillNonce(prefill.nonce)
-    setValues(jsonToValues(fields, prefill.args))
+    setFormData(
+      getDefaultFormState(validator, schema, prefill.args, schema) as Record<string, unknown>
+    )
   }
 
   function handleToggleMode(toJson: boolean): void {
     setSwitchError(null)
     if (toJson) {
-      setJsonText(valuesToJson(fields, values))
+      setJsonText(JSON.stringify(formData, null, 2))
       setMode('json')
       return
     }
@@ -104,7 +112,7 @@ export function RequestPanel({
       setSwitchError(result.error)
       return
     }
-    setValues(jsonToValues(fields, result.value))
+    setFormData(result.value)
     setMode('form')
   }
 
@@ -112,7 +120,7 @@ export function RequestPanel({
 
   function handleExecute(): void {
     if (executeDisabled) return
-    const payload = mode === 'json' ? (jsonParse.ok ? jsonParse.value : {}) : params
+    const payload = mode === 'json' ? (jsonParse.ok ? jsonParse.value : {}) : formData
     onExecute(payload)
   }
 
@@ -154,7 +162,6 @@ export function RequestPanel({
               checked={mode === 'json'}
               onChange={handleToggleMode}
               aria-label="Edit as raw JSON"
-              disabled={hasNonPrimitive}
             />
             <span className="text-[12px] text-text-muted">Raw JSON</span>
           </div>
@@ -167,29 +174,27 @@ export function RequestPanel({
           <SchemaTab schema={tool.inputSchema} />
         ) : (
           <div className="flex flex-col gap-4">
-            {hasNonPrimitive && (
-              <span className="text-xs text-text-muted opacity-70">
-                This tool has complex parameters — edit as JSON
-              </span>
-            )}
             {switchError && <p className="text-xs text-red-400">{switchError}</p>}
 
             {mode === 'form' ? (
               isEmpty ? (
-                <p className="text-text-muted text-sm">This tool takes no parameters.</p>
+                <p className="text-sm text-text-muted">This tool takes no parameters.</p>
               ) : (
-                fields.map((field) => (
-                  <FieldRow key={field.name} field={field}>
-                    <FieldInput
-                      field={field}
-                      value={values[field.name]}
-                      onChange={(v) => setField(field.name, v)}
-                    />
-                    {errors[field.name] && (
-                      <p className="text-xs text-red-400">{errors[field.name]}</p>
-                    )}
-                  </FieldRow>
-                ))
+                <RjsfForm
+                  schema={schema}
+                  validator={validator}
+                  formData={formData}
+                  liveValidate
+                  showErrorList={false}
+                  noHtml5Validate
+                  onChange={(e: IChangeEvent) =>
+                    setFormData((e.formData ?? {}) as Record<string, unknown>)
+                  }
+                >
+                  {/* Replace RJSF's submit button — the footer Execute button is
+                      the trigger. */}
+                  <></>
+                </RjsfForm>
               )
             ) : (
               <div className="flex flex-col gap-1">

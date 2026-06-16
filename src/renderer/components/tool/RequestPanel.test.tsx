@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { RequestPanel } from './RequestPanel'
 import type { Tool } from '../../../shared/mcp.types'
 
@@ -60,18 +61,6 @@ describe('RequestPanel — form rendering', () => {
     expect(screen.getByText('*')).toBeInTheDocument()
   })
 
-  it('uses a Select… placeholder for a required enum and (none) for an optional one', () => {
-    renderPanel(
-      tool({
-        type: 'object',
-        properties: { must: { enum: ['a', 'b'] }, may: { enum: ['c', 'd'] } },
-        required: ['must']
-      })
-    )
-    expect(screen.getByRole('option', { name: 'Select…' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: '(none)' })).toBeInTheDocument()
-  })
-
   it('renders a non-integer number field with step="any"', () => {
     renderPanel(tool({ type: 'object', properties: { amount: { type: 'number' } } }))
     expect(screen.getByRole('spinbutton', { name: 'amount' })).toHaveAttribute('step', 'any')
@@ -97,16 +86,14 @@ describe('RequestPanel — form rendering', () => {
 })
 
 describe('RequestPanel — validation', () => {
-  it('disables Execute and shows a required error when a required field is empty', () => {
+  it('disables Execute while a required field is empty', () => {
     renderPanel(primitiveTool)
-    expect(screen.getByText(/query is required/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Execute/ })).toBeDisabled()
   })
 
   it('enables Execute once the required field is filled', () => {
     renderPanel(primitiveTool)
     fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'cats' } })
-    expect(screen.queryByText(/query is required/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Execute/ })).toBeEnabled()
   })
 
@@ -116,8 +103,37 @@ describe('RequestPanel — validation', () => {
     fireEvent.change(screen.getByRole('spinbutton', { name: 'limit' }), {
       target: { value: '2.5' }
     })
-    expect(screen.getByText(/whole number/i)).toBeInTheDocument()
+    expect(screen.getByText(/must be integer/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Execute/ })).toBeDisabled()
+  })
+
+  it('surfaces a missing-required error after the form is touched', () => {
+    renderPanel(primitiveTool)
+    // liveValidate reports required errors once the user interacts.
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'limit' }), { target: { value: '3' } })
+    expect(screen.getByText(/required property 'query'/i)).toBeInTheDocument()
+  })
+
+  it('does not let a string `format` block Execute (format is annotation-only)', () => {
+    // A field that looks filled but whose value fails a strict `format` check
+    // (e.g. uri/date-time/email) must not wedge the form — only required/type
+    // are enforced. Regression for Execute staying disabled on real schemas.
+    renderPanel(
+      tool({
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          endpoint: { type: 'string', format: 'uri' },
+          when: { type: 'string', format: 'date-time' }
+        },
+        required: ['name', 'endpoint']
+      })
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'name' }), { target: { value: 'srv' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'endpoint' }), {
+      target: { value: 'not-a-uri' }
+    })
+    expect(screen.getByRole('button', { name: /Execute/ })).toBeEnabled()
   })
 })
 
@@ -132,10 +148,11 @@ describe('RequestPanel — execution', () => {
     expect(mockOnExecute).toHaveBeenCalledWith({ query: 'from json', limit: 3 })
   })
 
-  it('selects an enum value and includes it in the payload', () => {
+  it('selects an enum value and includes it in the payload', async () => {
+    const user = userEvent.setup()
     renderPanel(primitiveTool)
     fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'hi' } })
-    fireEvent.change(screen.getByRole('combobox', { name: 'mode' }), { target: { value: 'fast' } })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'mode' }), 'fast')
     fireEvent.click(screen.getByRole('button', { name: /Execute/ }))
     expect(mockOnExecute).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'hi', mode: 'fast' })
@@ -146,9 +163,7 @@ describe('RequestPanel — execution', () => {
     renderPanel(primitiveTool)
     fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'hi' } })
     fireEvent.click(screen.getByRole('button', { name: /Execute/ }))
-    expect(mockOnExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ query: 'hi', verbose: false })
-    )
+    expect(mockOnExecute).toHaveBeenCalledWith(expect.objectContaining({ query: 'hi' }))
   })
 
   it('shows an Executing… label and disables Execute while running', () => {
@@ -252,20 +267,83 @@ describe('RequestPanel — prefill from history', () => {
   })
 })
 
-describe('RequestPanel — non-primitive schema', () => {
-  const complexTool = tool({
-    type: 'object',
-    properties: {
-      name: { type: 'string' },
-      filters: { type: 'object', properties: {} }
-    },
-    required: []
+describe('RequestPanel — complex schema (now form-editable)', () => {
+  it('renders a form for a nested-object schema instead of locking to JSON', () => {
+    renderPanel(
+      tool({
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          filters: { type: 'object', properties: { active: { type: 'boolean' } } }
+        }
+      })
+    )
+    // No JSON lock, no "complex parameters" fallback message.
+    expect(screen.queryByText(/complex parameters/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Edit as raw JSON' })).toBeEnabled()
+    // Top-level and nested fields both render.
+    expect(screen.getByRole('textbox', { name: 'name' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'active' })).toBeInTheDocument()
   })
 
-  it('defaults to JSON mode with the toggle locked', () => {
-    renderPanel(complexTool)
-    expect(screen.getByRole('textbox', { name: 'Params JSON' })).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Edit as raw JSON' })).toBeDisabled()
-    expect(screen.getByText(/complex parameters/i)).toBeInTheDocument()
+  it('renders an add-item control for an array schema', () => {
+    renderPanel(
+      tool({ type: 'object', properties: { tags: { type: 'array', items: { type: 'string' } } } })
+    )
+    expect(screen.getByRole('button', { name: /add item/i })).toBeInTheDocument()
+  })
+
+  it('renders a JSON editor for a required untyped ("any") property and can satisfy it', () => {
+    // Untyped schemas render no widget in stock RJSF, which would make a required
+    // "any" property impossible to fill and wedge Execute. Regression.
+    renderPanel(
+      tool({
+        type: 'object',
+        properties: { data: {}, name: { type: 'string' } },
+        required: ['data', 'name']
+      })
+    )
+    const dataField = screen.getByRole('textbox', { name: 'data' })
+    expect(dataField).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Execute/ })).toBeDisabled()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'name' }), { target: { value: 'srv' } })
+    fireEvent.change(dataField, { target: { value: '{"k":1}' } })
+    expect(screen.getByRole('button', { name: /Execute/ })).toBeEnabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }))
+    expect(mockOnExecute).toHaveBeenCalledWith({ name: 'srv', data: { k: 1 } })
+  })
+
+  it('does not require touching a required boolean (seeded to false)', () => {
+    renderPanel(
+      tool({
+        type: 'object',
+        properties: { enabled: { type: 'boolean' }, name: { type: 'string' } },
+        required: ['enabled', 'name']
+      })
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'name' }), { target: { value: 'x' } })
+    expect(screen.getByRole('button', { name: /Execute/ })).toBeEnabled()
+  })
+
+  it('validates a draft-07 schema (the dialect official MCP servers emit)', () => {
+    // Regression: a draft-07 `$schema` must validate. A 2020-only validator
+    // returns false with an empty error list, wedging Execute with no visible
+    // reason even when every required field is filled.
+    renderPanel(
+      tool({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        $schema: 'http://json-schema.org/draft-07/schema#',
+        type: 'object',
+        properties: { message: { type: 'string', description: 'Message to echo' } },
+        required: ['message']
+      } as Tool['inputSchema'])
+    )
+    expect(screen.getByRole('button', { name: /Execute/ })).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'message' }), { target: { value: 'hi' } })
+    expect(screen.getByRole('button', { name: /Execute/ })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: /Execute/ }))
+    expect(mockOnExecute).toHaveBeenCalledWith({ message: 'hi' })
   })
 })

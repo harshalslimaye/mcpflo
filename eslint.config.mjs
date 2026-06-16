@@ -31,5 +31,14 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  // The RJSF theme registry files intentionally co-locate several small
+  // widget/template components with the registry objects that group them, so the
+  // Fast-Refresh "one component per file" rule doesn't apply.
+  {
+    files: ['src/renderer/components/tool/rjsf/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off'
+    }
+  },
   eslintConfigPrettier
 )
