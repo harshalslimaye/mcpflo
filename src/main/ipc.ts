@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
-import { fetchCapabilities, callTool, readResource } from './mcpClient'
+import { fetchCapabilities, callTool, readResource, getPrompt } from './mcpClient'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -168,6 +168,14 @@ export function registerIpcHandlers(): void {
   // so unlike mcp:callTool there's no callId / notification plumbing.
   ipcMain.handle('mcp:readResource', (_event, config: ServerConfig, uri: string) =>
     readResource(config, uri)
+  )
+
+  // Prompt get. Like resource read, a single request → response with no side
+  // channels — but it carries arguments (prompts take named string inputs).
+  ipcMain.handle(
+    'mcp:getPrompt',
+    (_event, config: ServerConfig, name: string, args: Record<string, string>) =>
+      getPrompt(config, name, args)
   )
 
   ipcMain.handle(

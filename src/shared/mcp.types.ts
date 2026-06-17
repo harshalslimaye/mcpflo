@@ -82,6 +82,33 @@ export interface Prompt {
   arguments?: PromptArgument[]
 }
 
+// One turn of a prompt's rendered output. Mirrors the MCP SDK's PromptMessage
+// shape: a role plus a single content block (text/image/audio/resource), the
+// same block shape a tool-call result carries — so the renderer reuses
+// ContentBlockPreview to render it.
+export interface PromptMessage {
+  role: 'user' | 'assistant'
+  content: ToolCallContent
+}
+
+// Result of getting a prompt — mirrors the MCP SDK's GetPromptResult shape. The
+// optional description echoes the prompt's own; `messages` is the rendered
+// conversation the prompt expands to.
+export interface GetPromptResult {
+  description?: string
+  messages: PromptMessage[]
+  [key: string]: unknown
+}
+
+// Outcome of getting a prompt as surfaced to the renderer. Mirrors
+// `ResourceReadOutcome`: `response` is the JSON-RPC envelope ({ jsonrpc, result }
+// or { jsonrpc, error }); `error` carries a transport-level message when no
+// response arrived (e.g. a connection failure).
+export interface PromptGetOutcome {
+  response?: unknown
+  error?: string
+}
+
 // Capabilities returned after a successful server connection
 export interface ConnectResult {
   tools: Tool[]

@@ -24,6 +24,7 @@ const mockApi = {
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
     callTool: vi.fn(),
     readResource: vi.fn(),
+    getPrompt: vi.fn(),
     onToolNotification: vi.fn()
   }
 }
@@ -51,6 +52,12 @@ describe('serverStore', () => {
     mockApi.mcp.readResource.mockResolvedValue({
       response: { jsonrpc: '2.0', result: { contents: [{ uri: 'mem://x', text: 'ok' }] } }
     })
+    mockApi.mcp.getPrompt.mockResolvedValue({
+      response: {
+        jsonrpc: '2.0',
+        result: { messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }] }
+      }
+    })
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -59,8 +66,10 @@ describe('serverStore', () => {
       selectedServerId: null,
       selectedTool: null,
       selectedResource: null,
+      selectedPrompt: null,
       history: {},
       resourceHistory: {},
+      promptHistory: {},
       liveNotifications: {}
     })
   })
@@ -153,6 +162,31 @@ describe('serverStore', () => {
       useServerStore.getState().selectResource('github-mcp', 'mem://x')
       expect(useServerStore.getState().selectedTool).toBeNull()
       expect(useServerStore.getState().selectedResource?.uri).toBe('mem://x')
+    })
+  })
+
+  describe('selectPrompt', () => {
+    it('sets the selected prompt with its owning server id', () => {
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      expect(useServerStore.getState().selectedPrompt).toEqual({
+        serverId: 'github-mcp',
+        promptName: 'summarize'
+      })
+    })
+
+    it('clears a selected tool and resource (all three are mutually exclusive)', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      expect(useServerStore.getState().selectedTool).toBeNull()
+      expect(useServerStore.getState().selectedResource).toBeNull()
+      expect(useServerStore.getState().selectedPrompt?.promptName).toBe('summarize')
+    })
+
+    it('is cleared when a tool is then selected', () => {
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      expect(useServerStore.getState().selectedPrompt).toBeNull()
     })
   })
 
@@ -416,6 +450,82 @@ describe('serverStore', () => {
     })
   })
 
+  describe('getPrompt', () => {
+    const key = 'github-mcp::summarize'
+
+    it('calls IPC with the server config, name and args', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', { topic: 'mcp' })
+      expect(mockApi.mcp.getPrompt).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'github-mcp' }),
+        'summarize',
+        { topic: 'mcp' }
+      )
+    })
+
+    it('records a successful get in prompt history', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', { topic: 'mcp' })
+      const records = useServerStore.getState().promptHistory[key]
+      expect(records).toHaveLength(1)
+      expect(records[0].status).toBe('success')
+      expect(records[0].promptName).toBe('summarize')
+      expect(records[0].args).toEqual({ topic: 'mcp' })
+    })
+
+    it('marks the get as an error for a JSON-RPC error response', async () => {
+      mockApi.mcp.getPrompt.mockResolvedValue({
+        response: { jsonrpc: '2.0', error: { code: -32602, message: 'Prompt not found' } }
+      })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      expect(useServerStore.getState().promptHistory[key][0].status).toBe('error')
+    })
+
+    it('records a transport error returned by the outcome', async () => {
+      mockApi.mcp.getPrompt.mockResolvedValue({ error: 'connection refused' })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      const record = useServerStore.getState().promptHistory[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('connection refused')
+    })
+
+    it('records an error when the IPC call rejects', async () => {
+      mockApi.mcp.getPrompt.mockRejectedValue(new Error('ipc failed'))
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      const record = useServerStore.getState().promptHistory[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('ipc failed')
+    })
+
+    it('prepends newer gets so the latest is first', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      expect(useServerStore.getState().promptHistory[key]).toHaveLength(2)
+    })
+
+    it('does nothing for an unknown server', async () => {
+      await useServerStore.getState().getPrompt('missing', 'summarize', {})
+      expect(mockApi.mcp.getPrompt).not.toHaveBeenCalled()
+      expect(useServerStore.getState().promptHistory).toEqual({})
+    })
+  })
+
+  describe('clearPromptHistory', () => {
+    it('drops the history for one prompt, leaving others intact', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      await useServerStore.getState().getPrompt('github-mcp', 'translate', {})
+      useServerStore.getState().clearPromptHistory('github-mcp', 'summarize')
+      const promptHistory = useServerStore.getState().promptHistory
+      expect(promptHistory['github-mcp::summarize']).toBeUndefined()
+      expect(promptHistory['github-mcp::translate']).toHaveLength(1)
+    })
+  })
+
   describe('addServer', () => {
     it('calls IPC and appends server to state', async () => {
       await useServerStore.getState().addServer(githubConfig)
@@ -526,6 +636,32 @@ describe('serverStore', () => {
       const resourceHistory = useServerStore.getState().resourceHistory
       expect(resourceHistory['github-mcp::mem://x']).toBeUndefined()
       expect(resourceHistory['slack-mcp::mem://y']).toHaveLength(1)
+    })
+
+    it('clears selectedPrompt if it belonged to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().selectedPrompt).toBeNull()
+    })
+
+    it('preserves selectedPrompt if a different server is removed', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      await useServerStore.getState().removeServer('slack-mcp')
+      expect(useServerStore.getState().selectedPrompt?.serverId).toBe('github-mcp')
+    })
+
+    it('prunes prompt get history belonging to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      await useServerStore.getState().getPrompt('github-mcp', 'summarize', {})
+      await useServerStore.getState().getPrompt('slack-mcp', 'translate', {})
+      await useServerStore.getState().removeServer('github-mcp')
+      const promptHistory = useServerStore.getState().promptHistory
+      expect(promptHistory['github-mcp::summarize']).toBeUndefined()
+      expect(promptHistory['slack-mcp::translate']).toHaveLength(1)
     })
   })
 

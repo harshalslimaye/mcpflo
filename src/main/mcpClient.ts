@@ -21,6 +21,7 @@ import type {
   Prompt,
   ToolCallOutcome,
   ResourceReadOutcome,
+  PromptGetOutcome,
   ToolCallNotification,
   ElicitationParams,
   ElicitationResult,
@@ -533,6 +534,34 @@ export async function readResource(
 
   try {
     const result = await session.client.readResource({ uri })
+    return { response: { jsonrpc: '2.0', result } }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// Gets a prompt's rendered messages over the server's warm, pooled connection.
+// Like readResource this needs none of the per-call machinery: prompts/get is a
+// single request → response with no progress/elicitation/sampling side channels,
+// and its response carries its own id so it can run alongside an in-flight tool
+// call. The SDK returns only the inner result, so we wrap it in a JSON-RPC
+// envelope to match the shape the renderer parses for tool calls.
+export async function getPrompt(
+  config: ServerConfig,
+  name: string,
+  args: Record<string, string>
+): Promise<PromptGetOutcome> {
+  let session: Session
+  try {
+    session = await getSession(config)
+  } catch (err) {
+    // A pre-response failure (spawn/connection error, unsupported transport)
+    // never produced a JSON-RPC envelope.
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+
+  try {
+    const result = await session.client.getPrompt({ name, arguments: args })
     return { response: { jsonrpc: '2.0', result } }
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) }

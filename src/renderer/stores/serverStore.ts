@@ -5,6 +5,7 @@ import type {
   CachedCapabilities,
   ToolCallOutcome,
   ResourceReadOutcome,
+  PromptGetOutcome,
   ToolCallNotification,
   ElicitationRequestEvent,
   ElicitationResult,
@@ -46,11 +47,31 @@ export interface ResourceReadRecord {
   at: number
 }
 
+// A single recorded prompt get, kept in memory for the session. Like a resource
+// read it has no notifications/side channels, but like a tool call it carries
+// the `args` it was invoked with (prompts take named string inputs), so History
+// entries are clickable to re-fill the form.
+export interface PromptGetRecord {
+  id: string
+  serverId: string
+  promptName: string
+  args: Record<string, string>
+  status: 'success' | 'error'
+  // Full JSON-RPC response envelope, when one was received.
+  response?: unknown
+  // Transport-level error message, when no response arrived.
+  error?: string
+  durationMs: number
+  at: number
+}
+
 // An outcome counts as an error when the connection failed, the server returned
-// a JSON-RPC error, or the tool itself reported `isError`. Resource reads share
-// the same { response, error } shape, so this classifies both (a read result
-// carries `contents`, never `isError`, so it lands on the success path).
-function outcomeStatus(outcome: ToolCallOutcome | ResourceReadOutcome): 'success' | 'error' {
+// a JSON-RPC error, or the tool itself reported `isError`. Resource reads and
+// prompt gets share the same { response, error } shape, so this classifies all
+// three (a read/get result has no `isError`, so it lands on the success path).
+function outcomeStatus(
+  outcome: ToolCallOutcome | ResourceReadOutcome | PromptGetOutcome
+): 'success' | 'error' {
   if (outcome.error) return 'error'
   const response = outcome.response
   if (!response || typeof response !== 'object') return 'error'
@@ -70,6 +91,11 @@ export function resourceKey(serverId: string, uri: string): string {
   return `${serverId}::${uri}`
 }
 
+// Get history is keyed per prompt; names are only unique within a server.
+export function promptKey(serverId: string, promptName: string): string {
+  return `${serverId}::${promptName}`
+}
+
 // Identifies a selected tool. Tool names are only unique within a server, so
 // the owning server id is part of the key.
 export interface SelectedTool {
@@ -84,15 +110,25 @@ export interface SelectedResource {
   uri: string
 }
 
+// Identifies a selected prompt. Prompt names are only unique within a server, so
+// the owning server id is part of the key.
+export interface SelectedPrompt {
+  serverId: string
+  promptName: string
+}
+
 interface ServerStore {
   servers: MCPServer[]
   selectedServerId: string | null
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
+  selectedPrompt: SelectedPrompt | null
   // Per-tool call history (newest first), keyed by `toolKey(serverId, toolName)`.
   history: Record<string, ToolCallRecord[]>
   // Per-resource read history (newest first), keyed by `resourceKey(serverId, uri)`.
   resourceHistory: Record<string, ResourceReadRecord[]>
+  // Per-prompt get history (newest first), keyed by `promptKey(serverId, promptName)`.
+  promptHistory: Record<string, PromptGetRecord[]>
   // Notifications streamed by the currently running call for a tool, keyed by
   // `toolKey`. An entry exists only while that call is in flight.
   liveNotifications: Record<string, ToolCallNotification[]>
@@ -107,10 +143,13 @@ interface ServerStore {
   selectServer: (id: string | null) => void
   selectTool: (serverId: string, toolName: string) => void
   selectResource: (serverId: string, uri: string) => void
+  selectPrompt: (serverId: string, promptName: string) => void
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
   clearHistory: (serverId: string, toolName: string) => void
   readResource: (serverId: string, uri: string) => Promise<void>
   clearResourceHistory: (serverId: string, uri: string) => void
+  getPrompt: (serverId: string, promptName: string, args: Record<string, string>) => Promise<void>
+  clearPromptHistory: (serverId: string, promptName: string) => void
   enqueueElicitation: (event: ElicitationRequestEvent) => void
   removeElicitation: (elicitationId: string) => void
   respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
@@ -141,8 +180,10 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   selectedServerId: null,
   selectedTool: null,
   selectedResource: null,
+  selectedPrompt: null,
   history: {},
   resourceHistory: {},
+  promptHistory: {},
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
@@ -157,13 +198,16 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   selectServer: (id) => set({ selectedServerId: id }),
 
-  // Tool and resource selection are mutually exclusive — the content area shows
-  // exactly one detail view — so selecting one clears the other.
+  // Tool, resource and prompt selection are mutually exclusive — the content
+  // area shows exactly one detail view — so selecting one clears the others.
   selectTool: (serverId, toolName) =>
-    set({ selectedTool: { serverId, toolName }, selectedResource: null }),
+    set({ selectedTool: { serverId, toolName }, selectedResource: null, selectedPrompt: null }),
 
   selectResource: (serverId, uri) =>
-    set({ selectedResource: { serverId, uri }, selectedTool: null }),
+    set({ selectedResource: { serverId, uri }, selectedTool: null, selectedPrompt: null }),
+
+  selectPrompt: (serverId, promptName) =>
+    set({ selectedPrompt: { serverId, promptName }, selectedTool: null, selectedResource: null }),
 
   executeTool: async (serverId, toolName, args) => {
     const server = get().servers.find((s) => s.id === serverId)
@@ -282,6 +326,56 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })
   },
 
+  getPrompt: async (serverId, promptName, args) => {
+    const server = get().servers.find((s) => s.id === serverId)
+    if (!server) return
+
+    const key = promptKey(serverId, promptName)
+    const at = Date.now()
+    let record: PromptGetRecord
+    try {
+      const outcome = await window.api.mcp.getPrompt(server, promptName, args)
+      record = {
+        id: crypto.randomUUID(),
+        serverId,
+        promptName,
+        args,
+        status: outcomeStatus(outcome),
+        response: outcome.response,
+        error: outcome.error,
+        durationMs: Date.now() - at,
+        at
+      }
+    } catch (err) {
+      record = {
+        id: crypto.randomUUID(),
+        serverId,
+        promptName,
+        args,
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - at,
+        at
+      }
+    }
+
+    set((state) => ({
+      promptHistory: {
+        ...state.promptHistory,
+        [key]: [record, ...(state.promptHistory[key] ?? [])]
+      }
+    }))
+  },
+
+  clearPromptHistory: (serverId, promptName) => {
+    const key = promptKey(serverId, promptName)
+    set((state) => {
+      const next = { ...state.promptHistory }
+      delete next[key]
+      return { promptHistory: next }
+    })
+  },
+
   enqueueElicitation: (event) =>
     set((state) => ({ pendingElicitations: [...state.pendingElicitations, event] })),
 
@@ -329,11 +423,15 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       selectedServerId: state.selectedServerId === id ? null : state.selectedServerId,
       selectedTool: state.selectedTool?.serverId === id ? null : state.selectedTool,
       selectedResource: state.selectedResource?.serverId === id ? null : state.selectedResource,
+      selectedPrompt: state.selectedPrompt?.serverId === id ? null : state.selectedPrompt,
       history: Object.fromEntries(
         Object.entries(state.history).filter(([key]) => !key.startsWith(`${id}::`))
       ),
       resourceHistory: Object.fromEntries(
         Object.entries(state.resourceHistory).filter(([key]) => !key.startsWith(`${id}::`))
+      ),
+      promptHistory: Object.fromEntries(
+        Object.entries(state.promptHistory).filter(([key]) => !key.startsWith(`${id}::`))
       )
     }))
   },

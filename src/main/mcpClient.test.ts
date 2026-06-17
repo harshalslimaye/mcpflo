@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
     listPrompts: vi.fn(),
     callTool: vi.fn(),
     readResource: vi.fn(),
+    getPrompt: vi.fn(),
     experimental: { tasks: { callToolStream: vi.fn() } },
     setRequestHandler: vi.fn(),
     close: vi.fn()
@@ -83,6 +84,7 @@ describe('mcpClient', () => {
     h.client.listPrompts.mockResolvedValue({ prompts: [] })
     h.client.callTool.mockResolvedValue({ content: [] })
     h.client.readResource.mockResolvedValue({ contents: [] })
+    h.client.getPrompt.mockResolvedValue({ messages: [] })
     h.client.close.mockResolvedValue(undefined)
     vi.resetModules()
     mod = await import('./mcpClient')
@@ -330,6 +332,43 @@ describe('mcpClient', () => {
       await mod.readResource(stdioConfig, 'mem://a')
       await mod.readResource(stdioConfig, 'mem://b')
       // One spawn (connect) shared by both reads.
+      expect(h.client.connect).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('getPrompt', () => {
+    it('wraps the SDK result in a synthesized JSON-RPC envelope', async () => {
+      const result = {
+        description: 'A greeting',
+        messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }]
+      }
+      h.client.getPrompt.mockResolvedValue(result)
+      const outcome = await mod.getPrompt(stdioConfig, 'greet', { name: 'Ada' })
+      expect(outcome.response).toEqual({ jsonrpc: '2.0', result })
+      expect(outcome.error).toBeUndefined()
+      expect(h.client.getPrompt).toHaveBeenCalledWith({
+        name: 'greet',
+        arguments: { name: 'Ada' }
+      })
+    })
+
+    it('returns a transport-level error when the get throws', async () => {
+      h.client.getPrompt.mockRejectedValue(new Error('prompt not found'))
+      const outcome = await mod.getPrompt(stdioConfig, 'missing', {})
+      expect(outcome.response).toBeUndefined()
+      expect(outcome.error).toBe('prompt not found')
+    })
+
+    it('returns an error for an unsupported transport (no envelope)', async () => {
+      const outcome = await mod.getPrompt(sseConfig, 'greet', {})
+      expect(outcome.response).toBeUndefined()
+      expect(outcome.error).toBe('Transport "sse" not yet supported')
+    })
+
+    it('reuses the warm pooled connection across gets', async () => {
+      await mod.getPrompt(stdioConfig, 'a', {})
+      await mod.getPrompt(stdioConfig, 'b', {})
+      // One spawn (connect) shared by both gets.
       expect(h.client.connect).toHaveBeenCalledTimes(1)
     })
   })
