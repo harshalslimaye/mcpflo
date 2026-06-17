@@ -16,7 +16,7 @@ import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { ServerRowItem } from './ServerRowItem'
 import { CategoryRow } from './CategoryRow'
 import { CapabilityItem } from './CapabilityItem'
-import type { SelectedTool, SelectedResource } from '../../stores/serverStore'
+import type { SelectedTool, SelectedResource, SelectedPrompt } from '../../stores/serverStore'
 import type { MCPServer, Tool, Resource, Prompt } from '../../../shared/mcp.types'
 
 type GroupKey = 'tools' | 'resources' | 'prompts'
@@ -49,10 +49,12 @@ interface ServerTreeProps {
   filter: string
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
+  selectedPrompt: SelectedPrompt | null
   onToggleServer: () => void
   onToggleGroup: (group: GroupKey) => void
   onSelectTool: (toolName: string) => void
   onSelectResource: (uri: string) => void
+  onSelectPrompt: (promptName: string) => void
   onRefresh: () => void
   onDelete: () => void
 }
@@ -64,10 +66,12 @@ function ServerTree({
   filter,
   selectedTool,
   selectedResource,
+  selectedPrompt,
   onToggleServer,
   onToggleGroup,
   onSelectTool,
   onSelectResource,
+  onSelectPrompt,
   onRefresh,
   onDelete
 }: ServerTreeProps): React.JSX.Element | null {
@@ -128,20 +132,25 @@ function ServerTree({
                 visible.map((item) => {
                   const uri = 'uri' in item ? item.uri : undefined
                   const label = item.name ?? uri ?? ''
-                  // Tools and resources open a detail view; prompts stay
-                  // display-only until they get one.
+                  // Tools, resources and prompts each open a detail view.
                   const isTool = key === 'tools'
                   const isResource = key === 'resources'
+                  const isPrompt = key === 'prompts'
                   const isSelected = isTool
                     ? selectedTool?.serverId === server.id && selectedTool?.toolName === label
                     : isResource
                       ? selectedResource?.serverId === server.id && selectedResource?.uri === uri
-                      : false
+                      : isPrompt
+                        ? selectedPrompt?.serverId === server.id &&
+                          selectedPrompt?.promptName === label
+                        : false
                   const onClick = isTool
                     ? () => onSelectTool(label)
                     : isResource && uri !== undefined
                       ? () => onSelectResource(uri)
-                      : undefined
+                      : isPrompt
+                        ? () => onSelectPrompt(label)
+                        : undefined
                   return (
                     <CapabilityItem
                       key={uri ?? label}
@@ -167,6 +176,8 @@ export function SecondarySidebar(): React.JSX.Element {
   const selectTool = useServerStore((s) => s.selectTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
   const selectResource = useServerStore((s) => s.selectResource)
+  const selectedPrompt = useServerStore((s) => s.selectedPrompt)
+  const selectPrompt = useServerStore((s) => s.selectPrompt)
   const [showAddModal, setShowAddModal] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<MCPServer | null>(null)
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set())
@@ -262,10 +273,12 @@ export function SecondarySidebar(): React.JSX.Element {
                 filter={query}
                 selectedTool={selectedTool}
                 selectedResource={selectedResource}
+                selectedPrompt={selectedPrompt}
                 onToggleServer={() => toggleServer(server.id)}
                 onToggleGroup={(group) => toggleGroup(server.id, group)}
                 onSelectTool={(toolName) => selectTool(server.id, toolName)}
                 onSelectResource={(uri) => selectResource(server.id, uri)}
+                onSelectPrompt={(promptName) => selectPrompt(server.id, promptName)}
                 onRefresh={() => refreshCapabilities(server.id)}
                 onDelete={() => setPendingDelete(server)}
               />

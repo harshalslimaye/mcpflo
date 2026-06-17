@@ -6,6 +6,7 @@ import type {
   CachedCapabilities,
   ToolCallOutcome,
   ResourceReadOutcome,
+  PromptGetOutcome,
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
@@ -35,6 +36,11 @@ declare global {
           taskSupport?: TaskSupport
         ) => Promise<ToolCallOutcome>
         readResource: (config: ServerConfig, uri: string) => Promise<ResourceReadOutcome>
+        getPrompt: (
+          config: ServerConfig,
+          name: string,
+          args: Record<string, string>
+        ) => Promise<PromptGetOutcome>
         onToolNotification: (callback: (event: ToolCallNotificationEvent) => void) => () => void
         onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void) => () => void
         onElicitationClosed: (callback: (event: ElicitationClosedEvent) => void) => () => void

@@ -2,6 +2,7 @@ import { Server } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { ToolDetailView } from '../tool/ToolDetailView'
 import { ResourceDetailView } from '../resource/ResourceDetailView'
+import { PromptDetailView } from '../prompt/PromptDetailView'
 
 function EmptyState(): React.JSX.Element {
   return (
@@ -20,10 +21,27 @@ function EmptyState(): React.JSX.Element {
 export function ContentArea(): React.JSX.Element {
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
+  const selectedPrompt = useServerStore((s) => s.selectedPrompt)
   const servers = useServerStore((s) => s.servers)
 
   // Selection is mutually exclusive, so at most one of these branches matches.
-  // Resources are checked first; the order is otherwise immaterial.
+  // The order is immaterial.
+  if (selectedPrompt) {
+    const server = servers.find((s) => s.id === selectedPrompt.serverId)
+    const prompt = server?.prompts.find((p) => p.name === selectedPrompt.promptName)
+    if (server && prompt) {
+      // Remount per prompt so all local view state (active tab, form values) resets.
+      return (
+        <PromptDetailView
+          key={`${server.id}::${prompt.name}`}
+          prompt={prompt}
+          serverId={server.id}
+          serverName={server.name}
+        />
+      )
+    }
+  }
+
   if (selectedResource) {
     const server = servers.find((s) => s.id === selectedResource.serverId)
     const resource = server?.resources.find((r) => r.uri === selectedResource.uri)
