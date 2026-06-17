@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ToolDetailView } from './ToolDetailView'
 import { useServerStore, toolKey, type ToolCallRecord } from '../../stores/serverStore'
 import type { Tool } from '../../../shared/mcp.types'
@@ -110,7 +110,7 @@ describe('ToolDetailView', () => {
     )
   })
 
-  it('makes History entries non-clickable when the tool takes no parameters', () => {
+  it('keeps History entries clickable even when the tool takes no parameters', () => {
     const noParamTool: Tool = {
       name: 'ping',
       inputSchema: { type: 'object', properties: {} }
@@ -127,10 +127,87 @@ describe('ToolDetailView', () => {
     }
     useServerStore.setState({ history: { [toolKey('memory-mcp', 'ping')]: [record] } })
     render(<ToolDetailView tool={noParamTool} serverId="memory-mcp" serverName="Memory MCP" />)
-    // The history entry is rendered but is not an interactive button — there is
-    // no form to pre-fill, so clicking does nothing.
-    expect(screen.getByText('no arguments')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /no arguments/ })).not.toBeInTheDocument()
+    // Even with no form to pre-fill, the entry is interactive so selecting it can
+    // drive the Response panel — clicking it must not throw (no prefill path).
+    const entry = screen.getByRole('button', { name: /no arguments/ })
+    fireEvent.click(entry)
+    expect(entry).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('shows the selected history entry’s response in the Response panel', () => {
+    const newest: ToolCallRecord = {
+      id: 'new',
+      serverId: 'memory-mcp',
+      toolName: 'search_nodes',
+      args: { query: 'new' },
+      status: 'success',
+      response: {
+        jsonrpc: '2.0',
+        id: 2,
+        result: { content: [{ type: 'text', text: 'NEW RESULT' }] }
+      },
+      notifications: [],
+      durationMs: 9,
+      at: Date.now()
+    }
+    const older: ToolCallRecord = {
+      ...newest,
+      id: 'old',
+      args: { query: 'old' },
+      response: {
+        jsonrpc: '2.0',
+        id: 1,
+        result: { content: [{ type: 'text', text: 'OLD RESULT' }] }
+      }
+    }
+    useServerStore.setState({
+      history: { [toolKey('memory-mcp', 'search_nodes')]: [newest, older] }
+    })
+    render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    // Defaults to the latest call's response…
+    expect(screen.getByText('NEW RESULT')).toBeInTheDocument()
+    // …clicking the older entry swaps the panel to that record's response.
+    fireEvent.click(screen.getByText('{"query":"old"}'))
+    expect(screen.getByText('OLD RESULT')).toBeInTheDocument()
+    expect(screen.queryByText('NEW RESULT')).not.toBeInTheDocument()
+  })
+
+  it('snaps the Response panel back to the latest call after executing', async () => {
+    const newest: ToolCallRecord = {
+      id: 'new',
+      serverId: 'memory-mcp',
+      toolName: 'search_nodes',
+      args: { query: 'new' },
+      status: 'success',
+      response: {
+        jsonrpc: '2.0',
+        id: 2,
+        result: { content: [{ type: 'text', text: 'NEW RESULT' }] }
+      },
+      notifications: [],
+      durationMs: 9,
+      at: Date.now()
+    }
+    const older: ToolCallRecord = {
+      ...newest,
+      id: 'old',
+      args: { query: 'old' },
+      response: {
+        jsonrpc: '2.0',
+        id: 1,
+        result: { content: [{ type: 'text', text: 'OLD RESULT' }] }
+      }
+    }
+    useServerStore.setState({
+      history: { [toolKey('memory-mcp', 'search_nodes')]: [newest, older] }
+    })
+    render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    // Pin the older entry, then run a new call (executeTool no-ops with no server
+    // registered, so history is unchanged) — the panel should drop the selection.
+    fireEvent.click(screen.getByText('{"query":"old"}'))
+    expect(screen.getByText('OLD RESULT')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Execute' }))
+    await waitFor(() => expect(screen.getByText('NEW RESULT')).toBeInTheDocument())
   })
 
   it('renders header badges for a tool that declares all annotation hints', () => {

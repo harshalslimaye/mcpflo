@@ -85,6 +85,35 @@ describe('ResourceDetailView', () => {
     expect(screen.getByRole('button', { name: 'Preview' }).className).toContain('text-accent')
   })
 
+  it('shows the selected read’s content when a History entry is clicked', () => {
+    const newest = successRecord({
+      id: 'new',
+      durationMs: 11,
+      response: {
+        jsonrpc: '2.0',
+        result: { contents: [{ uri: resource.uri, mimeType: 'text/markdown', text: '# NEWEST' }] }
+      }
+    })
+    const older = successRecord({
+      id: 'old',
+      durationMs: 22,
+      response: {
+        jsonrpc: '2.0',
+        result: { contents: [{ uri: resource.uri, mimeType: 'text/markdown', text: '# OLDEST' }] }
+      }
+    })
+    useServerStore.setState({
+      resourceHistory: { [resourceKey('srv', resource.uri)]: [newest, older] }
+    })
+    renderView()
+    // Defaults to the latest read…
+    expect(screen.getByText('# NEWEST')).toBeInTheDocument()
+    // …clicking the older entry (22 ms) swaps the panel to its content.
+    fireEvent.click(screen.getByText('22 ms'))
+    expect(screen.getByText('# OLDEST')).toBeInTheDocument()
+    expect(screen.queryByText('# NEWEST')).not.toBeInTheDocument()
+  })
+
   it('renders an error result from history', () => {
     const record = successRecord({
       status: 'error',

@@ -57,4 +57,18 @@ describe('History', () => {
     render(<History records={[rec({})]} emptyLabel="empty" />)
     expect(screen.queryByRole('button')).toBeNull()
   })
+
+  it('marks the entry matching selectedId as current', () => {
+    render(
+      <History
+        records={[rec({ id: 'a' }), rec({ id: 'b' })]}
+        emptyLabel="empty"
+        onSelectRecord={vi.fn()}
+        selectedId="b"
+      />
+    )
+    const buttons = screen.getAllByRole('button')
+    expect(buttons[0]).not.toHaveAttribute('aria-current')
+    expect(buttons[1]).toHaveAttribute('aria-current', 'true')
+  })
 })

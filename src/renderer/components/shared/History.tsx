@@ -17,15 +17,20 @@ interface HistoryProps<T extends HistoryRecord> {
   // Optional second line under the timestamp row, e.g. a tool call's arguments.
   renderDetail?: (record: T) => React.ReactNode
   // When provided, each entry becomes a clickable button calling this with the
-  // record (used to pre-fill a request form with a past call's arguments).
+  // record (used to pre-fill a request form with a past call's arguments and to
+  // drive the Response panel).
   onSelectRecord?: (record: T) => void
+  // The id of the record currently shown in the Response panel, highlighted so
+  // it's clear which entry the panel reflects (the latest by default).
+  selectedId?: string
 }
 
 export function History<T extends HistoryRecord>({
   records = [],
   emptyLabel,
   renderDetail,
-  onSelectRecord
+  onSelectRecord,
+  selectedId
 }: HistoryProps<T>): React.JSX.Element {
   if (records.length === 0) {
     return (
@@ -42,6 +47,7 @@ export function History<T extends HistoryRecord>({
     <ul className="flex flex-col gap-1 px-1 pb-4">
       {records.map((record) => {
         const isError = record.status === 'error'
+        const isSelected = record.id === selectedId
         const detail = renderDetail?.(record)
         const content = (
           <>
@@ -68,13 +74,18 @@ export function History<T extends HistoryRecord>({
             {onSelectRecord ? (
               <button
                 type="button"
+                aria-current={isSelected || undefined}
                 onClick={() => onSelectRecord(record)}
-                className={`${cardClass} w-full cursor-pointer text-left transition-colors hover:border-border-soft hover:bg-card-2`}
+                className={`${cardClass} w-full cursor-pointer text-left transition-colors hover:border-border-soft hover:bg-card-2 ${
+                  isSelected ? 'border-border-soft bg-card-2' : ''
+                }`}
               >
                 {content}
               </button>
             ) : (
-              <div className={cardClass}>{content}</div>
+              <div className={`${cardClass} ${isSelected ? 'border-border-soft bg-card-2' : ''}`}>
+                {content}
+              </div>
             )}
           </li>
         )

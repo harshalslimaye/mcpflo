@@ -37,6 +37,14 @@ function renderView(
   }
 }
 
+describe('PromptResultView — truncated response', () => {
+  it('shows the size-limit notice instead of a transport-failure message', () => {
+    renderView(record({ responseTruncated: true, response: undefined }), 'pretty')
+    expect(screen.getByText(/exceeded the in-memory size limit/i)).toBeInTheDocument()
+    expect(screen.queryByText('No response received.')).not.toBeInTheDocument()
+  })
+})
+
 describe('PromptResultView', () => {
   it('offers Preview, Raw and Pretty tabs', () => {
     renderView(record())

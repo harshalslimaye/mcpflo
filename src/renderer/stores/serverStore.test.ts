@@ -282,6 +282,33 @@ describe('serverStore', () => {
       expect(useServerStore.getState().history).toEqual({})
     })
 
+    it('caps history at 50 records, dropping the oldest', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      for (let i = 0; i < 55; i++) {
+        await useServerStore.getState().executeTool('github-mcp', 'create_issue', { n: i })
+      }
+      const records = useServerStore.getState().history[key]
+      expect(records).toHaveLength(50)
+      // Newest first; the 5 oldest (n: 0..4) were dropped.
+      expect(records[0].args).toEqual({ n: 54 })
+      expect(records[49].args).toEqual({ n: 5 })
+    })
+
+    it('drops and flags an oversized response', async () => {
+      mockApi.mcp.callTool.mockResolvedValue({
+        response: {
+          jsonrpc: '2.0',
+          id: 1,
+          result: { content: [{ type: 'text', text: 'x'.repeat(300_000) }] }
+        }
+      })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      const record = useServerStore.getState().history[key][0]
+      expect(record.responseTruncated).toBe(true)
+      expect(record.response).toBeUndefined()
+    })
+
     describe('notifications', () => {
       const progressNotification = {
         method: 'notifications/progress',
