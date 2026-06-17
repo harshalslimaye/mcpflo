@@ -3,6 +3,9 @@ import {
   StdioClientTransport,
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   ElicitRequestSchema,
   CreateMessageRequestSchema,
@@ -69,7 +72,7 @@ interface ActiveCall {
 // call) and read whatever call is currently `active`.
 interface Session {
   client: Client
-  transport: StdioClientTransport
+  transport: Transport
   active: ActiveCall | null
   // Tail of the per-server serialization chain; each call awaits the previous.
   queue: Promise<unknown>
@@ -93,10 +96,6 @@ async function resolveSession(entry: Promise<Session> | undefined): Promise<Sess
 // Returns the warm session for a server, spawning and wiring one on first use.
 // Subsequent calls reuse the same process until it dies or is disconnected.
 function getSession(config: ServerConfig): Promise<Session> {
-  if (config.transport.type !== 'stdio') {
-    return Promise.reject(new Error(`Transport "${config.transport.type}" not yet supported`))
-  }
-
   const existing = sessions.get(config.id)
   if (existing) return existing
 
@@ -110,19 +109,55 @@ function getSession(config: ServerConfig): Promise<Session> {
   return pending
 }
 
+// Wraps fetch to merge the user's configured headers into every request. Used
+// for SSE's GET stream, where the underlying EventSource can't set headers
+// itself; the POST leg and all streamable-http requests take headers via
+// requestInit directly.
+function withHeaders(headers: Record<string, string>): typeof fetch {
+  return (input, init) =>
+    fetch(input, {
+      ...init,
+      headers: { ...(init?.headers as Record<string, string> | undefined), ...headers }
+    })
+}
+
+// Builds the SDK transport for a server's configured transport type. Only this
+// construction is transport-specific — everything downstream (client, taps,
+// handlers) works against the generic Transport interface.
+function createTransport(config: ServerConfig): Transport {
+  const t = config.transport
+  switch (t.type) {
+    case 'stdio':
+      return new StdioClientTransport({
+        command: t.command,
+        args: t.args,
+        // Inherit only a safe baseline (PATH, HOME, …) rather than the full host
+        // environment, so secrets in process.env never leak into spawned servers.
+        // The user's explicitly configured env vars are layered on top.
+        env: {
+          ...getDefaultEnvironment(),
+          ...t.env
+        }
+      })
+    case 'streamable-http':
+      // requestInit.headers applies to every request (POST + the fetch-based GET
+      // stream), so an Authorization header covers token-authed servers.
+      return new StreamableHTTPClientTransport(
+        new URL(t.url),
+        t.headers ? { requestInit: { headers: t.headers } } : undefined
+      )
+    case 'sse':
+      // POSTs carry headers via requestInit; the GET EventSource stream needs a
+      // header-injecting fetch since it can't set headers on its own.
+      return new SSEClientTransport(new URL(t.url), {
+        requestInit: t.headers ? { headers: t.headers } : undefined,
+        eventSourceInit: t.headers ? { fetch: withHeaders(t.headers) } : undefined
+      })
+  }
+}
+
 async function createSession(config: ServerConfig): Promise<Session> {
-  const stdio = config.transport as Extract<ServerConfig['transport'], { type: 'stdio' }>
-  const transport = new StdioClientTransport({
-    command: stdio.command,
-    args: stdio.args,
-    // Inherit only a safe baseline (PATH, HOME, …) rather than the full host
-    // environment, so secrets in process.env never leak into spawned servers.
-    // The user's explicitly configured env vars are layered on top.
-    env: {
-      ...getDefaultEnvironment(),
-      ...stdio.env
-    }
-  })
+  const transport = createTransport(config)
 
   const client = new Client(
     { name: 'mcpflo', version: '1.0.0' },
