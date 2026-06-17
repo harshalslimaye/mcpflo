@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ServerConfig } from '../shared/mcp.types'
 
 interface MockTransport {
-  opts: Record<string, unknown>
+  // HTTP transports also record the URL they were constructed with.
+  url?: URL
+  opts: Record<string, unknown> | undefined
   send: (message: unknown) => unknown
   onmessage: ((message: unknown) => void) | undefined
 }
@@ -22,7 +24,8 @@ const h = vi.hoisted(() => ({
   },
   clientCtor: vi.fn(),
   transports: [] as Array<{
-    opts: Record<string, unknown>
+    url?: URL
+    opts: Record<string, unknown> | undefined
     send: (message: unknown) => unknown
     onmessage: ((message: unknown) => void) | undefined
   }>
@@ -50,6 +53,34 @@ vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   getDefaultEnvironment: () => ({ PATH: '/usr/bin' })
 }))
 
+vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
+  StreamableHTTPClientTransport: class {
+    url: URL
+    opts: Record<string, unknown> | undefined
+    send = vi.fn()
+    onmessage: ((message: unknown) => void) | undefined
+    constructor(url: URL, opts?: Record<string, unknown>) {
+      this.url = url
+      this.opts = opts
+      h.transports.push(this)
+    }
+  }
+}))
+
+vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
+  SSEClientTransport: class {
+    url: URL
+    opts: Record<string, unknown> | undefined
+    send = vi.fn()
+    onmessage: ((message: unknown) => void) | undefined
+    constructor(url: URL, opts?: Record<string, unknown>) {
+      this.url = url
+      this.opts = opts
+      h.transports.push(this)
+    }
+  }
+}))
+
 const stdioConfig: ServerConfig = {
   id: 'srv-1',
   name: 'Test Server',
@@ -60,6 +91,32 @@ const sseConfig: ServerConfig = {
   id: 'srv-2',
   name: 'SSE Server',
   transport: { type: 'sse', url: 'https://example.com/sse' }
+}
+
+const sseWithHeadersConfig: ServerConfig = {
+  id: 'srv-3',
+  name: 'SSE Server (auth)',
+  transport: {
+    type: 'sse',
+    url: 'https://example.com/sse',
+    headers: { Authorization: 'Bearer tok' }
+  }
+}
+
+const streamableHttpConfig: ServerConfig = {
+  id: 'srv-4',
+  name: 'Streamable HTTP Server',
+  transport: {
+    type: 'streamable-http',
+    url: 'https://example.com/mcp',
+    headers: { Authorization: 'Bearer tok' }
+  }
+}
+
+const streamableHttpNoHeadersConfig: ServerConfig = {
+  id: 'srv-5',
+  name: 'Streamable HTTP Server (no auth)',
+  transport: { type: 'streamable-http', url: 'https://example.com/mcp' }
 }
 
 // The last transport openClient constructed — the one the current call taps.
@@ -161,10 +218,36 @@ describe('mcpClient', () => {
       })
     })
 
-    it('rejects non-stdio transports', async () => {
-      await expect(mod.connectServer(sseConfig)).rejects.toThrow(
-        'Transport "sse" not yet supported'
-      )
+    it('connects over an sse transport', async () => {
+      const result = await mod.connectServer(sseConfig)
+      expect(result.tools).toEqual([{ name: 'echo', inputSchema: { type: 'object' } }])
+      expect(lastTransport().url?.toString()).toBe('https://example.com/sse')
+    })
+  })
+
+  describe('transport construction', () => {
+    it('builds a streamable-http transport with the URL and auth headers', async () => {
+      await mod.connectServer(streamableHttpConfig)
+      const t = lastTransport()
+      expect(t.url?.toString()).toBe('https://example.com/mcp')
+      expect(t.opts).toEqual({ requestInit: { headers: { Authorization: 'Bearer tok' } } })
+    })
+
+    it('passes no opts to a streamable-http transport without headers', async () => {
+      await mod.connectServer(streamableHttpNoHeadersConfig)
+      expect(lastTransport().opts).toBeUndefined()
+    })
+
+    it('builds an sse transport with requestInit headers and a header-injecting fetch', async () => {
+      await mod.connectServer(sseWithHeadersConfig)
+      const t = lastTransport()
+      expect(t.url?.toString()).toBe('https://example.com/sse')
+      const opts = t.opts as {
+        requestInit?: { headers?: unknown }
+        eventSourceInit?: { fetch?: unknown }
+      }
+      expect(opts.requestInit?.headers).toEqual({ Authorization: 'Bearer tok' })
+      expect(typeof opts.eventSourceInit?.fetch).toBe('function')
     })
   })
 
@@ -267,9 +350,10 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('spawn npx ENOENT')
     })
 
-    it('returns an error outcome for unsupported transports', async () => {
+    it('runs a call over an sse transport', async () => {
       const outcome = await mod.callTool(sseConfig, 'echo', {})
-      expect(outcome.error).toBe('Transport "sse" not yet supported')
+      expect(outcome.error).toBeUndefined()
+      expect(lastTransport().url?.toString()).toBe('https://example.com/sse')
     })
 
     it('keeps the connection warm after the call', async () => {
@@ -322,10 +406,9 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('resource not found')
     })
 
-    it('returns an error for an unsupported transport (no envelope)', async () => {
+    it('reads over an sse transport', async () => {
       const outcome = await mod.readResource(sseConfig, 'mem://x')
-      expect(outcome.response).toBeUndefined()
-      expect(outcome.error).toBe('Transport "sse" not yet supported')
+      expect(outcome.response).toEqual({ jsonrpc: '2.0', result: { contents: [] } })
     })
 
     it('reuses the warm pooled connection across reads', async () => {
@@ -359,10 +442,9 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('prompt not found')
     })
 
-    it('returns an error for an unsupported transport (no envelope)', async () => {
+    it('gets a prompt over an sse transport', async () => {
       const outcome = await mod.getPrompt(sseConfig, 'greet', {})
-      expect(outcome.response).toBeUndefined()
-      expect(outcome.error).toBe('Transport "sse" not yet supported')
+      expect(outcome.response).toEqual({ jsonrpc: '2.0', result: { messages: [] } })
     })
 
     it('reuses the warm pooled connection across gets', async () => {

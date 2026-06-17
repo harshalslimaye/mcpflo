@@ -1,6 +1,6 @@
 {
   "name": "mcpflo",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "A visual testing tool for MCP (Model Context Protocol) servers — connect, browse capabilities, and test tool chains without writing code.",
   "main": "./out/main/index.js",
   "author": {
