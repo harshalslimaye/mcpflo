@@ -202,6 +202,15 @@ describe('ToolCallResultView — Preview tab', () => {
   })
 })
 
+describe('ToolCallResultView — truncated response', () => {
+  it('shows the size-limit notice instead of attempting to render the dropped payload', () => {
+    view(rec({ responseTruncated: true, response: undefined }), 'pretty')
+    expect(screen.getByText(/exceeded the in-memory size limit/i)).toBeInTheDocument()
+    // Not mistaken for a transport failure.
+    expect(screen.queryByText('No response received.')).not.toBeInTheDocument()
+  })
+})
+
 describe('ToolCallResultView — tab switching', () => {
   it('calls onTabChange when a tab is clicked', () => {
     const onTabChange = vi.fn()

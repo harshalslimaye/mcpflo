@@ -12,6 +12,7 @@ import type {
   SamplingRequestEvent,
   SamplingResult
 } from '../../shared/mcp.types'
+import { capResponse, pushCapped } from '../lib/historyRecord'
 
 // A single recorded tool invocation, kept in memory for the session.
 export interface ToolCallRecord {
@@ -22,6 +23,10 @@ export interface ToolCallRecord {
   status: 'success' | 'error'
   // Full JSON-RPC response envelope, when one was received.
   response?: unknown
+  // True when the response was dropped because it exceeded the in-memory size
+  // budget (see capResponse). Distinguishes a deliberately-dropped payload from
+  // a transport failure, which also leaves `response` undefined.
+  responseTruncated?: boolean
   // Transport-level error message, when no response arrived.
   error?: string
   // Notifications (progress, log messages, …) received while the call ran,
@@ -41,6 +46,8 @@ export interface ResourceReadRecord {
   status: 'success' | 'error'
   // Full JSON-RPC response envelope, when one was received.
   response?: unknown
+  // See ToolCallRecord.responseTruncated.
+  responseTruncated?: boolean
   // Transport-level error message, when no response arrived.
   error?: string
   durationMs: number
@@ -59,6 +66,8 @@ export interface PromptGetRecord {
   status: 'success' | 'error'
   // Full JSON-RPC response envelope, when one was received.
   response?: unknown
+  // See ToolCallRecord.responseTruncated.
+  responseTruncated?: boolean
   // Transport-level error message, when no response arrived.
   error?: string
   durationMs: number
@@ -231,13 +240,15 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     try {
       const taskSupport = server.tools.find((t) => t.name === toolName)?.execution?.taskSupport
       const outcome = await window.api.mcp.callTool(server, toolName, args, callId, taskSupport)
+      const { response, truncated } = capResponse(outcome.response)
       record = {
         id: crypto.randomUUID(),
         serverId,
         toolName,
         args,
         status: outcomeStatus(outcome),
-        response: outcome.response,
+        response,
+        responseTruncated: truncated,
         error: outcome.error,
         notifications,
         durationMs: Date.now() - at,
@@ -263,7 +274,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       const live = { ...state.liveNotifications }
       delete live[key]
       return {
-        history: { ...state.history, [key]: [record, ...(state.history[key] ?? [])] },
+        history: { ...state.history, [key]: pushCapped(state.history[key], record) },
         liveNotifications: live
       }
     })
@@ -287,12 +298,14 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     let record: ResourceReadRecord
     try {
       const outcome = await window.api.mcp.readResource(server, uri)
+      const { response, truncated } = capResponse(outcome.response)
       record = {
         id: crypto.randomUUID(),
         serverId,
         uri,
         status: outcomeStatus(outcome),
-        response: outcome.response,
+        response,
+        responseTruncated: truncated,
         error: outcome.error,
         durationMs: Date.now() - at,
         at
@@ -312,7 +325,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     set((state) => ({
       resourceHistory: {
         ...state.resourceHistory,
-        [key]: [record, ...(state.resourceHistory[key] ?? [])]
+        [key]: pushCapped(state.resourceHistory[key], record)
       }
     }))
   },
@@ -335,13 +348,15 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     let record: PromptGetRecord
     try {
       const outcome = await window.api.mcp.getPrompt(server, promptName, args)
+      const { response, truncated } = capResponse(outcome.response)
       record = {
         id: crypto.randomUUID(),
         serverId,
         promptName,
         args,
         status: outcomeStatus(outcome),
-        response: outcome.response,
+        response,
+        responseTruncated: truncated,
         error: outcome.error,
         durationMs: Date.now() - at,
         at
@@ -362,7 +377,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     set((state) => ({
       promptHistory: {
         ...state.promptHistory,
-        [key]: [record, ...(state.promptHistory[key] ?? [])]
+        [key]: pushCapped(state.promptHistory[key], record)
       }
     }))
   },

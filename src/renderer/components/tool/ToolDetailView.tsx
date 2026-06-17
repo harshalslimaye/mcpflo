@@ -36,19 +36,27 @@ export function ToolDetailView({
   const [running, setRunning] = useState(false)
   // Kept here so the chosen result tab survives across executions.
   const [resultTab, setResultTab] = useState<ResultTab>('preview')
+  // The history record whose response the panel shows. Null means "the latest";
+  // clicking a History entry pins that record until the next execution.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const key = toolKey(serverId, tool.name)
   const history = useServerStore((s) => s.history[key]) ?? []
-  const latestCall = useServerStore((s) => s.history[key]?.[0])
+  // Explicit selection wins; otherwise the latest call. `find` returning
+  // undefined (record capped/cleared away) also falls back to the latest.
+  const displayed =
+    (selectedId ? history.find((r) => r.id === selectedId) : undefined) ?? history[0]
   const liveNotifications = useServerStore((s) => s.liveNotifications[key])
   const executeTool = useServerStore((s) => s.executeTool)
   const clearHistory = useServerStore((s) => s.clearHistory)
 
-  // A tool with no parameters has no form to fill, so History entries aren't
-  // clickable for it.
+  // A tool with no parameters has no form to fill, so selecting a History entry
+  // only drives the Response panel and skips the prefill.
   const { isEmpty } = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
 
   async function handleExecute(payload: Record<string, unknown>): Promise<void> {
+    // Snap the Response panel back to the call we're about to make.
+    setSelectedId(null)
     setRunning(true)
     try {
       await executeTool(serverId, tool.name, payload)
@@ -74,11 +82,12 @@ export function ToolDetailView({
               onExecute={handleExecute}
             />
 
-            {/* Response of the most recent call. While a call is in flight the
-                same panel renders its executing state, with live notifications. */}
-            {(running || latestCall) && (
+            {/* Response of the selected (or latest) call. While a call is in
+                flight the same panel renders its executing state, with live
+                notifications. */}
+            {(running || displayed) && (
               <ToolCallResultView
-                record={running ? undefined : latestCall}
+                record={running ? undefined : displayed}
                 liveNotifications={running ? liveNotifications : undefined}
                 tab={resultTab}
                 onTabChange={setResultTab}
@@ -90,6 +99,7 @@ export function ToolDetailView({
             <History
               records={history}
               emptyLabel="No calls yet."
+              selectedId={displayed?.id}
               renderDetail={(record) => (
                 <span
                   className="block truncate font-mono text-[11px] text-code opacity-85"
@@ -98,12 +108,14 @@ export function ToolDetailView({
                   {summarizeArgs(record.args)}
                 </span>
               )}
-              onSelectRecord={
-                isEmpty
-                  ? undefined
-                  : (record) =>
-                      setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
-              }
+              // Selecting an entry always drives the Response panel; for a tool
+              // with parameters it also re-fills the Request form.
+              onSelectRecord={(record) => {
+                setSelectedId(record.id)
+                if (!isEmpty) {
+                  setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+                }
+              }}
             />
           </HistoryRail>
         </div>

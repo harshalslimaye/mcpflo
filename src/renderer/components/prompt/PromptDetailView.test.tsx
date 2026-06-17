@@ -39,6 +39,52 @@ beforeEach(() => {
   useServerStore.setState({ promptHistory: {}, getPrompt: mockGetPrompt })
 })
 
+describe('PromptDetailView — history selection', () => {
+  it('shows the selected get’s response when a History entry is clicked', () => {
+    const newest = successRecord({
+      id: 'new',
+      args: { topic: 'new' },
+      response: {
+        jsonrpc: '2.0',
+        result: { messages: [{ role: 'user', content: { type: 'text', text: 'NEW MESSAGE' } }] }
+      }
+    })
+    const older = successRecord({
+      id: 'old',
+      args: { topic: 'old' },
+      response: {
+        jsonrpc: '2.0',
+        result: { messages: [{ role: 'user', content: { type: 'text', text: 'OLD MESSAGE' } }] }
+      }
+    })
+    useServerStore.setState({ promptHistory: { [promptKey('srv', prompt.name)]: [newest, older] } })
+    renderView()
+    expect(screen.getByText('NEW MESSAGE')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('{"topic":"old"}'))
+    expect(screen.getByText('OLD MESSAGE')).toBeInTheDocument()
+    expect(screen.queryByText('NEW MESSAGE')).not.toBeInTheDocument()
+  })
+
+  it('drives the panel for a prompt with no arguments (no prefill path)', () => {
+    const pingPrompt: Prompt = { name: 'ping' }
+    const record = successRecord({
+      promptName: 'ping',
+      args: {},
+      response: {
+        jsonrpc: '2.0',
+        result: { messages: [{ role: 'user', content: { type: 'text', text: 'PONG' } }] }
+      }
+    })
+    useServerStore.setState({ promptHistory: { [promptKey('srv', 'ping')]: [record] } })
+    render(<PromptDetailView prompt={pingPrompt} serverId="srv" serverName="Everything" />)
+    // The arg-less entry is summarised as "no arguments" and is still clickable.
+    const entry = screen.getByRole('button', { name: /no arguments/ })
+    fireEvent.click(entry)
+    expect(entry).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByText('PONG')).toBeInTheDocument()
+  })
+})
+
 describe('PromptDetailView', () => {
   it('renders the header with name, server and argument count', () => {
     renderView()

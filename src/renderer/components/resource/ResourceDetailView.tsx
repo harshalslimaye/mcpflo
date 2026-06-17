@@ -22,13 +22,21 @@ export function ResourceDetailView({
   const clearResourceHistory = useServerStore((s) => s.clearResourceHistory)
   const history =
     useServerStore((s) => s.resourceHistory[resourceKey(serverId, resource.uri)]) ?? []
-  const latestRead = history[0]
   const [reading, setReading] = useState(false)
   // Kept here (not in the result view) so it survives across reads — each read
   // swaps in a new record, but the chosen result tab stays put.
   const [resultTab, setResultTab] = useState<ResourceResultTab>('preview')
+  // The history record whose content the panel shows. Null means "the latest";
+  // clicking a History entry pins that record until the next read.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Explicit selection wins; otherwise the latest read. `find` returning
+  // undefined (record capped/cleared away) also falls back to the latest.
+  const displayed =
+    (selectedId ? history.find((r) => r.id === selectedId) : undefined) ?? history[0]
 
   async function handleRead(): Promise<void> {
+    // Snap the panel back to the read we're about to make.
+    setSelectedId(null)
     setReading(true)
     try {
       await readResource(serverId, resource.uri)
@@ -47,11 +55,11 @@ export function ResourceDetailView({
           <div className="flex-1 min-w-0 flex flex-col gap-[18px]">
             <ResourceRequestPanel resource={resource} reading={reading} onRead={handleRead} />
 
-            {/* Result of the most recent read. While a read is in flight the same
-                panel renders its reading state. */}
-            {(reading || latestRead) && (
+            {/* Result of the selected (or latest) read. While a read is in
+                flight the same panel renders its reading state. */}
+            {(reading || displayed) && (
               <ResourceContentView
-                record={reading ? undefined : latestRead}
+                record={reading ? undefined : displayed}
                 tab={resultTab}
                 onTabChange={setResultTab}
               />
@@ -62,7 +70,14 @@ export function ResourceDetailView({
             count={history.length}
             onClear={() => clearResourceHistory(serverId, resource.uri)}
           >
-            <History records={history} emptyLabel="No reads yet." />
+            <History
+              records={history}
+              emptyLabel="No reads yet."
+              selectedId={displayed?.id}
+              // A read has no arguments to re-fill — selecting an entry just
+              // drives which read's content the panel shows.
+              onSelectRecord={(record) => setSelectedId(record.id)}
+            />
           </HistoryRail>
         </div>
       </div>

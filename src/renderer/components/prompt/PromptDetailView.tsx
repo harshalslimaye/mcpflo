@@ -36,18 +36,26 @@ export function PromptDetailView({
   const [running, setRunning] = useState(false)
   // Kept here so the chosen result tab survives across gets.
   const [resultTab, setResultTab] = useState<PromptResultTab>('preview')
+  // The history record whose response the panel shows. Null means "the latest";
+  // clicking a History entry pins that record until the next get.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const key = promptKey(serverId, prompt.name)
   const history = useServerStore((s) => s.promptHistory[key]) ?? []
-  const latestGet = history[0]
+  // Explicit selection wins; otherwise the latest get. `find` returning
+  // undefined (record capped/cleared away) also falls back to the latest.
+  const displayed =
+    (selectedId ? history.find((r) => r.id === selectedId) : undefined) ?? history[0]
   const getPrompt = useServerStore((s) => s.getPrompt)
   const clearPromptHistory = useServerStore((s) => s.clearPromptHistory)
 
-  // A prompt with no arguments has no form to fill, so History entries aren't
-  // clickable for it.
+  // A prompt with no arguments has no form to fill, so selecting a History entry
+  // only drives the Response panel and skips the prefill.
   const isEmpty = isPromptEmpty(prompt)
 
   async function handleExecute(payload: Record<string, string>): Promise<void> {
+    // Snap the Response panel back to the get we're about to make.
+    setSelectedId(null)
     setRunning(true)
     try {
       await getPrompt(serverId, prompt.name, payload)
@@ -73,11 +81,11 @@ export function PromptDetailView({
               onExecute={handleExecute}
             />
 
-            {/* Response of the most recent get. While a get is in flight the same
-                panel renders its busy state. */}
-            {(running || latestGet) && (
+            {/* Response of the selected (or latest) get. While a get is in
+                flight the same panel renders its busy state. */}
+            {(running || displayed) && (
               <PromptResultView
-                record={running ? undefined : latestGet}
+                record={running ? undefined : displayed}
                 tab={resultTab}
                 onTabChange={setResultTab}
               />
@@ -91,6 +99,7 @@ export function PromptDetailView({
             <History
               records={history}
               emptyLabel="No gets yet."
+              selectedId={displayed?.id}
               renderDetail={(record) => (
                 <span
                   className="block truncate font-mono text-[11px] text-code opacity-85"
@@ -99,12 +108,14 @@ export function PromptDetailView({
                   {summarizeArgs(record.args)}
                 </span>
               )}
-              onSelectRecord={
-                isEmpty
-                  ? undefined
-                  : (record) =>
-                      setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
-              }
+              // Selecting an entry always drives the Response panel; for a prompt
+              // with arguments it also re-fills the Request form.
+              onSelectRecord={(record) => {
+                setSelectedId(record.id)
+                if (!isEmpty) {
+                  setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+                }
+              }}
             />
           </HistoryRail>
         </div>

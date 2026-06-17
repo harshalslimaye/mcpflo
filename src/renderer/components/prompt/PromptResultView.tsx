@@ -67,6 +67,14 @@ function ResponseBody({
   record: PromptGetRecord
   tab: PromptResultTab
 }): React.JSX.Element {
+  if (record.responseTruncated) {
+    return (
+      <p className="rounded border border-border bg-bg-elevated p-3 text-sm text-text-muted">
+        Response exceeded the in-memory size limit and was not retained.
+      </p>
+    )
+  }
+
   if (record.response === undefined) {
     return <pre className={errorBox}>{record.error ?? 'No response received.'}</pre>
   }

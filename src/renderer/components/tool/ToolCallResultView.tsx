@@ -64,6 +64,14 @@ function ResponseBody({
   record: ToolCallRecord
   tab: Exclude<ResultTab, 'notifications'>
 }): React.JSX.Element {
+  if (record.responseTruncated) {
+    return (
+      <p className="rounded border border-border bg-bg-elevated p-3 text-sm text-text-muted">
+        Response exceeded the in-memory size limit and was not retained.
+      </p>
+    )
+  }
+
   if (record.response === undefined) {
     return (
       <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-red-500/40 bg-red-500/5 p-3 font-mono text-xs leading-relaxed text-red-500">
