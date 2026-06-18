@@ -72,7 +72,9 @@ export function ToolDetailView({
 
         {/* Request + Response stacked on the left; History rail on the right. */}
         <div className="flex gap-6 items-stretch flex-1 min-h-0">
-          <div className="flex-1 min-w-0 flex flex-col gap-[18px]">
+          {/* The Request→Response stack scrolls as one page; each panel keeps its
+              natural height (Response is capped and scrolls its own body). */}
+          <div className="flex-1 min-w-0 flex flex-col gap-[18px] overflow-y-auto min-h-0">
             <ToolRequestPanel
               tool={tool}
               activeTab={activeTab}

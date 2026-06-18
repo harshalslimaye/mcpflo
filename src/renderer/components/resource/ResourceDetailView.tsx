@@ -52,7 +52,9 @@ export function ResourceDetailView({
 
         {/* Request + Result stacked on the left; History rail on the right. */}
         <div className="flex gap-6 items-stretch flex-1 min-h-0">
-          <div className="flex-1 min-w-0 flex flex-col gap-[18px]">
+          {/* The Request→Result stack scrolls as one page; each panel keeps its
+              natural height (Result is capped and scrolls its own body). */}
+          <div className="flex-1 min-w-0 flex flex-col gap-[18px] overflow-y-auto min-h-0">
             <ResourceRequestPanel resource={resource} reading={reading} onRead={handleRead} />
 
             {/* Result of the selected (or latest) read. While a read is in

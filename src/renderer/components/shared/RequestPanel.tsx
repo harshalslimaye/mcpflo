@@ -32,7 +32,7 @@ export function RequestPanel({
 
   return (
     <section
-      className="flex flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface"
+      className="flex shrink-0 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
