@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import { clampDockHeight, DOCK_MIN, type DockController } from './useResultDock'
 
@@ -16,6 +16,9 @@ interface ResultDockProps {
 export function ResultDock({ containerRef, dock, children }: ResultDockProps): React.JSX.Element {
   const { collapsed, full, heightPx } = dock
   const gripRef = useRef<HTMLDivElement>(null)
+  // Animate collapse/maximize toggles, but not the live drag — a transition
+  // during a drag lags the pointer.
+  const [dragging, setDragging] = useState(false)
 
   const height = collapsed
     ? `${DOCK_MIN}px`
@@ -29,6 +32,7 @@ export function ResultDock({ containerRef, dock, children }: ResultDockProps): R
     if (!containerRef.current) return
     e.preventDefault()
     gripRef.current?.setPointerCapture(e.pointerId)
+    setDragging(true)
   }
 
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>): void {
@@ -46,11 +50,14 @@ export function ResultDock({ containerRef, dock, children }: ResultDockProps): R
 
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>): void {
     gripRef.current?.releasePointerCapture(e.pointerId)
+    setDragging(false)
   }
 
   return (
     <section
-      className="relative flex min-h-0 shrink-0 flex-col border-t border-border bg-bg-surface"
+      className={`relative flex min-h-0 shrink-0 flex-col border-t border-border bg-bg-surface ${
+        dragging ? '' : 'transition-[height] duration-200 ease-out motion-reduce:transition-none'
+      }`}
       style={{ height }}
     >
       {!collapsed && !full && (
