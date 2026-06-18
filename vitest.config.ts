@@ -7,11 +7,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./src/test/setup.ts']
   },
   resolve: {
     alias: {
-      '@renderer': resolve(__dirname, 'src/renderer/src'),
-    },
-  },
+      '@renderer': resolve(__dirname, 'src/renderer/src')
+    }
+  }
 })

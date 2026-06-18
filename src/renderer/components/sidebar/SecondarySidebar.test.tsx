@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { SecondarySidebar } from './SecondarySidebar'
 import { useServerStore } from '../../stores/serverStore'
+import { useUiStore } from '../../stores/uiStore'
 import type { MCPServer } from '../../../shared/mcp.types'
 
 const mockServers: MCPServer[] = [
@@ -336,5 +337,34 @@ describe('SecondarySidebar', () => {
       'aria-current',
       'true'
     )
+  })
+
+  describe('collapse toggle', () => {
+    beforeEach(() => {
+      useUiStore.setState({ sidebarCollapsed: false })
+    })
+
+    it('collapses to the rail when the collapse button is clicked', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByLabelText('Collapse sidebar'))
+      expect(useUiStore.getState().sidebarCollapsed).toBe(true)
+      // Full content is hidden from assistive tech; the expand affordance shows.
+      expect(screen.getByLabelText('Expand sidebar')).toBeInTheDocument()
+    })
+
+    it('expands again when the rail button is clicked', () => {
+      useUiStore.setState({ sidebarCollapsed: true })
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByLabelText('Expand sidebar'))
+      expect(useUiStore.getState().sidebarCollapsed).toBe(false)
+    })
+
+    it('toggles with the ⌘B shortcut', () => {
+      render(<SecondarySidebar />)
+      fireEvent.keyDown(window, { key: 'b', metaKey: true })
+      expect(useUiStore.getState().sidebarCollapsed).toBe(true)
+      fireEvent.keyDown(window, { key: 'b', metaKey: true })
+      expect(useUiStore.getState().sidebarCollapsed).toBe(false)
+    })
   })
 })
