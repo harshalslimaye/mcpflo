@@ -1,15 +1,17 @@
 import type { PromptGetRecord } from '../../stores/serverStore'
 import type { GetPromptResult, PromptMessage } from '../../../shared/mcp.types'
-import { ResultPanel } from '../shared/ResultPanel'
+import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { ContentBlockPreview } from '../tool/ContentBlockPreview'
 import { highlightJson } from '../shared/json/highlightJson'
 import { CopyButton } from '../shared/json/CopyButton'
 
 export type PromptResultTab = 'preview' | 'raw' | 'pretty'
 
-interface PromptResultViewProps {
+interface PromptResultViewProps extends DockChrome {
   // Absent while a get is in flight — the view then renders its busy state.
   record?: PromptGetRecord
+  // A get is in flight. False with no `record` is the idle state.
+  busy?: boolean
   tab: PromptResultTab
   onTabChange: (tab: PromptResultTab) => void
 }
@@ -31,8 +33,10 @@ function MessageEntry({ message }: { message: PromptMessage }): React.JSX.Elemen
 
 export function PromptResultView({
   record,
+  busy = false,
   tab,
-  onTabChange
+  onTabChange,
+  ...dock
 }: PromptResultViewProps): React.JSX.Element {
   const tabs: { key: PromptResultTab; label: string }[] = [
     { key: 'preview', label: 'Preview' },
@@ -44,14 +48,20 @@ export function PromptResultView({
     <ResultPanel
       busyLabel="Getting…"
       record={record}
+      busy={busy}
       tabs={tabs}
       activeTab={tab}
       onTabChange={onTabChange}
+      {...dock}
     >
       {record ? (
         <ResponseBody record={record} tab={tab} />
-      ) : (
+      ) : busy ? (
         <p className="py-6 text-center text-sm text-text-muted">Getting…</p>
+      ) : (
+        <p className="py-6 text-center text-sm text-text-muted">
+          Get the prompt to see its response.
+        </p>
       )}
     </ResultPanel>
   )

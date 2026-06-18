@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import type { ResourceReadRecord } from '../../stores/serverStore'
 import type { ResourceContent, ResourceReadResult } from '../../../shared/mcp.types'
-import { ResultPanel } from '../shared/ResultPanel'
+import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { highlightJson } from '../shared/json/highlightJson'
 import { CopyButton } from '../shared/json/CopyButton'
 
 export type ResourceResultTab = 'preview' | 'raw' | 'pretty'
 
-interface ResourceContentViewProps {
+interface ResourceContentViewProps extends DockChrome {
   // Absent while a read is in flight — the view then renders its reading state.
   record?: ResourceReadRecord
+  // A read is in flight. False with no `record` is the idle state.
+  busy?: boolean
   tab: ResourceResultTab
   onTabChange: (tab: ResourceResultTab) => void
 }
@@ -122,8 +124,10 @@ function PreviewEntry({ content }: { content: ResourceContent }): React.JSX.Elem
 
 export function ResourceContentView({
   record,
+  busy = false,
   tab,
-  onTabChange
+  onTabChange,
+  ...dock
 }: ResourceContentViewProps): React.JSX.Element {
   const tabs: { key: ResourceResultTab; label: string }[] = [
     { key: 'preview', label: 'Preview' },
@@ -135,14 +139,20 @@ export function ResourceContentView({
     <ResultPanel
       busyLabel="Reading…"
       record={record}
+      busy={busy}
       tabs={tabs}
       activeTab={tab}
       onTabChange={onTabChange}
+      {...dock}
     >
       {record ? (
         <ResponseBody record={record} tab={tab} />
-      ) : (
+      ) : busy ? (
         <p className="py-6 text-center text-sm text-text-muted">Reading…</p>
+      ) : (
+        <p className="py-6 text-center text-sm text-text-muted">
+          Read the resource to see its contents.
+        </p>
       )}
     </ResultPanel>
   )

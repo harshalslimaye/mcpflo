@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Resource } from '../../../shared/mcp.types'
 import { useServerStore, resourceKey } from '../../stores/serverStore'
 import { ResourceHeader } from './ResourceHeader'
@@ -6,6 +6,8 @@ import { ResourceRequestPanel } from './ResourceRequestPanel'
 import { ResourceContentView, type ResourceResultTab } from './ResourceContentView'
 import { History } from '../shared/History'
 import { HistoryRail } from '../shared/HistoryRail'
+import { ResultDock } from '../shared/ResultDock'
+import { useResultDock } from '../shared/useResultDock'
 
 interface ResourceDetailViewProps {
   resource: Resource
@@ -33,10 +35,16 @@ export function ResourceDetailView({
   // undefined (record capped/cleared away) also falls back to the latest.
   const displayed =
     (selectedId ? history.find((r) => r.id === selectedId) : undefined) ?? history[0]
+  // The result dock's open/collapsed/full + height state.
+  const dock = useResultDock()
+  // Drag reference frame: the full-height center column.
+  const centerRef = useRef<HTMLDivElement>(null)
 
   async function handleRead(): Promise<void> {
-    // Snap the panel back to the read we're about to make.
+    // Snap the panel back to the read we're about to make, and reveal the dock
+    // if it was collapsed.
     setSelectedId(null)
+    dock.reveal()
     setReading(true)
     try {
       await readResource(serverId, resource.uri)
@@ -46,43 +54,49 @@ export function ResourceDetailView({
   }
 
   return (
-    <div className="flex-1 h-full bg-bg-primary flex flex-col overflow-hidden">
-      <div className="flex flex-col gap-[18px] flex-1 min-h-0 px-7 pt-[22px] pb-6">
-        <ResourceHeader resource={resource} serverName={serverName} />
-
-        {/* Request + Result stacked on the left; History rail on the right. */}
-        <div className="flex gap-6 items-stretch flex-1 min-h-0">
-          {/* The Request→Result stack scrolls as one page; each panel keeps its
-              natural height (Result is capped and scrolls its own body). */}
-          <div className="flex-1 min-w-0 flex flex-col gap-[18px] overflow-y-auto min-h-0">
-            <ResourceRequestPanel resource={resource} reading={reading} onRead={handleRead} />
-
-            {/* Result of the selected (or latest) read. While a read is in
-                flight the same panel renders its reading state. */}
-            {(reading || displayed) && (
-              <ResourceContentView
-                record={reading ? undefined : displayed}
-                tab={resultTab}
-                onTabChange={setResultTab}
-              />
-            )}
-          </div>
-
-          <HistoryRail
-            count={history.length}
-            onClear={() => clearResourceHistory(serverId, resource.uri)}
-          >
-            <History
-              records={history}
-              emptyLabel="No reads yet."
-              selectedId={displayed?.id}
-              // A read has no arguments to re-fill — selecting an entry just
-              // drives which read's content the panel shows.
-              onSelectRecord={(record) => setSelectedId(record.id)}
-            />
-          </HistoryRail>
+    <div className="flex-1 h-full bg-bg-primary flex overflow-hidden">
+      {/* Center column: the form scroller (header + Request, padded) with the
+          Result dock as a full-bleed band anchored to its bottom. */}
+      <div ref={centerRef} className="flex-1 min-w-0 flex flex-col min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-[18px] px-7 pt-[22px] pb-6">
+          <ResourceHeader resource={resource} serverName={serverName} />
+          <ResourceRequestPanel resource={resource} reading={reading} onRead={handleRead} />
         </div>
+
+        {/* Result dock: always present (minimized by default), revealed on
+            read. While a read is in flight it renders the reading state; before
+            any run it sits idle. */}
+        <ResultDock containerRef={centerRef} dock={dock}>
+          <ResourceContentView
+            record={reading ? undefined : displayed}
+            busy={reading}
+            tab={resultTab}
+            onTabChange={setResultTab}
+            docked
+            collapsed={dock.collapsed}
+            full={dock.full}
+            onToggleCollapse={dock.toggleCollapse}
+            onToggleMax={dock.toggleMax}
+          />
+        </ResultDock>
       </div>
+
+      <HistoryRail
+        count={history.length}
+        onClear={() => clearResourceHistory(serverId, resource.uri)}
+      >
+        <History
+          records={history}
+          emptyLabel="No reads yet."
+          selectedId={displayed?.id}
+          // A read has no arguments to re-fill — selecting an entry just
+          // drives which read's content the panel shows (and reveals the dock).
+          onSelectRecord={(record) => {
+            setSelectedId(record.id)
+            dock.reveal()
+          }}
+        />
+      </HistoryRail>
     </div>
   )
 }

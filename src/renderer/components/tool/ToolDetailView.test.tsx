@@ -164,9 +164,12 @@ describe('ToolDetailView', () => {
       history: { [toolKey('memory-mcp', 'search_nodes')]: [newest, older] }
     })
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
-    // Defaults to the latest call's response…
+    // The dock is minimized by default, so the response body is hidden on load…
+    expect(screen.queryByText('NEW RESULT')).not.toBeInTheDocument()
+    // …expanding it reveals the latest call's response…
+    fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('NEW RESULT')).toBeInTheDocument()
-    // …clicking the older entry swaps the panel to that record's response.
+    // …and clicking the older entry swaps the panel to that record's response.
     fireEvent.click(screen.getByText('{"query":"old"}'))
     expect(screen.getByText('OLD RESULT')).toBeInTheDocument()
     expect(screen.queryByText('NEW RESULT')).not.toBeInTheDocument()

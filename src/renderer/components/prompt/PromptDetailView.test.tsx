@@ -59,6 +59,8 @@ describe('PromptDetailView — history selection', () => {
     })
     useServerStore.setState({ promptHistory: { [promptKey('srv', prompt.name)]: [newest, older] } })
     renderView()
+    // Minimized by default — expand to reveal the latest get's response.
+    fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('NEW MESSAGE')).toBeInTheDocument()
     fireEvent.click(screen.getByText('{"topic":"old"}'))
     expect(screen.getByText('OLD MESSAGE')).toBeInTheDocument()
@@ -114,7 +116,9 @@ describe('PromptDetailView', () => {
       promptHistory: { [promptKey('srv', prompt.name)]: [successRecord()] }
     })
     renderView()
+    // The status chip shows in the minimized header; expand to see the body.
     expect(screen.getByText('Success')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('Summarize mcp')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Preview' }).className).toContain('text-accent')
   })
@@ -124,9 +128,12 @@ describe('PromptDetailView', () => {
     expect(screen.getByText('No gets yet.')).toBeInTheDocument()
   })
 
-  it('hides the result panel until a get has happened', () => {
+  it('shows a minimized idle dock before any get', () => {
     renderView()
-    expect(screen.queryByText('Response')).not.toBeInTheDocument()
+    // The dock is always present but minimized: header + Idle, body hidden.
+    expect(screen.getByText('Response')).toBeInTheDocument()
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.queryByText('Get the prompt to see its response.')).not.toBeInTheDocument()
   })
 
   it('pre-fills the form when a history entry is clicked', () => {
