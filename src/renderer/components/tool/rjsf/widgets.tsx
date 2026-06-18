@@ -9,7 +9,9 @@ import {
   type RegistryWidgetsType,
   type WidgetProps
 } from '@rjsf/utils'
+import { ChevronDown } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
+import { readTouched } from './touched'
 
 // Widgets/templates that map RJSF's inputs onto MCPFlo's existing dark Tailwind
 // look. They mirror the markup the hand-rolled Params form used (see the retired
@@ -40,7 +42,8 @@ function BaseInputTemplate(props: BaseInputTemplateProps): React.JSX.Element {
     options,
     schema,
     label,
-    type
+    type,
+    registry
   } = props
   // Only the input-relevant attributes; we deliberately don't spread the rest of
   // the RJSF props (registry, uiSchema, …) onto the DOM node.
@@ -70,7 +73,10 @@ function BaseInputTemplate(props: BaseInputTemplateProps): React.JSX.Element {
         onChangeOverride ||
         ((e) => onChange(e.target.value === '' ? options.emptyValue : e.target.value))
       }
-      onBlur={(e) => onBlur(id, e.target.value)}
+      onBlur={(e) => {
+        onBlur(id, e.target.value)
+        readTouched(registry.formContext)?.markTouched(id)
+      }}
       onFocus={(e) => onFocus(id, e.target.value)}
       aria-describedby={ariaDescribedByIds(id)}
     />
@@ -88,7 +94,8 @@ function TextareaWidget({
   onFocus,
   onChange,
   options,
-  label
+  label,
+  registry
 }: WidgetProps): React.JSX.Element {
   const rows = typeof options.rows === 'number' ? options.rows : 4
   return (
@@ -104,7 +111,10 @@ function TextareaWidget({
       spellCheck={false}
       aria-label={label || name || undefined}
       onChange={(e) => onChange(e.target.value === '' ? options.emptyValue : e.target.value)}
-      onBlur={(e) => onBlur(id, e.target.value)}
+      onBlur={(e) => {
+        onBlur(id, e.target.value)
+        readTouched(registry.formContext)?.markTouched(id)
+      }}
       onFocus={(e) => onFocus(id, e.target.value)}
       aria-describedby={ariaDescribedByIds(id)}
     />
@@ -125,7 +135,8 @@ function SelectWidget({
   onBlur,
   onFocus,
   placeholder,
-  label
+  label,
+  registry
 }: WidgetProps): React.JSX.Element {
   const { enumOptions, enumDisabled, emptyValue: optEmptyVal } = options
   const optionValueFormat = getOptionValueFormat(options)
@@ -137,34 +148,46 @@ function SelectWidget({
     enumOptionValueDecoder(raw, enumOptions, optionValueFormat, optEmptyVal)
 
   return (
-    <select
-      id={id}
-      name={id}
-      className={INPUT_CLASS}
-      value={selectValue}
-      required={required}
-      disabled={disabled || readonly}
-      autoFocus={autofocus}
-      aria-label={label || name || undefined}
-      onChange={(e) => onChange(decode(e.target.value))}
-      onBlur={(e) => onBlur(id, decode(e.target.value))}
-      onFocus={(e) => onFocus(id, decode(e.target.value))}
-      aria-describedby={ariaDescribedByIds(id)}
-    >
-      {showPlaceholderOption && (
-        <option value="">{placeholder || (required ? 'Select…' : '(none)')}</option>
-      )}
-      {Array.isArray(enumOptions) &&
-        enumOptions.map(({ value: enumValue, label: enumLabel }, i) => (
-          <option
-            key={String(enumValue)}
-            value={enumOptionValueEncoder(enumValue, i, optionValueFormat)}
-            disabled={Array.isArray(enumDisabled) && enumDisabled.includes(enumValue)}
-          >
-            {enumLabel}
-          </option>
-        ))}
-    </select>
+    // Native selects render at a different height and with a misaligned arrow, so
+    // we strip the browser appearance and draw our own caret — keeping selects
+    // the same height as text inputs in a paired grid row.
+    <div className="relative">
+      <select
+        id={id}
+        name={id}
+        className={`${INPUT_CLASS} appearance-none pr-9`}
+        value={selectValue}
+        required={required}
+        disabled={disabled || readonly}
+        autoFocus={autofocus}
+        aria-label={label || name || undefined}
+        onChange={(e) => onChange(decode(e.target.value))}
+        onBlur={(e) => {
+          onBlur(id, decode(e.target.value))
+          readTouched(registry.formContext)?.markTouched(id)
+        }}
+        onFocus={(e) => onFocus(id, decode(e.target.value))}
+        aria-describedby={ariaDescribedByIds(id)}
+      >
+        {showPlaceholderOption && (
+          <option value="">{placeholder || (required ? 'Select…' : '(none)')}</option>
+        )}
+        {Array.isArray(enumOptions) &&
+          enumOptions.map(({ value: enumValue, label: enumLabel }, i) => (
+            <option
+              key={String(enumValue)}
+              value={enumOptionValueEncoder(enumValue, i, optionValueFormat)}
+              disabled={Array.isArray(enumDisabled) && enumDisabled.includes(enumValue)}
+            >
+              {enumLabel}
+            </option>
+          ))}
+      </select>
+      <ChevronDown
+        size={15}
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+      />
+    </div>
   )
 }
 

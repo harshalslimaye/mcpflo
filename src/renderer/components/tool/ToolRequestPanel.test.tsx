@@ -51,9 +51,11 @@ describe('ToolRequestPanel — form rendering', () => {
     expect(screen.getByRole('combobox', { name: 'mode' })).toBeInTheDocument()
   })
 
-  it('shows the property description as helper text', () => {
+  it('exposes the property description via a help tooltip', async () => {
     renderPanel(primitiveTool)
-    expect(screen.getByText('Search text')).toBeInTheDocument()
+    const help = screen.getAllByRole('button', { name: 'Field help' })[0]
+    fireEvent.focus(help)
+    expect(await screen.findByText('Search text')).toBeInTheDocument()
   })
 
   it('marks the single required field with an asterisk', () => {
@@ -97,20 +99,26 @@ describe('ToolRequestPanel — validation', () => {
     expect(screen.getByRole('button', { name: /Execute/ })).toBeEnabled()
   })
 
-  it('shows an inline error for a non-integer value in an integer field', () => {
+  it('shows an inline error for a non-integer value once the field is blurred', () => {
     renderPanel(primitiveTool)
-    fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'x' } })
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'limit' }), {
-      target: { value: '2.5' }
-    })
+    const limit = screen.getByRole('spinbutton', { name: 'limit' })
+    fireEvent.change(limit, { target: { value: '2.5' } })
+    fireEvent.blur(limit)
     expect(screen.getByText(/must be integer/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Execute/ })).toBeDisabled()
   })
 
-  it('surfaces a missing-required error after the form is touched', () => {
+  it('keeps a field’s required error hidden until that field is blurred', () => {
     renderPanel(primitiveTool)
-    // liveValidate reports required errors once the user interacts.
+    // Editing another field triggers validation, so query's required error now
+    // exists — but query is untouched, so it stays hidden (no all-at-once flash).
     fireEvent.change(screen.getByRole('spinbutton', { name: 'limit' }), { target: { value: '3' } })
+    expect(screen.queryByText(/required property 'query'/i)).not.toBeInTheDocument()
+
+    // Blurring query reveals its own error.
+    const query = screen.getByRole('textbox', { name: 'query' })
+    fireEvent.focus(query)
+    fireEvent.blur(query)
     expect(screen.getByText(/required property 'query'/i)).toBeInTheDocument()
   })
 
@@ -291,6 +299,30 @@ describe('ToolRequestPanel — complex schema (now form-editable)', () => {
       tool({ type: 'object', properties: { tags: { type: 'array', items: { type: 'string' } } } })
     )
     expect(screen.getByRole('button', { name: /add item/i })).toBeInTheDocument()
+  })
+
+  it('renders an array of objects as a collapsible "name #N" card', () => {
+    renderPanel(
+      tool({
+        type: 'object',
+        properties: {
+          volumes: {
+            type: 'array',
+            items: { type: 'object', properties: { name: { type: 'string' } } }
+          }
+        }
+      })
+    )
+    // Adding the first item produces a card headed by the array name + index.
+    fireEvent.click(screen.getByRole('button', { name: /add item/i }))
+    expect(screen.getByText('volumes #1')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'name' })).toBeInTheDocument()
+
+    // The header toolbar collapses and re-expands the card body.
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse item' }))
+    expect(screen.queryByRole('textbox', { name: 'name' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Expand item' }))
+    expect(screen.getByRole('textbox', { name: 'name' })).toBeInTheDocument()
   })
 
   it('renders a JSON editor for a required untyped ("any") property and can satisfy it', () => {

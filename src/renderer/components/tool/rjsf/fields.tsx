@@ -1,6 +1,20 @@
 import { useState } from 'react'
 import { getDefaultRegistry } from '@rjsf/core'
-import type { FieldProps, RegistryFieldsType, RJSFSchema } from '@rjsf/utils'
+import type { FieldPathList, FieldProps, RegistryFieldsType, RJSFSchema } from '@rjsf/utils'
+import { HelpIcon } from './HelpIcon'
+import { readTouched } from './touched'
+
+// How many object/array container levels deep we recurse before falling back to
+// a JSON editor. Keeps the worked examples (array-of-objects with a nested
+// array, ~2–3 levels) rendering as real forms while guarding against runaway or
+// self-referential schemas.
+const MAX_CONTAINER_DEPTH = 3
+
+// Counts the object/array nesting depth of a field path, ignoring array indices
+// (numeric segments) so a long array doesn't read as deep nesting.
+export function containerDepth(path: FieldPathList): number {
+  return path.filter((seg) => typeof seg !== 'number').length
+}
 
 // RJSF can't pick a widget for a schema with no resolvable type (e.g. `{}`, a
 // `true` schema, or `{ description: '…' }`), so it renders *nothing* — leaving a
@@ -37,8 +51,10 @@ function isUntyped(schema: RJSFSchema | boolean): boolean {
 // unset (so `required` still bites); invalid JSON is held locally and not
 // propagated, so the form stays invalid until it parses.
 function JsonField(props: FieldProps): React.JSX.Element {
-  const { schema, fieldPathId, formData, onChange, required, name, rawErrors } = props
+  const { schema, fieldPathId, formData, onChange, required, name, rawErrors, registry } = props
   const id = fieldPathId.$id
+  const ctx = readTouched(registry.formContext)
+  const showErrors = !ctx || ctx.touched.has(id)
   const label = (typeof schema.title === 'string' && schema.title) || name
   const [text, setText] = useState(() =>
     formData === undefined ? '' : JSON.stringify(formData, null, 2)
@@ -63,13 +79,13 @@ function JsonField(props: FieldProps): React.JSX.Element {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="font-mono text-[13px] text-text-primary">
-        {label}
-        {required && <span className="ml-0.5 text-accent">*</span>}
-      </label>
-      <p className="text-[12px] leading-snug text-fg-faint opacity-70">
-        Free-form value — enter JSON (e.g. {'"text"'}, 42, {'{ "k": "v" }'})
-      </p>
+      <div className="flex items-center gap-1.5">
+        <label htmlFor={id} className="font-mono text-[13px] text-text-primary">
+          {label}
+          {required && <span className="ml-0.5 text-accent">*</span>}
+        </label>
+        <HelpIcon text={'Free-form value — enter JSON (e.g. "text", 42, { "k": "v" })'} />
+      </div>
       <textarea
         id={id}
         aria-label={label}
@@ -78,9 +94,11 @@ function JsonField(props: FieldProps): React.JSX.Element {
         spellCheck={false}
         className={JSON_CLASS}
         onChange={(e) => handle(e.target.value)}
+        onBlur={() => ctx?.markTouched(id)}
       />
       {parseError && <p className="text-xs text-red-400">{parseError}</p>}
-      {Array.isArray(rawErrors) &&
+      {showErrors &&
+        Array.isArray(rawErrors) &&
         rawErrors.map((error) => (
           <p key={error} className="text-xs text-red-400">
             {error}
@@ -90,10 +108,17 @@ function JsonField(props: FieldProps): React.JSX.Element {
   )
 }
 
-// SchemaField is RJSF's per-field dispatcher; we delegate to the default for
-// everything except untyped schemas.
+// SchemaField is RJSF's per-field dispatcher. We render a JSON editor for
+// untyped schemas, and also for object/array containers nested past the depth
+// cap — that both tames very deep forms and stops recursion on self-referential
+// schemas. Everything else delegates to the default.
 function SchemaField(props: FieldProps): React.JSX.Element {
   if (isUntyped(props.schema)) return <JsonField {...props} />
+  const type = props.schema.type
+  const isContainer = type === 'object' || type === 'array'
+  if (isContainer && containerDepth(props.fieldPathId.path) > MAX_CONTAINER_DEPTH) {
+    return <JsonField {...props} />
+  }
   return <DefaultSchemaField {...props} />
 }
 
