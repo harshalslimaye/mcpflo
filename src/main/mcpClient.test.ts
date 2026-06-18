@@ -67,40 +67,10 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   }
 }))
 
-vi.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
-  SSEClientTransport: class {
-    url: URL
-    opts: Record<string, unknown> | undefined
-    send = vi.fn()
-    onmessage: ((message: unknown) => void) | undefined
-    constructor(url: URL, opts?: Record<string, unknown>) {
-      this.url = url
-      this.opts = opts
-      h.transports.push(this)
-    }
-  }
-}))
-
 const stdioConfig: ServerConfig = {
   id: 'srv-1',
   name: 'Test Server',
   transport: { type: 'stdio', command: 'npx', args: ['-y', 'server'], env: { FOO: 'bar' } }
-}
-
-const sseConfig: ServerConfig = {
-  id: 'srv-2',
-  name: 'SSE Server',
-  transport: { type: 'sse', url: 'https://example.com/sse' }
-}
-
-const sseWithHeadersConfig: ServerConfig = {
-  id: 'srv-3',
-  name: 'SSE Server (auth)',
-  transport: {
-    type: 'sse',
-    url: 'https://example.com/sse',
-    headers: { Authorization: 'Bearer tok' }
-  }
 }
 
 const streamableHttpConfig: ServerConfig = {
@@ -218,10 +188,10 @@ describe('mcpClient', () => {
       })
     })
 
-    it('connects over an sse transport', async () => {
-      const result = await mod.connectServer(sseConfig)
+    it('connects over a streamable-http transport', async () => {
+      const result = await mod.connectServer(streamableHttpConfig)
       expect(result.tools).toEqual([{ name: 'echo', inputSchema: { type: 'object' } }])
-      expect(lastTransport().url?.toString()).toBe('https://example.com/sse')
+      expect(lastTransport().url?.toString()).toBe('https://example.com/mcp')
     })
   })
 
@@ -236,18 +206,6 @@ describe('mcpClient', () => {
     it('passes no opts to a streamable-http transport without headers', async () => {
       await mod.connectServer(streamableHttpNoHeadersConfig)
       expect(lastTransport().opts).toBeUndefined()
-    })
-
-    it('builds an sse transport with requestInit headers and a header-injecting fetch', async () => {
-      await mod.connectServer(sseWithHeadersConfig)
-      const t = lastTransport()
-      expect(t.url?.toString()).toBe('https://example.com/sse')
-      const opts = t.opts as {
-        requestInit?: { headers?: unknown }
-        eventSourceInit?: { fetch?: unknown }
-      }
-      expect(opts.requestInit?.headers).toEqual({ Authorization: 'Bearer tok' })
-      expect(typeof opts.eventSourceInit?.fetch).toBe('function')
     })
   })
 
@@ -350,10 +308,10 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('spawn npx ENOENT')
     })
 
-    it('runs a call over an sse transport', async () => {
-      const outcome = await mod.callTool(sseConfig, 'echo', {})
+    it('runs a call over a streamable-http transport', async () => {
+      const outcome = await mod.callTool(streamableHttpConfig, 'echo', {})
       expect(outcome.error).toBeUndefined()
-      expect(lastTransport().url?.toString()).toBe('https://example.com/sse')
+      expect(lastTransport().url?.toString()).toBe('https://example.com/mcp')
     })
 
     it('keeps the connection warm after the call', async () => {
@@ -406,8 +364,8 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('resource not found')
     })
 
-    it('reads over an sse transport', async () => {
-      const outcome = await mod.readResource(sseConfig, 'mem://x')
+    it('reads over a streamable-http transport', async () => {
+      const outcome = await mod.readResource(streamableHttpConfig, 'mem://x')
       expect(outcome.response).toEqual({ jsonrpc: '2.0', result: { contents: [] } })
     })
 
@@ -442,8 +400,8 @@ describe('mcpClient', () => {
       expect(outcome.error).toBe('prompt not found')
     })
 
-    it('gets a prompt over an sse transport', async () => {
-      const outcome = await mod.getPrompt(sseConfig, 'greet', {})
+    it('gets a prompt over a streamable-http transport', async () => {
+      const outcome = await mod.getPrompt(streamableHttpConfig, 'greet', {})
       expect(outcome.response).toEqual({ jsonrpc: '2.0', result: { messages: [] } })
     })
 

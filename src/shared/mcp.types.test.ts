@@ -7,7 +7,6 @@ import type {
   Prompt,
   TransportConfig,
   StdioTransportConfig,
-  SseTransportConfig,
   StreamableHttpTransportConfig,
   ServerStatus
 } from './mcp.types'
@@ -21,15 +20,10 @@ const stdioTransport: StdioTransportConfig = {
   env: { GITHUB_TOKEN: 'ghp_test' }
 }
 
-const sseTransport: SseTransportConfig = {
-  type: 'sse',
-  url: 'https://mcp.example.com/sse',
-  headers: { Authorization: 'Bearer token' }
-}
-
 const streamableHttpTransport: StreamableHttpTransportConfig = {
   type: 'streamable-http',
-  url: 'https://mcp.example.com/mcp'
+  url: 'https://mcp.example.com/mcp',
+  headers: { Authorization: 'Bearer token' }
 }
 
 const tool: Tool = {
@@ -99,25 +93,6 @@ describe('StdioTransportConfig', () => {
   })
 })
 
-describe('SseTransportConfig', () => {
-  it('has type sse', () => {
-    expect(sseTransport.type).toBe('sse')
-  })
-
-  it('requires url', () => {
-    expect(sseTransport.url).toBe('https://mcp.example.com/sse')
-  })
-
-  it('accepts optional headers', () => {
-    expect(sseTransport.headers?.Authorization).toBe('Bearer token')
-  })
-
-  it('works without optional fields', () => {
-    const minimal: SseTransportConfig = { type: 'sse', url: 'https://example.com' }
-    expect(minimal.headers).toBeUndefined()
-  })
-})
-
 describe('StreamableHttpTransportConfig', () => {
   it('has type streamable-http', () => {
     expect(streamableHttpTransport.type).toBe('streamable-http')
@@ -126,17 +101,24 @@ describe('StreamableHttpTransportConfig', () => {
   it('requires url', () => {
     expect(streamableHttpTransport.url).toBe('https://mcp.example.com/mcp')
   })
+
+  it('accepts optional headers', () => {
+    expect(streamableHttpTransport.headers?.Authorization).toBe('Bearer token')
+  })
+
+  it('works without optional fields', () => {
+    const minimal: StreamableHttpTransportConfig = {
+      type: 'streamable-http',
+      url: 'https://example.com'
+    }
+    expect(minimal.headers).toBeUndefined()
+  })
 })
 
 describe('TransportConfig discriminated union', () => {
   it('narrows to StdioTransportConfig on type stdio', () => {
     const t: TransportConfig = stdioTransport
     if (t.type === 'stdio') expect(t.command).toBeDefined()
-  })
-
-  it('narrows to SseTransportConfig on type sse', () => {
-    const t: TransportConfig = sseTransport
-    if (t.type === 'sse') expect(t.url).toBeDefined()
   })
 
   it('narrows to StreamableHttpTransportConfig on type streamable-http', () => {

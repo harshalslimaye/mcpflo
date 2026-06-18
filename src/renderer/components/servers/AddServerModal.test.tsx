@@ -44,18 +44,12 @@ describe('AddServerModal', () => {
     expect(screen.getByRole('textbox', { name: 'Env vars' })).toBeInTheDocument()
   })
 
-  it('shows url field when sse is selected', () => {
-    renderModal()
-    fireEvent.click(screen.getByRole('button', { name: 'sse' }))
-    expect(screen.getByRole('textbox', { name: 'URL' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Headers' })).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Command' })).not.toBeInTheDocument()
-  })
-
-  it('shows url field when streamable-http is selected', () => {
+  it('shows url and header fields when streamable-http is selected', () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
     expect(screen.getByRole('textbox', { name: 'URL' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Headers' })).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Command' })).not.toBeInTheDocument()
   })
 
   it('shows name error when submitting empty name', async () => {
@@ -73,9 +67,9 @@ describe('AddServerModal', () => {
     expect(await screen.findByText('Command is required')).toBeInTheDocument()
   })
 
-  it('shows url error when sse url is empty', async () => {
+  it('shows url error when streamable-http url is empty', async () => {
     renderModal()
-    fireEvent.click(screen.getByRole('button', { name: 'sse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
       target: { value: 'My Server' }
     })
@@ -102,20 +96,20 @@ describe('AddServerModal', () => {
     expect(config.id).toBeDefined()
   })
 
-  it('calls addServer with correct sse config on submit', async () => {
+  it('calls addServer with correct streamable-http config on submit', async () => {
     renderModal()
-    fireEvent.click(screen.getByRole('button', { name: 'sse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
       target: { value: 'Slack MCP' }
     })
     fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
-      target: { value: 'https://slack.example.com/sse' }
+      target: { value: 'https://slack.example.com/mcp' }
     })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
     const config = mockAddServer.mock.calls[0][0]
-    expect(config.transport.type).toBe('sse')
-    expect(config.transport.url).toBe('https://slack.example.com/sse')
+    expect(config.transport.type).toBe('streamable-http')
+    expect(config.transport.url).toBe('https://slack.example.com/mcp')
   })
 
   it('parses env vars as KEY=VALUE pairs', async () => {
@@ -157,14 +151,14 @@ describe('AddServerModal', () => {
     expect('description' in mockAddServer.mock.calls[0][0]).toBe(false)
   })
 
-  it('parses sse headers as KEY=VALUE pairs', async () => {
+  it('parses streamable-http headers as KEY=VALUE pairs', async () => {
     renderModal()
-    fireEvent.click(screen.getByRole('button', { name: 'sse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
       target: { value: 'Slack MCP' }
     })
     fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
-      target: { value: 'https://slack.example.com/sse' }
+      target: { value: 'https://slack.example.com/mcp' }
     })
     fireEvent.change(screen.getByRole('textbox', { name: 'Headers' }), {
       target: { value: 'Authorization=Bearer abc\nX-Team=ops' }

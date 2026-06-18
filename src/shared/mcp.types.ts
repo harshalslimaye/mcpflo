@@ -6,22 +6,13 @@ export type StdioTransportConfig = {
   env?: Record<string, string>
 }
 
-export type SseTransportConfig = {
-  type: 'sse'
-  url: string
-  headers?: Record<string, string>
-}
-
 export type StreamableHttpTransportConfig = {
   type: 'streamable-http'
   url: string
   headers?: Record<string, string>
 }
 
-export type TransportConfig =
-  | StdioTransportConfig
-  | SseTransportConfig
-  | StreamableHttpTransportConfig
+export type TransportConfig = StdioTransportConfig | StreamableHttpTransportConfig
 
 // Lifecycle status of a server connection
 export type ServerStatus = 'connected' | 'connecting' | 'disconnected' | 'error'

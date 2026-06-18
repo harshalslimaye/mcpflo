@@ -27,7 +27,7 @@ const githubConfig: ServerConfig = {
 const slackConfig: ServerConfig = {
   id: 'slack-mcp',
   name: 'Slack MCP',
-  transport: { type: 'sse', url: 'https://slack.mcp.example.com/sse' }
+  transport: { type: 'streamable-http', url: 'https://slack.mcp.example.com/mcp' }
 }
 
 describe('store', () => {

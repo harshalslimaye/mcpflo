@@ -23,7 +23,7 @@ const mockServers: MCPServer[] = [
     // Never fetched / grey.
     id: 'slack-mcp',
     name: 'Slack MCP',
-    transport: { type: 'sse', url: 'https://slack.example.com' },
+    transport: { type: 'streamable-http', url: 'https://slack.example.com' },
     status: 'disconnected',
     tools: [],
     resources: [],

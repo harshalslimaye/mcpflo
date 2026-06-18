@@ -13,7 +13,7 @@ interface FormState {
   command: string
   args: string
   env: string
-  // sse / streamable-http
+  // streamable-http
   url: string
   headers: string
 }
@@ -138,7 +138,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
           {/* Transport type */}
           <Field label="Transport">
             <div className="flex gap-2">
-              {(['stdio', 'sse', 'streamable-http'] as TransportType[]).map((t) => (
+              {(['stdio', 'streamable-http'] as TransportType[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -185,12 +185,12 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
             </>
           )}
 
-          {/* sse / streamable-http fields */}
+          {/* streamable-http fields */}
           {form.transportType !== 'stdio' && (
             <>
               <Field label="URL" error={errors.url} required>
                 <Input
-                  placeholder="https://mcp.example.com/sse"
+                  placeholder="https://mcp.example.com/mcp"
                   value={form.url}
                   onChange={(v) => set('url', v)}
                   aria-label="URL"

@@ -30,7 +30,7 @@ MCPFlo aims to fill that gap — a local, deterministic, visual debugger for MCP
 | --- | --- | --- |
 | **Connect (stdio)** | Spawn a local MCP server over stdio | ✅ Working |
 | **Browse capabilities** | View every tool, resource, and prompt in a tree | ✅ Working |
-| **Connect (SSE / Streamable HTTP)** | Connect to remote MCP servers | 🚧 Planned |
+| **Connect (Streamable HTTP)** | Connect to remote MCP servers over HTTP | ✅ Working |
 | **Call tools** | Invoke a tool with real inputs and inspect the raw response | 🚧 Planned |
 | **Build tool chains** | Wire tools from different servers together on a visual canvas | 🚧 Planned |
 | **Deterministic transformers** | Map outputs to inputs between tools — no LLM, no tokens | 🚧 Planned |

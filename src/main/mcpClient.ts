@@ -4,7 +4,6 @@ import {
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   ElicitRequestSchema,
@@ -109,18 +108,6 @@ function getSession(config: ServerConfig): Promise<Session> {
   return pending
 }
 
-// Wraps fetch to merge the user's configured headers into every request. Used
-// for SSE's GET stream, where the underlying EventSource can't set headers
-// itself; the POST leg and all streamable-http requests take headers via
-// requestInit directly.
-function withHeaders(headers: Record<string, string>): typeof fetch {
-  return (input, init) =>
-    fetch(input, {
-      ...init,
-      headers: { ...(init?.headers as Record<string, string> | undefined), ...headers }
-    })
-}
-
 // Builds the SDK transport for a server's configured transport type. Only this
 // construction is transport-specific — everything downstream (client, taps,
 // handlers) works against the generic Transport interface.
@@ -146,13 +133,6 @@ function createTransport(config: ServerConfig): Transport {
         new URL(t.url),
         t.headers ? { requestInit: { headers: t.headers } } : undefined
       )
-    case 'sse':
-      // POSTs carry headers via requestInit; the GET EventSource stream needs a
-      // header-injecting fetch since it can't set headers on its own.
-      return new SSEClientTransport(new URL(t.url), {
-        requestInit: t.headers ? { headers: t.headers } : undefined,
-        eventSourceInit: t.headers ? { fetch: withHeaders(t.headers) } : undefined
-      })
   }
 }
 

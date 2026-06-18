@@ -10,7 +10,7 @@ const githubConfig: ServerConfig = {
 const slackConfig: ServerConfig = {
   id: 'slack-mcp',
   name: 'Slack MCP',
-  transport: { type: 'sse', url: 'https://slack.example.com/sse' }
+  transport: { type: 'streamable-http', url: 'https://slack.example.com/mcp' }
 }
 
 const mockApi = {
