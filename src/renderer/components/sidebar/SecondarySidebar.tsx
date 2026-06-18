@@ -8,9 +8,13 @@ import {
   FileText,
   Hash,
   Plus,
-  Search
+  Search,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
+import { useUiStore } from '../../stores/uiStore'
+import { Tooltip } from '../ui/Tooltip'
 import { AddServerModal } from '../servers/AddServerModal'
 import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { ServerRowItem } from './ServerRowItem'
@@ -184,20 +188,26 @@ export function SecondarySidebar(): React.JSX.Element {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
   const filterInputRef = useRef<HTMLInputElement>(null)
+  const collapsed = useUiStore((s) => s.sidebarCollapsed)
+  const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   // Normalized query handed to each tree; empty means no filtering.
   const query = filter.trim().toLowerCase()
 
-  // ⌘K / Ctrl+K focuses the filter input from anywhere in the app.
+  // ⌘K focuses the filter input; ⌘B toggles the sidebar — both work app-wide.
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         filterInputRef.current?.focus()
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+        e.preventDefault()
+        toggleSidebar()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [toggleSidebar])
 
   function toggleServer(id: string): void {
     const willExpand = !expandedServers.has(id)
@@ -227,62 +237,98 @@ export function SecondarySidebar(): React.JSX.Element {
 
   return (
     <>
-      <div className="flex flex-col w-[268px] h-full bg-bg-surface border-r border-border shrink-0">
-        <div className="px-4 pt-4 pb-2.5">
-          <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-fg-faint mb-3">
-            MCP Servers
-          </h2>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-[7px] py-1 text-accent text-[13px] font-semibold hover:text-accent-hover transition-colors"
-          >
-            <Plus size={14} />
-            Add Server
-          </button>
-        </div>
+      <div
+        className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-bg-surface transition-[width] duration-200 ease-out motion-reduce:transition-none"
+        style={{ width: collapsed ? 40 : 268 }}
+      >
+        {/* Slim rail shown when collapsed: just the expand affordance. */}
+        {collapsed && (
+          <Tooltip label="Expand sidebar (⌘B)" side="right">
+            <button
+              aria-label="Expand sidebar"
+              onClick={toggleSidebar}
+              className="mx-1.5 mt-3 flex h-[28px] w-[28px] items-center justify-center rounded-[8px] text-fg-faint transition-colors hover:bg-card-2 hover:text-text-muted"
+            >
+              <PanelLeft size={16} />
+            </button>
+          </Tooltip>
+        )}
 
-        <div className="mx-3 mt-1 mb-3 flex items-center gap-2 rounded-[8px] border border-border bg-bg-elevated px-2.5 py-[7px]">
-          <Search size={13} className="shrink-0 text-fg-faint" />
-          <input
-            ref={filterInputRef}
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setFilter('')
-                e.currentTarget.blur()
-              }
-            }}
-            placeholder="Filter tools, resources…"
-            className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-text-primary outline-none placeholder:text-fg-faint"
-          />
-          <kbd className="rounded-[4px] border border-border px-1.5 py-px font-mono text-[10px] text-fg-faint">
-            ⌘K
-          </kbd>
-        </div>
+        {/* Full content is kept mounted at its natural width and clipped while
+            collapsing so the drawer slides rather than reflowing. */}
+        <div
+          className={`flex w-[268px] min-w-[268px] flex-1 flex-col overflow-hidden transition-opacity duration-150 ${
+            collapsed ? 'pointer-events-none opacity-0' : 'opacity-100'
+          }`}
+          aria-hidden={collapsed}
+        >
+          <div className="px-4 pt-4 pb-2.5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-fg-faint">
+                MCP Servers
+              </h2>
+              <Tooltip label="Collapse sidebar (⌘B)" side="bottom">
+                <button
+                  aria-label="Collapse sidebar"
+                  onClick={toggleSidebar}
+                  className="flex h-[24px] w-[24px] items-center justify-center rounded-[6px] text-fg-faint transition-colors hover:bg-card-2 hover:text-text-muted"
+                >
+                  <PanelLeftClose size={15} />
+                </button>
+              </Tooltip>
+            </div>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-[7px] py-1 text-accent text-[13px] font-semibold hover:text-accent-hover transition-colors"
+            >
+              <Plus size={14} />
+              Add Server
+            </button>
+          </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex flex-col px-3 pt-0.5 pb-4">
-            {servers.map((server) => (
-              <ServerTree
-                key={server.id}
-                server={server}
-                expanded={expandedServers.has(server.id)}
-                expandedGroups={expandedGroups}
-                filter={query}
-                selectedTool={selectedTool}
-                selectedResource={selectedResource}
-                selectedPrompt={selectedPrompt}
-                onToggleServer={() => toggleServer(server.id)}
-                onToggleGroup={(group) => toggleGroup(server.id, group)}
-                onSelectTool={(toolName) => selectTool(server.id, toolName)}
-                onSelectResource={(uri) => selectResource(server.id, uri)}
-                onSelectPrompt={(promptName) => selectPrompt(server.id, promptName)}
-                onRefresh={() => refreshCapabilities(server.id)}
-                onDelete={() => setPendingDelete(server)}
-              />
-            ))}
+          <div className="mx-3 mt-1 mb-3 flex items-center gap-2 rounded-[8px] border border-border bg-bg-elevated px-2.5 py-[7px]">
+            <Search size={13} className="shrink-0 text-fg-faint" />
+            <input
+              ref={filterInputRef}
+              type="text"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setFilter('')
+                  e.currentTarget.blur()
+                }
+              }}
+              placeholder="Filter tools, resources…"
+              className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-text-primary outline-none placeholder:text-fg-faint"
+            />
+            <kbd className="rounded-[4px] border border-border px-1.5 py-px font-mono text-[10px] text-fg-faint">
+              ⌘K
+            </kbd>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="flex flex-col px-3 pt-0.5 pb-4">
+              {servers.map((server) => (
+                <ServerTree
+                  key={server.id}
+                  server={server}
+                  expanded={expandedServers.has(server.id)}
+                  expandedGroups={expandedGroups}
+                  filter={query}
+                  selectedTool={selectedTool}
+                  selectedResource={selectedResource}
+                  selectedPrompt={selectedPrompt}
+                  onToggleServer={() => toggleServer(server.id)}
+                  onToggleGroup={(group) => toggleGroup(server.id, group)}
+                  onSelectTool={(toolName) => selectTool(server.id, toolName)}
+                  onSelectResource={(uri) => selectResource(server.id, uri)}
+                  onSelectPrompt={(promptName) => selectPrompt(server.id, promptName)}
+                  onRefresh={() => refreshCapabilities(server.id)}
+                  onDelete={() => setPendingDelete(server)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>

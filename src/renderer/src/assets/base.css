@@ -1,83 +1,83 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 @source "../../../../src/**/*.{ts,tsx}";
 @source "../../../../index.html";
 
 /* ── Light theme (default) ── */
 :root {
-  --bg-primary:   #f5f0e8;
-  --bg-surface:   #ffffff;
-  --bg-elevated:  #ede8e0;
-  --border:       #e5e0d8;
+  --bg-primary: #f5f0e8;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ede8e0;
+  --border: #e5e0d8;
   --text-primary: #1a1a1a;
-  --text-muted:   #666666;
-  --accent:       #cc785c;
+  --text-muted: #666666;
+  --accent: #cc785c;
   --accent-hover: #b8674d;
 
   /* derived tokens (redesign) */
-  --rail:         #ece6dc;
-  --panel-2:      #f3eee6;
-  --card-2:       #e5dfd4;
-  --border-soft:  #ece7df;
-  --fg-faint:     #999999;
-  --accent-soft:  rgba(204, 120, 92, 0.13);
-  --accent-line:  rgba(204, 120, 92, 0.45);
-  --green:        #3f9d63;
-  --green-soft:   rgba(63, 157, 99, 0.14);
-  --code:         #b8674d;
-  --scroll:       #d8d2c6;
+  --rail: #ece6dc;
+  --panel-2: #f3eee6;
+  --card-2: #e5dfd4;
+  --border-soft: #ece7df;
+  --fg-faint: #999999;
+  --accent-soft: rgba(204, 120, 92, 0.13);
+  --accent-line: rgba(204, 120, 92, 0.45);
+  --green: #3f9d63;
+  --green-soft: rgba(63, 157, 99, 0.14);
+  --code: #b8674d;
+  --scroll: #d8d2c6;
   --scroll-hover: #c8c2b6;
-  --btn:          linear-gradient(180deg, #cc785c, #b8674d);
+  --btn: linear-gradient(180deg, #cc785c, #b8674d);
 }
 
 /* ── Dark theme ── */
-[data-theme="dark"] {
-  --bg-primary:   #1a1a1a;
-  --bg-surface:   #242424;
-  --bg-elevated:  #2e2e2e;
-  --border:       #333333;
+[data-theme='dark'] {
+  --bg-primary: #1a1a1a;
+  --bg-surface: #242424;
+  --bg-elevated: #2e2e2e;
+  --border: #333333;
   --text-primary: #ececec;
-  --text-muted:   #999999;
-  --accent:       #cc785c;
+  --text-muted: #999999;
+  --accent: #cc785c;
   --accent-hover: #d4896b;
 
   /* derived tokens (redesign) */
-  --rail:         #141414;
-  --panel-2:      #2a2a2a;
-  --card-2:       #343434;
-  --border-soft:  #2d2d2d;
-  --fg-faint:     #6f6f6f;
-  --accent-soft:  rgba(204, 120, 92, 0.15);
-  --accent-line:  rgba(204, 120, 92, 0.50);
-  --green:        #5cc77d;
-  --green-soft:   rgba(92, 199, 125, 0.14);
-  --code:         #d4896b;
-  --scroll:       #3a3a3a;
+  --rail: #141414;
+  --panel-2: #2a2a2a;
+  --card-2: #343434;
+  --border-soft: #2d2d2d;
+  --fg-faint: #6f6f6f;
+  --accent-soft: rgba(204, 120, 92, 0.15);
+  --accent-line: rgba(204, 120, 92, 0.5);
+  --green: #5cc77d;
+  --green-soft: rgba(92, 199, 125, 0.14);
+  --code: #d4896b;
+  --scroll: #3a3a3a;
   --scroll-hover: #4a4a4a;
-  --btn:          linear-gradient(180deg, #d4896b, #cc785c);
+  --btn: linear-gradient(180deg, #d4896b, #cc785c);
 }
 
 /* ── Tailwind v4 theme mapping ── */
 @theme {
-  --color-bg-primary:   var(--bg-primary);
-  --color-bg-surface:   var(--bg-surface);
-  --color-bg-elevated:  var(--bg-elevated);
-  --color-border:       var(--border);
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-border: var(--border);
   --color-text-primary: var(--text-primary);
-  --color-text-muted:   var(--text-muted);
-  --color-accent:       var(--accent);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
 
   /* derived tokens (redesign) */
-  --color-rail:         var(--rail);
-  --color-panel-2:      var(--panel-2);
-  --color-card-2:       var(--card-2);
-  --color-border-soft:  var(--border-soft);
-  --color-fg-faint:     var(--fg-faint);
-  --color-accent-soft:  var(--accent-soft);
-  --color-accent-line:  var(--accent-line);
-  --color-green:        var(--green);
-  --color-green-soft:   var(--green-soft);
-  --color-code:         var(--code);
+  --color-rail: var(--rail);
+  --color-panel-2: var(--panel-2);
+  --color-card-2: var(--card-2);
+  --color-border-soft: var(--border-soft);
+  --color-fg-faint: var(--fg-faint);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-code: var(--code);
 }
 
 /* ── Base reset ──
