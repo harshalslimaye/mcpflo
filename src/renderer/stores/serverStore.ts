@@ -13,6 +13,14 @@ import type {
   SamplingResult
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
+import { useErrorStore, toMessage } from './errorStore'
+
+// Routes an MCPFlo operational failure to the toast surface. Used by actions
+// that talk to the main process, where a rejection has no other home (unlike
+// tool/resource/prompt calls, whose errors land in a history record).
+function reportError(err: unknown): void {
+  useErrorStore.getState().pushError(toMessage(err))
+}
 
 // A single recorded tool invocation, kept in memory for the session.
 export interface ToolCallRecord {
@@ -198,11 +206,17 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   pendingSamplings: [],
 
   hydrate: async () => {
-    const [configs, cache] = await Promise.all([
-      window.api.mcp.getServers(),
-      window.api.mcp.getCachedCapabilities()
-    ])
-    set({ servers: configs.map((c) => toRuntime(c, cache[c.id])) })
+    try {
+      const [configs, cache] = await Promise.all([
+        window.api.mcp.getServers(),
+        window.api.mcp.getCachedCapabilities()
+      ])
+      set({ servers: configs.map((c) => toRuntime(c, cache[c.id])) })
+    } catch (err) {
+      // A startup read failure would otherwise leave the app blank with no
+      // explanation; surface it instead.
+      reportError(err)
+    }
   },
 
   selectServer: (id) => set({ selectedServerId: id }),
@@ -402,8 +416,15 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })),
 
   respondToElicitation: async (elicitationId, result) => {
-    await window.api.mcp.respondToElicitation(elicitationId, result)
-    get().removeElicitation(elicitationId)
+    try {
+      await window.api.mcp.respondToElicitation(elicitationId, result)
+    } catch (err) {
+      reportError(err)
+    } finally {
+      // Always dismiss the request locally: if the reply failed to reach the
+      // main process the modal can't usefully retry, so don't leave it wedged.
+      get().removeElicitation(elicitationId)
+    }
   },
 
   enqueueSampling: (event) =>
@@ -415,24 +436,48 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })),
 
   respondToSampling: async (samplingId, result) => {
-    await window.api.mcp.respondToSampling(samplingId, result)
-    get().removeSampling(samplingId)
+    try {
+      await window.api.mcp.respondToSampling(samplingId, result)
+    } catch (err) {
+      reportError(err)
+    } finally {
+      // Always dismiss the request locally: if the reply failed to reach the
+      // main process the modal can't usefully retry, so don't leave it wedged.
+      get().removeSampling(samplingId)
+    }
   },
 
   addServer: async (config) => {
-    await window.api.mcp.addServer(config)
+    try {
+      await window.api.mcp.addServer(config)
+    } catch (err) {
+      // Toast for the user, then re-throw so the modal stays open instead of
+      // silently dismissing as if the add succeeded.
+      reportError(err)
+      throw err
+    }
     set((state) => ({ servers: [...state.servers, toRuntime(config)] }))
   },
 
   updateServer: async (id, patch) => {
-    await window.api.mcp.updateServer(id, patch)
+    try {
+      await window.api.mcp.updateServer(id, patch)
+    } catch (err) {
+      reportError(err)
+      throw err
+    }
     set((state) => ({
       servers: state.servers.map((s) => (s.id === id ? { ...s, ...patch } : s))
     }))
   },
 
   removeServer: async (id) => {
-    await window.api.mcp.removeServer(id)
+    try {
+      await window.api.mcp.removeServer(id)
+    } catch (err) {
+      reportError(err)
+      throw err
+    }
     set((state) => ({
       servers: state.servers.filter((s) => s.id !== id),
       selectedServerId: state.selectedServerId === id ? null : state.selectedServerId,
@@ -484,7 +529,13 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   // Clears the cache and fetches again — the manual "refresh" action.
   refreshCapabilities: async (id) => {
-    await window.api.mcp.clearCapabilities(id)
+    try {
+      await window.api.mcp.clearCapabilities(id)
+    } catch (err) {
+      // A failed cache clear shouldn't strand the refresh; report it but still
+      // re-fetch (fetchCapabilities records its own connect errors on the server).
+      reportError(err)
+    }
     await get().fetchCapabilities(id)
   }
 }))

@@ -35,7 +35,14 @@ export function SamplingModal({ request }: SamplingModalProps): React.JSX.Elemen
   async function respond(result: SamplingResult): Promise<void> {
     if (submitting) return
     setSubmitting(true)
-    await respondToSampling(request.samplingId, result)
+    try {
+      // respondToSampling always settles the request (it dismisses locally even
+      // on failure), so on success this modal unmounts. The finally guards the
+      // case where the reply rejects, so the buttons don't stay disabled.
+      await respondToSampling(request.samplingId, result)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   function handleAccept(): void {

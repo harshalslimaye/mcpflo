@@ -189,6 +189,23 @@ describe('AddServerModal', () => {
     await waitFor(() => expect(mockOnClose).toHaveBeenCalledOnce())
   })
 
+  it('keeps the modal open when addServer rejects', async () => {
+    mockAddServer.mockRejectedValue(new Error('Server already exists'))
+    renderModal()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), {
+      target: { value: 'node' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    // The store surfaces the error via toast; the modal must not close and the
+    // submit button must be re-enabled for a retry.
+    expect(mockOnClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Add Server' })).not.toBeDisabled()
+  })
+
   it('calls onClose when Cancel is clicked', () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))

@@ -103,6 +103,9 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
     try {
       await addServer(config)
       onClose()
+    } catch {
+      // addServer already surfaced the failure as a toast; keep the modal open
+      // (and its entered values) so the user can correct and retry.
     } finally {
       setSubmitting(false)
     }

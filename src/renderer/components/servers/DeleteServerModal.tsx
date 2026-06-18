@@ -21,6 +21,9 @@ export function DeleteServerModal({
     try {
       await removeServer(serverId)
       onClose()
+    } catch {
+      // removeServer already surfaced the failure as a toast; keep the modal
+      // open so the user can retry.
     } finally {
       setDeleting(false)
     }

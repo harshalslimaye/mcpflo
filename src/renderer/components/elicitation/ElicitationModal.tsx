@@ -54,7 +54,14 @@ export function ElicitationModal({ request }: ElicitationModalProps): React.JSX.
   async function respond(result: ElicitationResult): Promise<void> {
     if (submitting) return
     setSubmitting(true)
-    await respondToElicitation(request.elicitationId, result)
+    try {
+      // respondToElicitation always settles the request (it dismisses locally
+      // even on failure), so on success this modal unmounts. The finally guards
+      // the case where the reply rejects, so the buttons don't stay disabled.
+      await respondToElicitation(request.elicitationId, result)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   function handleAccept(): void {
