@@ -110,6 +110,13 @@ describe('serverStore', () => {
       await useServerStore.getState().hydrate()
       expect(useServerStore.getState().servers).toHaveLength(0)
     })
+
+    it('swallows a read failure instead of rejecting', async () => {
+      mockApi.mcp.getServers.mockRejectedValue(new Error('disk error'))
+      // hydrate is fired from an effect with no catch, so it must not reject.
+      await expect(useServerStore.getState().hydrate()).resolves.toBeUndefined()
+      expect(useServerStore.getState().servers).toHaveLength(0)
+    })
   })
 
   describe('selectServer', () => {
@@ -572,6 +579,14 @@ describe('serverStore', () => {
       expect(s.resources).toEqual([])
       expect(s.prompts).toEqual([])
     })
+
+    it('re-throws and does not append when the IPC rejects', async () => {
+      mockApi.mcp.addServer.mockRejectedValue(new Error('already exists'))
+      await expect(useServerStore.getState().addServer(githubConfig)).rejects.toThrow(
+        'already exists'
+      )
+      expect(useServerStore.getState().servers).toHaveLength(0)
+    })
   })
 
   describe('updateServer', () => {
@@ -588,6 +603,15 @@ describe('serverStore', () => {
       await useServerStore.getState().updateServer('github-mcp', { name: 'Updated' })
       expect(useServerStore.getState().servers[1].name).toBe('Slack MCP')
     })
+
+    it('re-throws and leaves state unchanged when the IPC rejects', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.updateServer.mockRejectedValue(new Error('not found'))
+      await expect(
+        useServerStore.getState().updateServer('github-mcp', { name: 'Updated' })
+      ).rejects.toThrow('not found')
+      expect(useServerStore.getState().servers[0].name).toBe('GitHub MCP')
+    })
   })
 
   describe('removeServer', () => {
@@ -596,6 +620,15 @@ describe('serverStore', () => {
       await useServerStore.getState().removeServer('github-mcp')
       expect(mockApi.mcp.removeServer).toHaveBeenCalledWith('github-mcp')
       expect(useServerStore.getState().servers).toHaveLength(0)
+    })
+
+    it('re-throws and keeps the server when the IPC rejects', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.removeServer.mockRejectedValue(new Error('not found'))
+      await expect(useServerStore.getState().removeServer('github-mcp')).rejects.toThrow(
+        'not found'
+      )
+      expect(useServerStore.getState().servers).toHaveLength(1)
     })
 
     it('clears selectedServerId if the removed server was selected', async () => {
@@ -770,6 +803,19 @@ describe('serverStore', () => {
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('connected')
       expect(server?.tools).toEqual(tools)
+    })
+
+    it('still fetches when the cache clear fails', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.clearCapabilities.mockRejectedValue(new Error('rm failed'))
+      const tools = [{ name: 'list_issues', inputSchema: { type: 'object' as const } }]
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools, resources: [], prompts: [] })
+      // A failed clear must not strand the refresh nor reject.
+      await expect(
+        useServerStore.getState().refreshCapabilities('github-mcp')
+      ).resolves.toBeUndefined()
+      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalled()
+      expect(useServerStore.getState().servers[0].status).toBe('connected')
     })
   })
 })
