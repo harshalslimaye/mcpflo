@@ -51,7 +51,6 @@
     "@rjsf/core": "^6.6.2",
     "@rjsf/utils": "^6.6.2",
     "@rjsf/validator-ajv8": "^6.6.2",
-    "@xyflow/react": "~12.11.0",
     "ajv": "^8.20.0",
     "electron-store": "^8.2.0",
     "lucide-react": "^1.17.0",

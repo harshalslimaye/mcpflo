@@ -23,6 +23,11 @@ interface ResultPanelProps<T extends string> {
 // The Response panel chrome: a bordered panel whose header carries the status
 // chip, duration and tabs, and whose body scrolls the rendered output. The body
 // itself is feature-specific and supplied as children.
+//
+// Sizing: the detail view scrolls the Request→Response stack as a page, so this
+// panel takes its natural height (`shrink-0`) rather than fighting the Request
+// panel for space. A `max-h` cap keeps a huge response from running the page on
+// forever — past the cap the body scrolls internally instead.
 export function ResultPanel<T extends string>({
   busyLabel,
   record,
@@ -34,7 +39,7 @@ export function ResultPanel<T extends string>({
   const isError = record?.status === 'error'
 
   return (
-    <section className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
+    <section className="flex min-h-[140px] max-h-[60vh] shrink-0 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
       {/* header: RESPONSE · status · duration · tabs */}
       <div className="flex items-center gap-4 border-b border-border bg-panel-2 px-4 py-[11px]">
         <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-faint">
