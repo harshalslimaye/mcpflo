@@ -238,7 +238,12 @@ describe('ToolCallResultView — executing state', () => {
     liveNotifications = [liveProgress]
   ): ReturnType<typeof render> {
     return render(
-      <ToolCallResultView tab={tab} onTabChange={vi.fn()} liveNotifications={liveNotifications} />
+      <ToolCallResultView
+        tab={tab}
+        onTabChange={vi.fn()}
+        busy
+        liveNotifications={liveNotifications}
+      />
     )
   }
 
@@ -271,6 +276,7 @@ describe('ToolCallResultView — executing state', () => {
       <ToolCallResultView
         tab="preview"
         onTabChange={vi.fn()}
+        busy
         liveNotifications={[liveProgress, liveProgress]}
       />
     )

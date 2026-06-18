@@ -109,9 +109,16 @@ describe('PromptResultView', () => {
     expect(screen.getByText('connection refused')).toBeInTheDocument()
   })
 
-  it('renders a Getting… state when no record is present', () => {
-    renderView(undefined)
+  it('renders a Getting… state when busy with no record', () => {
+    render(<PromptResultView record={undefined} busy tab="preview" onTabChange={vi.fn()} />)
     // Shown both in the status line and the body placeholder.
     expect(screen.getAllByText('Getting…').length).toBeGreaterThan(0)
+  })
+
+  it('renders an idle prompt when not busy and no record', () => {
+    render(<PromptResultView record={undefined} tab="preview" onTabChange={vi.fn()} />)
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.getByText('Get the prompt to see its response.')).toBeInTheDocument()
+    expect(screen.queryByText('Getting…')).not.toBeInTheDocument()
   })
 })

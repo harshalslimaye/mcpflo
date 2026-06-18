@@ -8,13 +8,24 @@ const tabs = [
 ]
 
 describe('ResultPanel', () => {
-  it('shows the busy label when there is no record', () => {
+  it('shows the busy label when busy with no record', () => {
+    render(
+      <ResultPanel busyLabel="Reading…" busy tabs={tabs} activeTab="preview" onTabChange={vi.fn()}>
+        body
+      </ResultPanel>
+    )
+    expect(screen.getByText('Reading…')).toBeInTheDocument()
+    expect(screen.queryByText('Success')).not.toBeInTheDocument()
+  })
+
+  it('shows the idle state when not busy and no record', () => {
     render(
       <ResultPanel busyLabel="Reading…" tabs={tabs} activeTab="preview" onTabChange={vi.fn()}>
         body
       </ResultPanel>
     )
-    expect(screen.getByText('Reading…')).toBeInTheDocument()
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.queryByText('Reading…')).not.toBeInTheDocument()
     expect(screen.queryByText('Success')).not.toBeInTheDocument()
   })
 

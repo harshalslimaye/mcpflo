@@ -10,7 +10,7 @@ interface HistoryRailProps {
 // pill + clear when non-empty) and a scrollable body holding the History list.
 export function HistoryRail({ count, onClear, children }: HistoryRailProps): React.JSX.Element {
   return (
-    <aside className="w-[304px] shrink-0 flex flex-col min-h-0 border-l border-border pl-6">
+    <aside className="w-[304px] shrink-0 flex flex-col min-h-0 border-l border-border pl-6 pr-7 pt-[22px] pb-6">
       <div className="flex items-center gap-2.5 px-1 pb-2.5 shrink-0">
         <h2 className="flex-1 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-faint">
           History

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { Tool } from '../../../shared/mcp.types'
 import { useServerStore, toolKey } from '../../stores/serverStore'
 import { analyzeSchema } from '../../lib/toolSchema'
@@ -7,6 +7,8 @@ import { ToolRequestPanel, type RequestTab } from './ToolRequestPanel'
 import { ToolCallResultView, type ResultTab } from './ToolCallResultView'
 import { History } from '../shared/History'
 import { HistoryRail } from '../shared/HistoryRail'
+import { ResultDock } from '../shared/ResultDock'
+import { useResultDock } from '../shared/useResultDock'
 
 function summarizeArgs(args: Record<string, unknown>): string {
   const json = JSON.stringify(args)
@@ -39,6 +41,10 @@ export function ToolDetailView({
   // The history record whose response the panel shows. Null means "the latest";
   // clicking a History entry pins that record until the next execution.
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // The result dock's open/collapsed/full + height state.
+  const dock = useResultDock()
+  // Drag reference frame: the full-height row holding the center column.
+  const centerRowRef = useRef<HTMLDivElement>(null)
 
   const key = toolKey(serverId, tool.name)
   const history = useServerStore((s) => s.history[key]) ?? []
@@ -55,8 +61,10 @@ export function ToolDetailView({
   const { isEmpty } = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
 
   async function handleExecute(payload: Record<string, unknown>): Promise<void> {
-    // Snap the Response panel back to the call we're about to make.
+    // Snap the Response panel back to the call we're about to make, and reveal
+    // the dock if it was collapsed.
     setSelectedId(null)
+    dock.reveal()
     setRunning(true)
     try {
       await executeTool(serverId, tool.name, payload)
@@ -66,62 +74,66 @@ export function ToolDetailView({
   }
 
   return (
-    <div className="flex-1 h-full bg-bg-primary flex flex-col overflow-hidden">
-      <div className="flex flex-col gap-[18px] flex-1 min-h-0 px-7 pt-[22px] pb-6">
-        <ToolHeader tool={tool} serverName={serverName} />
-
-        {/* Request + Response stacked on the left; History rail on the right. */}
-        <div className="flex gap-6 items-stretch flex-1 min-h-0">
-          {/* The Request→Response stack scrolls as one page; each panel keeps its
-              natural height (Response is capped and scrolls its own body). */}
-          <div className="flex-1 min-w-0 flex flex-col gap-[18px] overflow-y-auto min-h-0">
-            <ToolRequestPanel
-              tool={tool}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              prefill={prefill}
-              running={running}
-              onExecute={handleExecute}
-            />
-
-            {/* Response of the selected (or latest) call. While a call is in
-                flight the same panel renders its executing state, with live
-                notifications. */}
-            {(running || displayed) && (
-              <ToolCallResultView
-                record={running ? undefined : displayed}
-                liveNotifications={running ? liveNotifications : undefined}
-                tab={resultTab}
-                onTabChange={setResultTab}
-              />
-            )}
-          </div>
-
-          <HistoryRail count={history.length} onClear={() => clearHistory(serverId, tool.name)}>
-            <History
-              records={history}
-              emptyLabel="No calls yet."
-              selectedId={displayed?.id}
-              renderDetail={(record) => (
-                <span
-                  className="block truncate font-mono text-[11px] text-code opacity-85"
-                  title={summarizeArgs(record.args)}
-                >
-                  {summarizeArgs(record.args)}
-                </span>
-              )}
-              // Selecting an entry always drives the Response panel; for a tool
-              // with parameters it also re-fills the Request form.
-              onSelectRecord={(record) => {
-                setSelectedId(record.id)
-                if (!isEmpty) {
-                  setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
-                }
-              }}
-            />
-          </HistoryRail>
+    <div className="flex-1 h-full bg-bg-primary flex overflow-hidden">
+      {/* Center column: the form scroller (header + Request, padded) with the
+          Response dock as a full-bleed band anchored to its bottom — flush to
+          the sidebar on the left and the History panel on the right. */}
+      <div ref={centerRowRef} className="flex-1 min-w-0 flex flex-col min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-[18px] px-7 pt-[22px] pb-6">
+          <ToolHeader tool={tool} serverName={serverName} />
+          <ToolRequestPanel
+            tool={tool}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            prefill={prefill}
+            running={running}
+            onExecute={handleExecute}
+          />
         </div>
+
+        {/* Response dock: always present (minimized by default), revealed on
+            execute. While a call is in flight it renders the executing state
+            with live notifications; before any run it sits idle. */}
+        <ResultDock containerRef={centerRowRef} dock={dock}>
+          <ToolCallResultView
+            record={running ? undefined : displayed}
+            busy={running}
+            liveNotifications={running ? liveNotifications : undefined}
+            tab={resultTab}
+            onTabChange={setResultTab}
+            docked
+            collapsed={dock.collapsed}
+            full={dock.full}
+            onToggleCollapse={dock.toggleCollapse}
+            onToggleMax={dock.toggleMax}
+          />
+        </ResultDock>
       </div>
+
+      <HistoryRail count={history.length} onClear={() => clearHistory(serverId, tool.name)}>
+        <History
+          records={history}
+          emptyLabel="No calls yet."
+          selectedId={displayed?.id}
+          renderDetail={(record) => (
+            <span
+              className="block truncate font-mono text-[11px] text-code opacity-85"
+              title={summarizeArgs(record.args)}
+            >
+              {summarizeArgs(record.args)}
+            </span>
+          )}
+          // Selecting an entry always drives the Response panel; for a tool
+          // with parameters it also re-fills the Request form.
+          onSelectRecord={(record) => {
+            setSelectedId(record.id)
+            dock.reveal()
+            if (!isEmpty) {
+              setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+            }
+          }}
+        />
+      </HistoryRail>
     </div>
   )
 }

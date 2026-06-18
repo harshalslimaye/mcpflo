@@ -1,6 +1,6 @@
 import type { ToolCallRecord } from '../../stores/serverStore'
 import type { ToolCallNotification, ToolCallResult } from '../../../shared/mcp.types'
-import { ResultPanel } from '../shared/ResultPanel'
+import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { ResultPreview } from './ContentBlockPreview'
 import { NotificationsTab } from './ToolCallNotifications'
 import { highlightJson } from '../shared/json/highlightJson'
@@ -8,10 +8,13 @@ import { CopyButton } from '../shared/json/CopyButton'
 
 export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications'
 
-interface ToolCallResultViewProps {
+interface ToolCallResultViewProps extends DockChrome {
   // Absent while the call is in flight — the view then renders its executing
   // state, with `liveNotifications` feeding the Notifications tab in real time.
   record?: ToolCallRecord
+  // A call is in flight: render the executing state. False with no `record` is
+  // the idle state (nothing executed yet).
+  busy?: boolean
   liveNotifications?: ToolCallNotification[]
   tab: ResultTab
   onTabChange: (tab: ResultTab) => void
@@ -21,9 +24,11 @@ interface ToolCallResultViewProps {
 // duration and the result tabs, and whose body scrolls the rendered output.
 export function ToolCallResultView({
   record,
+  busy = false,
   liveNotifications,
   tab,
-  onTabChange
+  onTabChange,
+  ...dock
 }: ToolCallResultViewProps): React.JSX.Element {
   const notifications = record?.notifications ?? liveNotifications ?? []
   const notificationCount = notifications.length
@@ -39,16 +44,22 @@ export function ToolCallResultView({
     <ResultPanel
       busyLabel="Executing…"
       record={record}
+      busy={busy}
       tabs={tabs}
       activeTab={tab}
       onTabChange={onTabChange}
+      {...dock}
     >
       {tab === 'notifications' ? (
-        <NotificationsTab notifications={notifications} live={record === undefined} />
+        <NotificationsTab notifications={notifications} live={busy} />
       ) : record ? (
         <ResponseBody record={record} tab={tab} />
-      ) : (
+      ) : busy ? (
         <p className="py-6 text-center text-sm text-text-muted">Executing…</p>
+      ) : (
+        <p className="py-6 text-center text-sm text-text-muted">
+          Execute the tool to see its response.
+        </p>
       )}
     </ResultPanel>
   )

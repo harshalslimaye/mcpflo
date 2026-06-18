@@ -137,9 +137,16 @@ describe('ResourceContentView', () => {
     expect(screen.getByText('connection refused')).toBeInTheDocument()
   })
 
-  it('renders a Reading… state when no record is present', () => {
-    renderView(undefined)
+  it('renders a Reading… state when busy with no record', () => {
+    render(<ResourceContentView record={undefined} busy tab="preview" onTabChange={vi.fn()} />)
     // Shown both in the status line and the body placeholder.
     expect(screen.getAllByText('Reading…').length).toBeGreaterThan(0)
+  })
+
+  it('renders an idle prompt when not busy and no record', () => {
+    render(<ResourceContentView record={undefined} tab="preview" onTabChange={vi.fn()} />)
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.getByText('Read the resource to see its contents.')).toBeInTheDocument()
+    expect(screen.queryByText('Reading…')).not.toBeInTheDocument()
   })
 })

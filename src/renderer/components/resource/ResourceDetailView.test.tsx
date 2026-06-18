@@ -80,7 +80,9 @@ describe('ResourceDetailView', () => {
       resourceHistory: { [resourceKey('srv', resource.uri)]: [successRecord()] }
     })
     renderView()
+    // The status chip shows in the minimized header; expand to see the body.
     expect(screen.getByText('Success')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('# Title')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Preview' }).className).toContain('text-accent')
   })
@@ -106,7 +108,8 @@ describe('ResourceDetailView', () => {
       resourceHistory: { [resourceKey('srv', resource.uri)]: [newest, older] }
     })
     renderView()
-    // Defaults to the latest read…
+    // Minimized by default — expand to reveal the latest read…
+    fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('# NEWEST')).toBeInTheDocument()
     // …clicking the older entry (22 ms) swaps the panel to its content.
     fireEvent.click(screen.getByText('22 ms'))
@@ -124,7 +127,9 @@ describe('ResourceDetailView', () => {
       resourceHistory: { [resourceKey('srv', resource.uri)]: [record] }
     })
     renderView()
+    // The error chip shows in the minimized header; expand to see the detail.
     expect(screen.getByText('Error')).toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('connection refused')).toBeInTheDocument()
   })
 
@@ -133,9 +138,12 @@ describe('ResourceDetailView', () => {
     expect(screen.getByText('No reads yet.')).toBeInTheDocument()
   })
 
-  it('hides the result panel until a read has happened', () => {
+  it('shows a minimized idle dock before any read', () => {
     renderView()
-    expect(screen.queryByText('Response')).not.toBeInTheDocument()
+    // The dock is always present but minimized: header + Idle, body hidden.
+    expect(screen.getByText('Response')).toBeInTheDocument()
+    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.queryByText('Read the resource to see its contents.')).not.toBeInTheDocument()
   })
 
   it('clears the read history when clear is clicked', () => {
