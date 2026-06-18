@@ -40,9 +40,11 @@ describe('PromptRequestPanel — form rendering', () => {
     expect(screen.getByRole('textbox', { name: 'tone' })).toBeInTheDocument()
   })
 
-  it('shows the argument description as helper text', () => {
+  it('exposes the argument description via a help tooltip', async () => {
     renderPanel(argPrompt)
-    expect(screen.getByText('What to summarize')).toBeInTheDocument()
+    const help = screen.getAllByRole('button', { name: 'Field help' })[0]
+    fireEvent.focus(help)
+    expect(await screen.findByText('What to summarize')).toBeInTheDocument()
   })
 
   it('marks the required argument with an asterisk', () => {

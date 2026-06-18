@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Prompt } from '../../../shared/mcp.types'
@@ -7,6 +7,8 @@ import { RequestPanel } from '../shared/RequestPanel'
 import { SchemaTab } from '../tool/SchemaTab'
 import { RjsfForm } from '../tool/rjsf/RjsfForm'
 import { validator } from '../tool/rjsf/validator'
+import { buildUiSchema } from '../tool/rjsf/layout'
+import { requiredSummary } from '../tool/rjsf/formStatus'
 import { buildPromptSchema } from '../../lib/promptSchema'
 
 export type RequestTab = 'params' | 'schema'
@@ -73,6 +75,8 @@ export function PromptRequestPanel({
   const rjsfSchema = schema as RJSFSchema
   // A prompt with no declared arguments has no form to render.
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
+  // Drives multi-line (textarea) detection; the layout grid lives in the templates.
+  const uiSchema = useMemo(() => buildUiSchema(rjsfSchema), [rjsfSchema])
 
   // Seed the form with schema-declared defaults so our validity check matches
   // what RJSF renders.
@@ -86,6 +90,14 @@ export function PromptRequestPanel({
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
   const [jsonText, setJsonText] = useState<string>(() => JSON.stringify(initialData, null, 2))
   const [switchError, setSwitchError] = useState<string | null>(null)
+
+  // Track which fields have been blurred so errors surface one field at a time
+  // instead of all at once on an untouched form.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set())
+  const markTouched = useCallback((id: string) => {
+    setTouched((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }, [])
+  const formContext = useMemo(() => ({ touched, markTouched }), [touched, markTouched])
 
   // RJSF validates the whole schema; empty schemas are trivially valid.
   const formValid = useMemo(
@@ -109,6 +121,7 @@ export function PromptRequestPanel({
         unknown
       >
     )
+    setTouched(new Set())
   }
 
   function handleToggleMode(toJson: boolean): void {
@@ -128,6 +141,15 @@ export function PromptRequestPanel({
   }
 
   const executeDisabled = running || (mode === 'json' ? !jsonValid : !formValid)
+
+  // Footer hint: required/missing counts in form mode, JSON validity in JSON mode.
+  const statusHint = isEmpty
+    ? 'Ready'
+    : mode === 'json'
+      ? jsonValid
+        ? 'Ready'
+        : 'Invalid JSON'
+      : requiredSummary(rjsfSchema, formData)
 
   function handleExecute(): void {
     if (executeDisabled) return
@@ -170,7 +192,7 @@ export function PromptRequestPanel({
   return (
     <RequestPanel
       headerEnd={headerEnd}
-      statusHint={executeDisabled && !running ? 'Fill required fields' : 'Ready'}
+      statusHint={statusHint}
       run={{
         label: 'Get Prompt',
         busyLabel: 'Getting…',
@@ -191,6 +213,8 @@ export function PromptRequestPanel({
             ) : (
               <RjsfForm
                 schema={rjsfSchema}
+                uiSchema={uiSchema}
+                formContext={formContext}
                 validator={validator}
                 formData={formData}
                 liveValidate

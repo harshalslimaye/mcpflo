@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
@@ -7,6 +7,8 @@ import { RequestPanel } from '../shared/RequestPanel'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
+import { buildUiSchema } from './rjsf/layout'
+import { requiredSummary } from './rjsf/formStatus'
 
 export type RequestTab = 'params' | 'schema'
 type Mode = 'form' | 'json'
@@ -58,6 +60,8 @@ export function ToolRequestPanel({
   const schema = tool.inputSchema as RJSFSchema
   // A schema with no declared properties has no form to render.
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
+  // Drives multi-line (textarea) detection; the layout grid lives in the templates.
+  const uiSchema = useMemo(() => buildUiSchema(schema), [schema])
 
   // Seed the form with schema-declared defaults so our validity check matches
   // what RJSF renders. Required booleans are seeded to `false`: a toggle always
@@ -77,6 +81,14 @@ export function ToolRequestPanel({
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
   const [jsonText, setJsonText] = useState<string>(() => JSON.stringify(initialData, null, 2))
   const [switchError, setSwitchError] = useState<string | null>(null)
+
+  // Track which fields have been blurred so errors surface one field at a time
+  // instead of all at once on an untouched form.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set())
+  const markTouched = useCallback((id: string) => {
+    setTouched((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }, [])
+  const formContext = useMemo(() => ({ touched, markTouched }), [touched, markTouched])
 
   // RJSF validates the whole schema (nested objects, arrays, unions, …); empty
   // schemas are trivially valid.
@@ -98,6 +110,7 @@ export function ToolRequestPanel({
     setFormData(
       getDefaultFormState(validator, schema, prefill.args, schema) as Record<string, unknown>
     )
+    setTouched(new Set())
   }
 
   function handleToggleMode(toJson: boolean): void {
@@ -117,6 +130,15 @@ export function ToolRequestPanel({
   }
 
   const executeDisabled = running || (mode === 'json' ? !jsonValid : !formValid)
+
+  // Footer hint: required/missing counts in form mode, JSON validity in JSON mode.
+  const statusHint = isEmpty
+    ? 'Ready'
+    : mode === 'json'
+      ? jsonValid
+        ? 'Ready'
+        : 'Invalid JSON'
+      : requiredSummary(schema, formData)
 
   function handleExecute(): void {
     if (executeDisabled) return
@@ -159,7 +181,7 @@ export function ToolRequestPanel({
   return (
     <RequestPanel
       headerEnd={headerEnd}
-      statusHint={executeDisabled && !running ? 'Fill required fields' : 'Ready'}
+      statusHint={statusHint}
       run={{
         label: 'Execute',
         busyLabel: 'Executing…',
@@ -180,6 +202,8 @@ export function ToolRequestPanel({
             ) : (
               <RjsfForm
                 schema={schema}
+                uiSchema={uiSchema}
+                formContext={formContext}
                 validator={validator}
                 formData={formData}
                 liveValidate
