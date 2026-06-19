@@ -2,39 +2,61 @@
 
 **A visual testing tool for MCP (Model Context Protocol) servers.**
 
-MCPFlo lets you connect to any MCP server, browse its tools, resources, and prompts, and — soon — test multi-step tool chains without writing code or spending LLM tokens.
+MCPFlo is a desktop app that lets you connect to any MCP server, browse its tools,
+resources, and prompts, and actually exercise them — call a tool with real inputs,
+read a resource, render a prompt, and inspect the raw response — all without writing
+a line of glue code or spending a single LLM token.
 
 Think Postman, but for MCP.
 
 ![MCPFlo screenshot](docs/screenshot-dark.png)
 
-> ⚠️ **Early development.** MCPFlo is brand new and under active construction. Today it connects to stdio servers and browses their capabilities; tool calling and visual chains are next on the roadmap. Expect rapid change.
+> ⚠️ **Early development.** MCPFlo is young and moving fast. Connecting to servers,
+> browsing capabilities, and calling tools/resources/prompts all work today. Expect
+> rapid change.
 
 ---
 
 ## Why
 
-MCP tool chains are hard to test today. Your options are:
+MCP servers are hard to exercise today. Your options are usually:
 
-- Hardcode a chain in a prompt and hope it works
-- Write throwaway test scripts
-- Use an AI client like Claude Desktop, which gives you little visibility into what actually happened
+- Drive everything through an AI client like Claude Desktop, which gives you little
+  visibility into what each tool actually received and returned
+- Write throwaway scripts against the SDK just to call a single tool
+- Read the schema and guess
 
-MCPFlo aims to fill that gap — a local, deterministic, visual debugger for MCP workflows where you can see exactly what each tool received and returned.
+MCPFlo fills that gap — a local, deterministic, visual workbench for MCP where you
+can see exactly what went into each tool, resource, and prompt and what came back.
 
 ---
 
-## Status & roadmap
+## Features
 
-| Feature                        | Description                                                   | Status     |
-| ------------------------------ | ------------------------------------------------------------- | ---------- |
-| **Connect (stdio)**            | Spawn a local MCP server over stdio                           | ✅ Working |
-| **Browse capabilities**        | View every tool, resource, and prompt in a tree               | ✅ Working |
-| **Connect (Streamable HTTP)**  | Connect to remote MCP servers over HTTP                       | ✅ Working |
-| **Call tools**                 | Invoke a tool with real inputs and inspect the raw response   | 🚧 Planned |
-| **Build tool chains**          | Wire tools from different servers together on a visual canvas | 🚧 Planned |
-| **Deterministic transformers** | Map outputs to inputs between tools — no LLM, no tokens       | 🚧 Planned |
-| **Step-through execution**     | Run a chain node by node, inspecting I/O at every step        | 🚧 Planned |
+- **Connect over stdio** — spawn a local MCP server as a child process from a
+  command and args (e.g. `npx -y @modelcontextprotocol/server-memory`).
+- **Connect over Streamable HTTP** — point MCPFlo at a remote MCP endpoint.
+- **Browse capabilities** — every tool, resource, and prompt the server exposes,
+  organized in a navigable tree. Discovery happens automatically on connect, and
+  results are cached per server so reopening is instant.
+- **Call tools** — MCPFlo generates an input form straight from each tool's JSON
+  Schema (via [react-jsonschema-form](https://rjsf-team.github.io/react-jsonschema-form/)),
+  validates your input, invokes the tool, and renders the raw content blocks it
+  returns — text, JSON, images, and more.
+- **Read resources** — fetch a resource by URI and inspect its contents.
+- **Render prompts** — supply prompt arguments and see the fully expanded messages
+  the server produces.
+- **Handle server-initiated requests** — MCPFlo answers
+  [elicitation](https://modelcontextprotocol.io/docs/concepts/elicitation) requests
+  (a server asking the user for input mid-call) and
+  [sampling](https://modelcontextprotocol.io/docs/concepts/sampling) requests with
+  interactive modals, so you can test tools that call back into the client.
+- **Live notifications** — progress and logging notifications emitted during a tool
+  call surface in the UI as they arrive.
+- **History** — past calls are recorded so you can revisit inputs and results.
+- **Result dock** — a collapsible, maximizable panel for inspecting responses
+  without losing your place in the tree.
+- **Light & dark themes.**
 
 ---
 
@@ -61,14 +83,36 @@ npm run dev
 
 ### Add your first server
 
-1. Click **+ Add Server** in the sidebar
-2. Enter a name and select the **stdio** transport
-3. Provide the command and args (e.g. `npx` with args `-y @modelcontextprotocol/server-memory`)
-4. Click **Add Server**
-5. Expand the server row — MCPFlo connects and discovers all tools, resources, and prompts automatically
+1. Click **+ Add Server** in the sidebar.
+2. Enter a name and choose a transport:
+   - **stdio** — provide the command and args (e.g. `npx` with args
+     `-y @modelcontextprotocol/server-everything`).
+   - **Streamable HTTP** — provide the server URL.
+3. Click **Add Server**.
+4. Expand the server row — MCPFlo connects and discovers all tools, resources, and
+   prompts automatically.
+5. Select any capability to open its detail view, fill in the generated form, and
+   run it.
 
-Server configs are saved to `~/Library/Application Support/MCPFlo/config.json` on macOS
-(`%APPDATA%/MCPFlo/config.json` on Windows, `~/.config/MCPFlo/config.json` on Linux).
+Want something to test against right away? The MCP reference
+[**Everything server**](https://github.com/modelcontextprotocol/servers/tree/main/src/everything)
+exercises every capability MCPFlo supports — tools, resources, prompts, sampling,
+and elicitation:
+
+```
+command: npx
+args:    -y @modelcontextprotocol/server-everything
+```
+
+Server configs are persisted to your OS application-data directory:
+
+| OS      | Path                                                |
+| ------- | --------------------------------------------------- |
+| macOS   | `~/Library/Application Support/MCPFlo/config.json`  |
+| Windows | `%APPDATA%/MCPFlo/config.json`                       |
+| Linux   | `~/.config/MCPFlo/config.json`                       |
+
+Cached capabilities live alongside it under `MCPFlo/servers/<serverId>/`.
 
 ---
 
@@ -83,15 +127,21 @@ npm run lint        # lint with ESLint
 npm run format      # format with Prettier
 ```
 
+The project ships with a Vitest + Testing Library suite covering the main-process
+MCP client, persistence, schema helpers, and renderer components.
+
 ### Project structure
 
 ```
 src/
-├── main/        Electron main process — IPC, MCP client, persistence
-├── preload/     Typed bridge between main and renderer
-├── renderer/    React UI (sidebar, server tree, modals, stores)
-└── shared/      Types shared across processes (MCP schemas, configs)
+├── main/        Electron main process — IPC, MCP client, capability cache, persistence
+├── preload/     Typed contextBridge between main and renderer
+├── renderer/    React UI — sidebar tree, tool/resource/prompt views, modals, stores
+└── shared/      Types shared across processes (MCP schemas, server configs)
 ```
+
+The renderer talks to MCP servers only through IPC channels (`mcp:*`) exposed by
+the preload bridge; all SDK interaction happens in the main process.
 
 ---
 
@@ -103,28 +153,34 @@ npm run build:win     # Windows
 npm run build:linux   # Linux
 ```
 
+Distributable artifacts are produced with [electron-builder](https://www.electron.build/).
+
 ---
 
 ## Tech stack
 
 - [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
-- [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - [Tailwind CSS v4](https://tailwindcss.com/)
-- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk)
-- [React Flow](https://reactflow.dev/) for the chain canvas
-- [Zustand](https://zustand-demo.pmnd.rs/) for state
-- [electron-store](https://github.com/sindresorhus/electron-store) for persistence
-- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) for tests
+- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) — the MCP client
+- [react-jsonschema-form (RJSF)](https://rjsf-team.github.io/react-jsonschema-form/) — schema-driven tool input forms
+- [Zod](https://zod.dev/) — runtime validation
+- [Zustand](https://zustand-demo.pmnd.rs/) — renderer state
+- [electron-store](https://github.com/sindresorhus/electron-store) — config persistence
+- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) — tests
 
 ---
 
 ## Contributing
 
 MCPFlo is in early development and contributions are welcome. Open an issue to
-discuss a change, or file a bug at the [issue tracker](https://github.com/harshalslimaye/mcpflo/issues).
+discuss a change, or file a bug at the
+[issue tracker](https://github.com/harshalslimaye/mcpflo/issues).
 
 ---
 
 ## License
 
-MIT — free to use, modify, and distribute. See author and repository details in [package.json](package.json).
+MIT — free to use, modify, and distribute. See [LICENSE](LICENSE).
+</content>
+</invoke>
