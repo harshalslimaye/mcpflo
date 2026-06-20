@@ -15,10 +15,22 @@ function renderBottomBar(theme: 'dark' | 'light' = 'dark'): ReturnType<typeof re
 }
 
 describe('BottomBar', () => {
-  it('renders only the Toggle Theme button', () => {
+  it('renders the Report an Issue and Toggle Theme buttons', () => {
     const { container } = renderBottomBar()
+    expect(screen.getByRole('button', { name: 'Report an Issue' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Toggle Theme' })).toBeInTheDocument()
-    expect(container.querySelectorAll('button')).toHaveLength(1)
+    expect(container.querySelectorAll('button')).toHaveLength(2)
+  })
+
+  it('opens the issues page when Report an Issue is clicked', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    renderBottomBar()
+    fireEvent.click(screen.getByRole('button', { name: 'Report an Issue' }))
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://github.com/harshalslimaye/mcpflo/issues',
+      '_blank'
+    )
+    openSpy.mockRestore()
   })
 
   it('shows Sun icon in dark theme', () => {

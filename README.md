@@ -1,12 +1,19 @@
-# MCPFlo
+<p align="center">
+  <img src="docs/images/logo.png" alt="MCPFlo" width="120" />
+</p>
 
-**A visual testing tool for MCP (Model Context Protocol) servers.**
+<h1 align="center">MCPFlo</h1>
+
+<p align="center">
+  <strong>A visual testing tool for MCP (Model Context Protocol) servers.</strong><br/>
+  Think Postman, but for MCP.
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshot-dark.png" alt="MCPFlo screenshot" width="820" />
+</p>
 
 MCPFlo lets you connect to any MCP server, browse its tools, resources, and prompts, and — soon — test multi-step tool chains without writing code or spending LLM tokens.
-
-Think Postman, but for MCP.
-
-![MCPFlo screenshot](docs/screenshot-dark.png)
 
 > ⚠️ **Early development.** MCPFlo is brand new and under active construction. Today it connects to stdio servers and browses their capabilities; tool calling and visual chains are next on the roadmap. Expect rapid change.
 
@@ -58,6 +65,27 @@ npm install
 ```bash
 npm run dev
 ```
+
+### Installing a downloaded build (macOS)
+
+MCPFlo's macOS builds aren't yet signed with an Apple Developer ID or notarized, so
+the first time you open one Gatekeeper will warn that the app "can't be opened" or is
+from an unidentified developer. This is expected — clear it once and macOS remembers:
+
+1. In Finder, **right-click** (or Control-click) **MCPFlo.app → Open**.
+2. Click **Open** in the dialog.
+
+After that, MCPFlo launches normally on every subsequent run.
+
+If you prefer the terminal, you can strip the quarantine flag instead:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/MCPFlo.app
+```
+
+> If the app ever fails to launch with a *"different Team IDs"* error, the bundle was
+> modified after download (for example a partially applied update). Reinstall a fresh
+> copy from the latest release rather than re-signing it in place.
 
 ### Add your first server
 

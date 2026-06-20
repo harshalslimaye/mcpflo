@@ -4,14 +4,14 @@ import { ToolDetailView } from '../tool/ToolDetailView'
 import { ResourceDetailView } from '../resource/ResourceDetailView'
 import { PromptDetailView } from '../prompt/PromptDetailView'
 
-function EmptyState(): React.JSX.Element {
+function EmptyState({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
   return (
     <div className="flex-1 h-full bg-bg-primary overflow-y-auto flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
         <Server size={48} className="text-text-muted" />
         <div className="flex flex-col items-center gap-1">
-          <span className="text-text-primary text-sm font-medium">Select an MCP Server</span>
-          <span className="text-text-muted text-sm">or tool to get started</span>
+          <span className="text-text-primary text-sm font-medium">{title}</span>
+          <span className="text-text-muted text-sm">{subtitle}</span>
         </div>
       </div>
     </div>
@@ -74,5 +74,19 @@ export function ContentArea(): React.JSX.Element {
     }
   }
 
-  return <EmptyState />
+  if (servers.length === 0) {
+    return (
+      <EmptyState
+        title="No servers yet"
+        subtitle="Add an MCP server from the sidebar to get started"
+      />
+    )
+  }
+
+  return (
+    <EmptyState
+      title="Ready when you are"
+      subtitle="Choose a tool, resource, or prompt to get started"
+    />
+  )
 }

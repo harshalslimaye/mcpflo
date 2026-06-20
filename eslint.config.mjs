@@ -9,7 +9,9 @@ export default defineConfig(
   // Dev-only helper scripts and the test-runner config follow plain-JS/Node
   // conventions (semicolons, no TS annotations) rather than the app's style, so
   // they're exempt from the TypeScript/prettier rules applied to src.
-  { ignores: ['**/node_modules', '**/dist', '**/out', 'scripts/**', 'vitest.config.ts'] },
+  {
+    ignores: ['**/node_modules', '**/dist', '**/out', 'scripts/**', 'build/**', 'vitest.config.ts']
+  },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

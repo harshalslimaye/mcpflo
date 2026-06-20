@@ -30,14 +30,21 @@ beforeEach(() => {
 })
 
 describe('ContentArea — empty state', () => {
-  it('renders primary empty state text', () => {
+  it('prompts to add a server when none exist', () => {
     render(<ContentArea />)
-    expect(screen.getByText('Select an MCP Server')).toBeInTheDocument()
+    expect(screen.getByText('No servers yet')).toBeInTheDocument()
+    expect(
+      screen.getByText('Add an MCP server from the sidebar to get started')
+    ).toBeInTheDocument()
   })
 
-  it('renders secondary empty state text', () => {
+  it('prompts to pick a capability when servers exist but nothing is selected', () => {
+    useServerStore.setState({ servers: [server] })
     render(<ContentArea />)
-    expect(screen.getByText('or tool to get started')).toBeInTheDocument()
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument()
+    expect(
+      screen.getByText('Choose a tool, resource, or prompt to get started')
+    ).toBeInTheDocument()
   })
 
   it('renders the server icon', () => {
@@ -59,7 +66,7 @@ describe('ContentArea — empty state', () => {
       selectedTool: { serverId: 'memory-mcp', toolName: 'gone' }
     })
     render(<ContentArea />)
-    expect(screen.getByText('Select an MCP Server')).toBeInTheDocument()
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument()
   })
 })
 
@@ -96,6 +103,6 @@ describe('ContentArea — resource detail', () => {
       selectedResource: { serverId: 'memory-mcp', uri: 'memory://gone' }
     })
     render(<ContentArea />)
-    expect(screen.getByText('Select an MCP Server')).toBeInTheDocument()
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument()
   })
 })
