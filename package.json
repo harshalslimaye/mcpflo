@@ -31,6 +31,7 @@
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
+    "clean": "node scripts/clean.js",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
@@ -40,6 +41,7 @@
     "release:patch": "standard-version --release-as patch",
     "release:minor": "standard-version --release-as minor",
     "release:major": "standard-version --release-as major",
+    "build:icons": "npx electron-icon-builder --input=resources/icon.png --output=build --flatten && cp build/icons/icon.icns build/icon.icns && cp build/icons/icon.ico build/icon.ico && cp build/icons/1024x1024.png build/icon.png",
     "deps:check": "npx ncu --interactive",
     "test": "vitest run",
     "test:watch": "vitest"

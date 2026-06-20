@@ -35,6 +35,7 @@ describe('store', () => {
   let addServer: typeof import('./store').addServer
   let updateServer: typeof import('./store').updateServer
   let removeServer: typeof import('./store').removeServer
+  let seedDefaultServers: typeof import('./store').seedDefaultServers
 
   beforeEach(async () => {
     vi.resetModules()
@@ -43,6 +44,7 @@ describe('store', () => {
     addServer = mod.addServer
     updateServer = mod.updateServer
     removeServer = mod.removeServer
+    seedDefaultServers = mod.seedDefaultServers
   })
 
   describe('getServers', () => {
@@ -106,6 +108,40 @@ describe('store', () => {
 
     it('throws when server id not found', () => {
       expect(() => removeServer('nonexistent')).toThrow('not found')
+    })
+  })
+
+  describe('seedDefaultServers', () => {
+    it('seeds an example server on a fresh store', () => {
+      seedDefaultServers()
+      const servers = getServers()
+      expect(servers).toHaveLength(1)
+      expect(servers[0].name).toBe('Everything')
+      expect(servers[0].transport).toEqual({
+        type: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-everything']
+      })
+    })
+
+    it('is idempotent — does not re-seed on subsequent runs', () => {
+      seedDefaultServers()
+      seedDefaultServers()
+      expect(getServers()).toHaveLength(1)
+    })
+
+    it('does not re-add the seed after the user deletes it', () => {
+      seedDefaultServers()
+      removeServer(getServers()[0].id)
+      seedDefaultServers()
+      expect(getServers()).toHaveLength(0)
+    })
+
+    it('does not seed when servers already exist', () => {
+      addServer(githubConfig)
+      seedDefaultServers()
+      expect(getServers()).toHaveLength(1)
+      expect(getServers()[0].id).toBe('github-mcp')
     })
   })
 })

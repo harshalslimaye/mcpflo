@@ -1,5 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
+import { fixPath } from './fixPath'
+import { seedDefaultServers } from './store'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -41,6 +43,17 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   app.setName('MCPFlo')
+
+  // Restore the user's real PATH so stdio MCP servers (e.g. `npx ...`) resolve
+  // when the app is launched from Finder/Dock rather than a terminal. Only needed
+  // for packaged builds; in dev the app already inherits the terminal's PATH.
+  if (!is.dev) {
+    fixPath()
+  }
+
+  // First-run only: pre-populate an example MCP server so a fresh install has
+  // something to explore immediately.
+  seedDefaultServers()
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
