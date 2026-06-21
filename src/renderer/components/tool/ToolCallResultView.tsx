@@ -3,7 +3,7 @@ import type { ToolCallNotification, ToolCallResult } from '../../../shared/mcp.t
 import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { ResultPreview } from './ContentBlockPreview'
 import { NotificationsTab } from './ToolCallNotifications'
-import { highlightJson } from '../shared/json/highlightJson'
+import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
 
 export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications'
@@ -92,7 +92,6 @@ function ResponseBody({
   }
 
   const compact = JSON.stringify(record.response)
-  const pretty = JSON.stringify(record.response, null, 2)
 
   const envelope = record.response as { result?: unknown; error?: unknown }
   const toolResult =
@@ -104,17 +103,21 @@ function ResponseBody({
     return toolResult ? (
       <ResultPreview result={toolResult} />
     ) : (
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded border border-red-500/40 bg-red-500/5 p-3 font-mono text-xs leading-relaxed text-red-500">
+      <pre className="whitespace-pre-wrap break-words rounded border border-red-500/40 bg-red-500/5 p-3 font-mono text-xs leading-relaxed text-red-500">
         {JSON.stringify(envelope.error ?? record.response, null, 2)}
       </pre>
     )
   }
 
+  if (tab === 'pretty') {
+    return <PrettyJson value={record.response} />
+  }
+
   return (
     <div className="relative">
-      <CopyButton text={tab === 'raw' ? compact : pretty} />
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded border border-border bg-bg-elevated p-3 pr-16 font-mono text-xs leading-relaxed text-text-primary">
-        {tab === 'raw' ? compact : highlightJson(pretty)}
+      <CopyButton text={compact} />
+      <pre className="whitespace-pre-wrap break-words rounded border border-border bg-bg-elevated p-3 pr-16 font-mono text-xs leading-relaxed text-text-primary">
+        {compact}
       </pre>
     </div>
   )

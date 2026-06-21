@@ -302,9 +302,6 @@ export function SecondarySidebar(): React.JSX.Element {
               placeholder="Filter tools, resources…"
               className="min-w-0 flex-1 border-0 bg-transparent text-[12.5px] text-text-primary outline-none placeholder:text-fg-faint"
             />
-            <kbd className="rounded-[4px] border border-border px-1.5 py-px font-mono text-[10px] text-fg-faint">
-              ⌘K
-            </kbd>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">

@@ -72,10 +72,12 @@ export function ResultPanel<T extends string>({
           : 'min-h-[140px] max-h-[60vh] shrink-0 rounded-[10px] border border-border'
       }`}
     >
-      {/* header: RESPONSE · status · duration · tabs */}
+      {/* header: RESPONSE · status · duration · tabs. Docked, the panel is a
+          full-bleed band, so it gets the same px-7 inset as the form column
+          above (vs. the tighter px-4 of the inline card). */}
       <div
-        className={`flex items-center gap-4 border-b border-border bg-panel-2 px-4 py-[11px] ${
-          docked ? 'min-w-0 overflow-hidden' : ''
+        className={`flex items-center gap-4 border-b border-border bg-panel-2 py-[11px] ${
+          docked ? 'min-w-0 overflow-hidden px-7' : 'px-4'
         }`}
       >
         {onToggleCollapse && (
@@ -168,8 +170,14 @@ export function ResultPanel<T extends string>({
         )}
       </div>
 
-      {/* body — hidden when the dock is collapsed to its slim status bar */}
-      {!collapsed && <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>}
+      {/* body — hidden when the dock is collapsed to its slim status bar.
+          Docked content aligns to the form column's px-7 with comfortable
+          vertical padding; the inline card stays tight. */}
+      {!collapsed && (
+        <div className={`min-h-0 flex-1 overflow-y-auto ${docked ? 'px-7 py-5' : 'p-4'}`}>
+          {children}
+        </div>
+      )}
     </section>
   )
 }

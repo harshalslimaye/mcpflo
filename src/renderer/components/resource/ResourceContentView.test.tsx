@@ -75,12 +75,10 @@ describe('ResourceContentView', () => {
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
   })
 
-  it('renders the indented JSON-RPC envelope on the Pretty tab', () => {
+  it('renders the JSON-RPC envelope as a tree on the Pretty tab', () => {
     const { container } = renderView(record(), 'pretty')
     expect(container.textContent).toContain('jsonrpc')
     expect(container.textContent).toContain('contents')
-    // Indented with 2 spaces (vs. the compact Raw form).
-    expect(container.querySelector('pre')?.textContent).toContain('\n  ')
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
   })
 
