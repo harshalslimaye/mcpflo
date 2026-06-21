@@ -2,7 +2,7 @@ import type { PromptGetRecord } from '../../stores/serverStore'
 import type { GetPromptResult, PromptMessage } from '../../../shared/mcp.types'
 import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { ContentBlockPreview } from '../tool/ContentBlockPreview'
-import { highlightJson } from '../shared/json/highlightJson'
+import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
 
 export type PromptResultTab = 'preview' | 'raw' | 'pretty'
@@ -89,14 +89,17 @@ function ResponseBody({
     return <pre className={errorBox}>{record.error ?? 'No response received.'}</pre>
   }
 
-  if (tab === 'raw' || tab === 'pretty') {
-    const json =
-      tab === 'pretty' ? JSON.stringify(record.response, null, 2) : JSON.stringify(record.response)
+  if (tab === 'pretty') {
+    return <PrettyJson value={record.response} />
+  }
+
+  if (tab === 'raw') {
+    const json = JSON.stringify(record.response)
     return (
       <div className="relative">
         <CopyButton text={json} />
         <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-elevated p-3 pr-16 whitespace-pre-wrap break-words text-text-primary">
-          {tab === 'pretty' ? highlightJson(json) : json}
+          {json}
         </pre>
       </div>
     )

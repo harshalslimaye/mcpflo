@@ -23,7 +23,7 @@ export function ResultDock({ containerRef, dock, children }: ResultDockProps): R
   const height = collapsed
     ? `${DOCK_MIN}px`
     : full
-      ? '100%'
+      ? '90%'
       : heightPx != null
         ? `${heightPx}px`
         : '44%'

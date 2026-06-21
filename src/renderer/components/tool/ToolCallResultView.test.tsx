@@ -86,28 +86,35 @@ describe('ToolCallResultView — Raw tab', () => {
 })
 
 describe('ToolCallResultView — Pretty tab', () => {
-  it('shows the entire envelope indented', () => {
+  it('renders the whole envelope as a tree', () => {
     const { container } = view(rec({ response: envelope }), 'pretty')
-    expect(container.textContent).toContain('"jsonrpc": "2.0"')
-    expect(container.textContent).toContain('"result"')
+    expect(container.textContent).toContain('jsonrpc')
+    expect(container.textContent).toContain('result')
     expect(container.textContent).toContain('Echo: HELLO')
   })
 
-  it('copies the pretty JSON to the clipboard', () => {
+  it('copies the indented JSON to the clipboard', () => {
     view(rec({ response: envelope }), 'pretty')
     fireEvent.click(screen.getByRole('button', { name: /copy json/i }))
     expect(writeText).toHaveBeenCalledWith(JSON.stringify(envelope, null, 2))
   })
 
-  it('highlights booleans and null in the pretty output', () => {
-    const { container } = view(
-      rec({
-        response: { jsonrpc: '2.0', id: 1, result: { ok: true, missing: null } }
-      }),
-      'pretty'
-    )
-    expect(container.querySelector('pre .text-purple-600')?.textContent).toBe('true')
-    expect(container.querySelector('pre .text-text-muted')?.textContent).toBe('null')
+  it('expands a JSON-encoded text block into nested nodes', () => {
+    const withJsonText = {
+      jsonrpc: '2.0',
+      id: 5,
+      result: { content: [{ type: 'text', text: '{"city":"Paris","temp":21}' }] }
+    }
+    const { container } = view(rec({ response: withJsonText }), 'pretty')
+    // The embedded payload is parsed: its keys/values appear as their own nodes,
+    // not as one escaped string.
+    expect(container.textContent).toContain('city')
+    expect(container.textContent).toContain('Paris')
+    expect(container.textContent).not.toContain('\\"city\\"')
+    // Copy carries the expanded form too.
+    fireEvent.click(screen.getByRole('button', { name: /copy json/i }))
+    const copied = writeText.mock.calls[0][0] as string
+    expect(copied).toContain('"city": "Paris"')
   })
 })
 

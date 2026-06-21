@@ -75,9 +75,10 @@ describe('PromptResultView', () => {
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
   })
 
-  it('renders the indented JSON-RPC envelope on the Pretty tab', () => {
+  it('renders the JSON-RPC envelope as a tree on the Pretty tab', () => {
     const { container } = renderView(record(), 'pretty')
-    expect(container.querySelector('pre')?.textContent).toContain('\n  ')
+    expect(container.textContent).toContain('jsonrpc')
+    expect(container.textContent).toContain('messages')
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
   })
 

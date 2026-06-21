@@ -47,7 +47,7 @@ function BlockCard({ badge, children }: { badge: string; children: ReactNode }):
 
 function JsonBody({ json }: { json: string }): React.JSX.Element {
   return (
-    <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 overflow-auto max-h-80 whitespace-pre-wrap break-words text-text-primary">
+    <pre className="font-mono text-xs leading-relaxed border border-border rounded bg-bg-primary p-2 whitespace-pre-wrap break-words text-text-primary">
       {json}
     </pre>
   )
