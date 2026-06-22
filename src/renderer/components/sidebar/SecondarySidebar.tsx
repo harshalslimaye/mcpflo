@@ -10,7 +10,9 @@ import {
   Plus,
   Search,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Maximize2,
+  Minimize2
 } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -33,6 +35,8 @@ const GROUP_META: Record<
   resources: { label: 'Resources', icon: <Database size={13} />, itemIcon: <FileText size={13} /> },
   prompts: { label: 'Prompts', icon: <MessageSquare size={13} />, itemIcon: <Hash size={13} /> }
 }
+
+const GROUP_KEYS: GroupKey[] = ['tools', 'resources', 'prompts']
 
 function groupId(serverId: string, group: GroupKey): string {
   return `${serverId}-${group}`
@@ -192,6 +196,13 @@ export function SecondarySidebar(): React.JSX.Element {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   // Normalized query handed to each tree; empty means no filtering.
   const query = filter.trim().toLowerCase()
+  // Expand/collapse-all are no-ops with no servers, and while filtering the tree
+  // force-expands everything regardless of the Sets — so disable them there.
+  const treeControlsDisabled = servers.length === 0 || query.length > 0
+  const allExpanded =
+    servers.length > 0 &&
+    servers.every((s) => expandedServers.has(s.id)) &&
+    servers.every((s) => GROUP_KEYS.every((g) => expandedGroups.has(groupId(s.id, g))))
 
   // ⌘K focuses the filter input; ⌘B toggles the sidebar — both work app-wide.
   useEffect(() => {
@@ -235,6 +246,24 @@ export function SecondarySidebar(): React.JSX.Element {
     })
   }
 
+  // Expand every server and every capability group in one click. Mirrors the
+  // lazy-fetch behavior of toggleServer: never-fetched (grey) servers fetch on
+  // expand so their trees actually populate.
+  function expandAll(): void {
+    setExpandedServers(new Set(servers.map((s) => s.id)))
+    setExpandedGroups(
+      new Set(servers.flatMap((s) => GROUP_KEYS.map((g) => groupId(s.id, g))))
+    )
+    for (const server of servers) {
+      if (server.status === 'disconnected') fetchCapabilities(server.id)
+    }
+  }
+
+  function collapseAll(): void {
+    setExpandedServers(new Set())
+    setExpandedGroups(new Set())
+  }
+
   return (
     <>
       <div
@@ -267,15 +296,27 @@ export function SecondarySidebar(): React.JSX.Element {
               <h2 className="text-[11px] font-bold tracking-[0.12em] uppercase text-fg-faint">
                 MCP Servers
               </h2>
-              <Tooltip label="Collapse sidebar (⌘B)" side="bottom">
-                <button
-                  aria-label="Collapse sidebar"
-                  onClick={toggleSidebar}
-                  className="flex h-[24px] w-[24px] items-center justify-center rounded-[6px] text-fg-faint transition-colors hover:bg-card-2 hover:text-text-muted"
-                >
-                  <PanelLeftClose size={15} />
-                </button>
-              </Tooltip>
+              <div className="flex items-center gap-1">
+                <Tooltip label={allExpanded ? 'Collapse all' : 'Expand all'} side="bottom">
+                  <button
+                    aria-label={allExpanded ? 'Collapse all' : 'Expand all'}
+                    onClick={allExpanded ? collapseAll : expandAll}
+                    disabled={treeControlsDisabled}
+                    className="flex h-[24px] w-[24px] items-center justify-center rounded-[6px] text-fg-faint transition-colors hover:bg-card-2 hover:text-text-muted disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    {allExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                  </button>
+                </Tooltip>
+                <Tooltip label="Collapse sidebar (⌘B)" side="bottom">
+                  <button
+                    aria-label="Collapse sidebar"
+                    onClick={toggleSidebar}
+                    className="flex h-[24px] w-[24px] items-center justify-center rounded-[6px] text-fg-faint transition-colors hover:bg-card-2 hover:text-text-muted"
+                  >
+                    <PanelLeftClose size={15} />
+                  </button>
+                </Tooltip>
+              </div>
             </div>
             <button
               onClick={() => setShowAddModal(true)}
