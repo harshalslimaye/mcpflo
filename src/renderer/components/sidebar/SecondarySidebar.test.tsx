@@ -339,6 +339,48 @@ describe('SecondarySidebar', () => {
     )
   })
 
+  describe('expand/collapse all', () => {
+    it('expands every server and group in one click', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByLabelText('Expand all'))
+      // Both servers expanded, with their (non-empty) groups and items showing.
+      expect(screen.getByText('create_entities')).toBeInTheDocument()
+      expect(screen.getByText('search_nodes')).toBeInTheDocument()
+      expect(screen.getByText('Graph')).toBeInTheDocument()
+    })
+
+    it('fetches capabilities for never-fetched (grey) servers on expand all', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByLabelText('Expand all'))
+      expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
+      expect(mockFetchCapabilities).not.toHaveBeenCalledWith('memory-mcp')
+    })
+
+    it('collapses every server in one click', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByLabelText('Expand all'))
+      fireEvent.click(screen.getByLabelText('Collapse all'))
+      expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+      expect(screen.queryByText('create_entities')).not.toBeInTheDocument()
+    })
+
+    it('disables the controls while filtering', () => {
+      render(<SecondarySidebar />)
+      fireEvent.change(screen.getByPlaceholderText('Filter tools, resources…'), {
+        target: { value: 'create' }
+      })
+      expect(screen.getByLabelText('Expand all')).toBeDisabled()
+      expect(screen.getByLabelText('Collapse all')).toBeDisabled()
+    })
+
+    it('disables the controls when there are no servers', () => {
+      useServerStore.setState({ servers: [] })
+      render(<SecondarySidebar />)
+      expect(screen.getByLabelText('Expand all')).toBeDisabled()
+      expect(screen.getByLabelText('Collapse all')).toBeDisabled()
+    })
+  })
+
   describe('collapse toggle', () => {
     beforeEach(() => {
       useUiStore.setState({ sidebarCollapsed: false })
