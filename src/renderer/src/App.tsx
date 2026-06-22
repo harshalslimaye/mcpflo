@@ -6,6 +6,7 @@ import { ElicitationHost } from '../components/elicitation/ElicitationHost'
 import { SamplingHost } from '../components/sampling/SamplingHost'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { Toaster } from '../components/ui/Toaster'
+import { SecretsWarningBanner } from '../components/ui/SecretsWarningBanner'
 import { useServerStore } from '../stores/serverStore'
 
 function App(): React.JSX.Element {
@@ -20,6 +21,7 @@ function App(): React.JSX.Element {
   return (
     <ErrorBoundary>
       <div className="flex flex-col w-full h-full overflow-hidden bg-bg-primary">
+        <SecretsWarningBanner />
         <div className="flex flex-row flex-1 min-h-0 overflow-hidden">
           <SecondarySidebar />
           <ContentArea />

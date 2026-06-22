@@ -1,3 +1,10 @@
+// Placeholder shown in place of a stored secret's real value (env var / header
+// values). The main process redacts secrets to this before handing configs to
+// the renderer, and treats a value still equal to it on the way back in as
+// "unchanged" — so a redacted config can round-trip without clobbering the real
+// secret. Shared so both sides agree on the exact string.
+export const REDACTED_SECRET = '••••••••'
+
 // Transport configurations supported by MCP
 export type StdioTransportConfig = {
   type: 'stdio'

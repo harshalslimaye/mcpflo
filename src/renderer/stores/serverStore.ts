@@ -1,16 +1,18 @@
 import { create } from 'zustand'
-import type {
-  ServerConfig,
-  MCPServer,
-  CachedCapabilities,
-  ToolCallOutcome,
-  ResourceReadOutcome,
-  PromptGetOutcome,
-  ToolCallNotification,
-  ElicitationRequestEvent,
-  ElicitationResult,
-  SamplingRequestEvent,
-  SamplingResult
+import {
+  REDACTED_SECRET,
+  type ServerConfig,
+  type TransportConfig,
+  type MCPServer,
+  type CachedCapabilities,
+  type ToolCallOutcome,
+  type ResourceReadOutcome,
+  type PromptGetOutcome,
+  type ToolCallNotification,
+  type ElicitationRequestEvent,
+  type ElicitationResult,
+  type SamplingRequestEvent,
+  type SamplingResult
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
 import { useErrorStore, toMessage } from './errorStore'
@@ -155,6 +157,9 @@ interface ServerStore {
   // Sampling requests awaiting a user answer, in arrival order. Same queueing
   // behaviour as elicitations.
   pendingSamplings: SamplingRequestEvent[]
+  // True when the main process had to store at least one secret as plaintext
+  // (no OS keyring). Drives the security warning banner.
+  secretsPlaintext: boolean
 
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
@@ -178,6 +183,24 @@ interface ServerStore {
   removeServer: (id: string) => Promise<void>
   fetchCapabilities: (id: string) => Promise<void>
   refreshCapabilities: (id: string) => Promise<void>
+}
+
+// Masks secret values (stdio env vars / http headers) so a config the user
+// just entered isn't kept verbatim in the long-lived store. The main process
+// redacts configs it hands back via getServers the same way; this keeps the
+// add/update paths — where the value arrives plaintext from the form — aligned
+// with that. Connections go by id, so the renderer never needs the real values.
+function redactSecrets(transport: TransportConfig): TransportConfig {
+  if (transport.type === 'stdio') {
+    if (!transport.env) return transport
+    return { ...transport, env: maskValues(transport.env) }
+  }
+  if (!transport.headers) return transport
+  return { ...transport, headers: maskValues(transport.headers) }
+}
+
+function maskValues(values: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.keys(values).map((k) => [k, REDACTED_SECRET]))
 }
 
 function toRuntime(config: ServerConfig, cached?: CachedCapabilities): MCPServer {
@@ -204,14 +227,19 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
+  secretsPlaintext: false,
 
   hydrate: async () => {
     try {
-      const [configs, cache] = await Promise.all([
+      const [configs, cache, secretsStatus] = await Promise.all([
         window.api.mcp.getServers(),
-        window.api.mcp.getCachedCapabilities()
+        window.api.mcp.getCachedCapabilities(),
+        window.api.mcp.getSecretsStatus()
       ])
-      set({ servers: configs.map((c) => toRuntime(c, cache[c.id])) })
+      set({
+        servers: configs.map((c) => toRuntime(c, cache[c.id])),
+        secretsPlaintext: secretsStatus.plaintext
+      })
     } catch (err) {
       // A startup read failure would otherwise leave the app blank with no
       // explanation; surface it instead.
@@ -253,7 +281,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     let record: ToolCallRecord
     try {
       const taskSupport = server.tools.find((t) => t.name === toolName)?.execution?.taskSupport
-      const outcome = await window.api.mcp.callTool(server, toolName, args, callId, taskSupport)
+      const outcome = await window.api.mcp.callTool(serverId, toolName, args, callId, taskSupport)
       const { response, truncated } = capResponse(outcome.response)
       record = {
         id: crypto.randomUUID(),
@@ -311,7 +339,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     const at = Date.now()
     let record: ResourceReadRecord
     try {
-      const outcome = await window.api.mcp.readResource(server, uri)
+      const outcome = await window.api.mcp.readResource(serverId, uri)
       const { response, truncated } = capResponse(outcome.response)
       record = {
         id: crypto.randomUUID(),
@@ -361,7 +389,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     const at = Date.now()
     let record: PromptGetRecord
     try {
-      const outcome = await window.api.mcp.getPrompt(server, promptName, args)
+      const outcome = await window.api.mcp.getPrompt(serverId, promptName, args)
       const { response, truncated } = capResponse(outcome.response)
       record = {
         id: crypto.randomUUID(),
@@ -456,7 +484,10 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       reportError(err)
       throw err
     }
-    set((state) => ({ servers: [...state.servers, toRuntime(config)] }))
+    // Store the redacted form: the plaintext secret was only needed to reach
+    // the main process, which has now persisted it encrypted.
+    const redacted = { ...config, transport: redactSecrets(config.transport) }
+    set((state) => ({ servers: [...state.servers, toRuntime(redacted)] }))
   },
 
   updateServer: async (id, patch) => {
@@ -466,8 +497,13 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       reportError(err)
       throw err
     }
+    // Redact any secret in the patch before it lands in the store, mirroring
+    // what getServers would return on the next hydrate.
+    const safePatch = patch.transport
+      ? { ...patch, transport: redactSecrets(patch.transport) }
+      : patch
     set((state) => ({
-      servers: state.servers.map((s) => (s.id === id ? { ...s, ...patch } : s))
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...safePatch } : s))
     }))
   },
 
@@ -508,7 +544,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }))
 
     try {
-      const { tools, resources, prompts } = await window.api.mcp.fetchCapabilities(server)
+      const { tools, resources, prompts } = await window.api.mcp.fetchCapabilities(id)
       set((state) => ({
         servers: state.servers.map((s) =>
           s.id === id

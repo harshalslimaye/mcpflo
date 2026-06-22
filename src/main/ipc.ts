@@ -1,5 +1,12 @@
 import { ipcMain } from 'electron'
-import { getServers, addServer, updateServer, removeServer } from './store'
+import {
+  getServers,
+  getServerForConnection,
+  secretsStoredAsPlaintext,
+  addServer,
+  updateServer,
+  removeServer
+} from './store'
 import { fetchCapabilities, callTool, readResource, getPrompt } from './mcpClient'
 import {
   createPending as createPendingElicitation,
@@ -27,6 +34,10 @@ import type {
 export function registerIpcHandlers(): void {
   ipcMain.handle('mcp:getServers', () => getServers())
 
+  // Whether any secret is stored as plaintext (no OS keyring) — drives the
+  // renderer's security warning banner.
+  ipcMain.handle('mcp:getSecretsStatus', () => ({ plaintext: secretsStoredAsPlaintext() }))
+
   ipcMain.handle('mcp:addServer', (_event, config: ServerConfig) => addServer(config))
 
   ipcMain.handle(
@@ -42,9 +53,10 @@ export function registerIpcHandlers(): void {
   // Capabilities cache
   ipcMain.handle('mcp:getCachedCapabilities', () => readAllCapabilities())
 
-  ipcMain.handle('mcp:fetchCapabilities', async (_event, config: ServerConfig) => {
+  ipcMain.handle('mcp:fetchCapabilities', async (_event, id: string) => {
+    const config = getServerForConnection(id)
     const result = await fetchCapabilities(config)
-    await writeCapabilities(config.id, result)
+    await writeCapabilities(id, result)
     return result
   })
 
@@ -59,12 +71,13 @@ export function registerIpcHandlers(): void {
     'mcp:callTool',
     async (
       event,
-      config: ServerConfig,
+      id: string,
       toolName: string,
       args: Record<string, unknown>,
       callId?: string,
       taskSupport?: TaskSupport
     ) => {
+      const config = getServerForConnection(id)
       const outcome = await callTool(
         config,
         toolName,
@@ -166,16 +179,16 @@ export function registerIpcHandlers(): void {
 
   // Resource read. A single request → response with no mid-call side channels,
   // so unlike mcp:callTool there's no callId / notification plumbing.
-  ipcMain.handle('mcp:readResource', (_event, config: ServerConfig, uri: string) =>
-    readResource(config, uri)
+  ipcMain.handle('mcp:readResource', (_event, id: string, uri: string) =>
+    readResource(getServerForConnection(id), uri)
   )
 
   // Prompt get. Like resource read, a single request → response with no side
   // channels — but it carries arguments (prompts take named string inputs).
   ipcMain.handle(
     'mcp:getPrompt',
-    (_event, config: ServerConfig, name: string, args: Record<string, string>) =>
-      getPrompt(config, name, args)
+    (_event, id: string, name: string, args: Record<string, string>) =>
+      getPrompt(getServerForConnection(id), name, args)
   )
 
   ipcMain.handle(

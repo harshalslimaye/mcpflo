@@ -25,19 +25,20 @@ declare global {
         addServer: (config: ServerConfig) => Promise<void>
         updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
         removeServer: (id: string) => Promise<void>
+        getSecretsStatus: () => Promise<{ plaintext: boolean }>
         getCachedCapabilities: () => Promise<Record<string, CachedCapabilities>>
-        fetchCapabilities: (config: ServerConfig) => Promise<ConnectResult>
+        fetchCapabilities: (id: string) => Promise<ConnectResult>
         clearCapabilities: (id: string) => Promise<void>
         callTool: (
-          config: ServerConfig,
+          id: string,
           toolName: string,
           args: Record<string, unknown>,
           callId?: string,
           taskSupport?: TaskSupport
         ) => Promise<ToolCallOutcome>
-        readResource: (config: ServerConfig, uri: string) => Promise<ResourceReadOutcome>
+        readResource: (id: string, uri: string) => Promise<ResourceReadOutcome>
         getPrompt: (
-          config: ServerConfig,
+          id: string,
           name: string,
           args: Record<string, string>
         ) => Promise<PromptGetOutcome>

@@ -20,6 +20,7 @@ const mockApi = {
     updateServer: vi.fn<(id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>>(),
     removeServer: vi.fn<(id: string) => Promise<void>>(),
     getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
+    getSecretsStatus: vi.fn<() => Promise<{ plaintext: boolean }>>(),
     fetchCapabilities: vi.fn(),
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
     callTool: vi.fn(),
@@ -43,6 +44,7 @@ describe('serverStore', () => {
     mockApi.mcp.updateServer.mockResolvedValue(undefined)
     mockApi.mcp.removeServer.mockResolvedValue(undefined)
     mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
+    mockApi.mcp.getSecretsStatus.mockResolvedValue({ plaintext: false })
     mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
     mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
     mockApi.mcp.callTool.mockResolvedValue({
@@ -109,6 +111,12 @@ describe('serverStore', () => {
     it('sets empty array when no servers stored', async () => {
       await useServerStore.getState().hydrate()
       expect(useServerStore.getState().servers).toHaveLength(0)
+    })
+
+    it('reflects the plaintext-secrets warning flag', async () => {
+      mockApi.mcp.getSecretsStatus.mockResolvedValue({ plaintext: true })
+      await useServerStore.getState().hydrate()
+      expect(useServerStore.getState().secretsPlaintext).toBe(true)
     })
 
     it('swallows a read failure instead of rejecting', async () => {
@@ -200,11 +208,11 @@ describe('serverStore', () => {
   describe('executeTool', () => {
     const key = 'github-mcp::create_issue'
 
-    it('calls IPC with the server config, tool name and args', async () => {
+    it('calls IPC with the server id, tool name and args', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().executeTool('github-mcp', 'create_issue', { title: 'x' })
       expect(mockApi.mcp.callTool).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'github-mcp' }),
+        'github-mcp',
         'create_issue',
         { title: 'x' },
         expect.any(String),
@@ -425,13 +433,10 @@ describe('serverStore', () => {
   describe('readResource', () => {
     const key = 'github-mcp::mem://x'
 
-    it('calls IPC with the server config and uri', async () => {
+    it('calls IPC with the server id and uri', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().readResource('github-mcp', 'mem://x')
-      expect(mockApi.mcp.readResource).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'github-mcp' }),
-        'mem://x'
-      )
+      expect(mockApi.mcp.readResource).toHaveBeenCalledWith('github-mcp', 'mem://x')
     })
 
     it('records a successful read in resource history', async () => {
@@ -487,14 +492,12 @@ describe('serverStore', () => {
   describe('getPrompt', () => {
     const key = 'github-mcp::summarize'
 
-    it('calls IPC with the server config, name and args', async () => {
+    it('calls IPC with the server id, name and args', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().getPrompt('github-mcp', 'summarize', { topic: 'mcp' })
-      expect(mockApi.mcp.getPrompt).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'github-mcp' }),
-        'summarize',
-        { topic: 'mcp' }
-      )
+      expect(mockApi.mcp.getPrompt).toHaveBeenCalledWith('github-mcp', 'summarize', {
+        topic: 'mcp'
+      })
     })
 
     it('records a successful get in prompt history', async () => {
@@ -781,12 +784,10 @@ describe('serverStore', () => {
       expect(slack?.tools).toEqual([])
     })
 
-    it('passes full server config to IPC', async () => {
+    it('passes the server id to IPC', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().fetchCapabilities('github-mcp')
-      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'github-mcp' })
-      )
+      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith('github-mcp')
     })
   })
 
@@ -797,9 +798,7 @@ describe('serverStore', () => {
       mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools, resources: [], prompts: [] })
       await useServerStore.getState().refreshCapabilities('github-mcp')
       expect(mockApi.mcp.clearCapabilities).toHaveBeenCalledWith('github-mcp')
-      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'github-mcp' })
-      )
+      expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith('github-mcp')
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('connected')
       expect(server?.tools).toEqual(tools)
