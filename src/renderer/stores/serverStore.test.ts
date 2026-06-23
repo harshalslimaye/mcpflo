@@ -915,7 +915,7 @@ describe('serverStore', () => {
   })
 
   describe('disconnectServer', () => {
-    it('disconnects and resets the server to disconnected (grey)', async () => {
+    it('disconnects, clears cached capabilities, and resets the server to disconnected (grey)', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().fetchCapabilities('github-mcp')
       expect(useServerStore.getState().servers[0].status).toBe('connected')
@@ -923,11 +923,16 @@ describe('serverStore', () => {
       await useServerStore.getState().disconnectServer('github-mcp')
 
       expect(mockApi.mcp.disconnectServer).toHaveBeenCalledWith('github-mcp')
+      expect(mockApi.mcp.clearCapabilities).toHaveBeenCalledWith('github-mcp')
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('disconnected')
+      expect(server?.tools).toEqual([])
+      expect(server?.resources).toEqual([])
+      expect(server?.prompts).toEqual([])
+      expect(server?.fetchedAt).toBeUndefined()
     })
 
-    it('still resets status when the IPC call fails', async () => {
+    it('still resets status and capabilities when the IPC calls fail', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().fetchCapabilities('github-mcp')
       mockApi.mcp.disconnectServer.mockRejectedValue(new Error('boom'))
@@ -937,6 +942,7 @@ describe('serverStore', () => {
       ).resolves.toBeUndefined()
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('disconnected')
+      expect(server?.tools).toEqual([])
     })
   })
 })
