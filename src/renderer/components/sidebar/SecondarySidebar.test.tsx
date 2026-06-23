@@ -369,15 +369,13 @@ describe('SecondarySidebar', () => {
       fireEvent.change(screen.getByPlaceholderText('Filter tools, resources…'), {
         target: { value: 'create' }
       })
-      expect(screen.getByLabelText('Expand all')).toBeDisabled()
-      expect(screen.getByLabelText('Collapse all')).toBeDisabled()
+      expect(screen.getByRole('button', { name: /expand all|collapse all/i })).toBeDisabled()
     })
 
     it('disables the controls when there are no servers', () => {
       useServerStore.setState({ servers: [] })
       render(<SecondarySidebar />)
-      expect(screen.getByLabelText('Expand all')).toBeDisabled()
-      expect(screen.getByLabelText('Collapse all')).toBeDisabled()
+      expect(screen.getByRole('button', { name: /expand all|collapse all/i })).toBeDisabled()
     })
   })
 
