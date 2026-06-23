@@ -15,7 +15,7 @@ const tool: Tool = {
 }
 
 beforeEach(() => {
-  useServerStore.setState({ history: {} })
+  useServerStore.setState({ history: {}, pendingPrefill: null })
 })
 
 describe('ToolDetailView', () => {
@@ -85,6 +85,21 @@ describe('ToolDetailView', () => {
     expect(screen.getByText('1')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'clear' }))
     expect(screen.getByText('No calls yet.')).toBeInTheDocument()
+  })
+
+  it('applies a cross-tab prefill handed off from the All tab', () => {
+    useServerStore.setState({
+      pendingPrefill: {
+        serverId: 'memory-mcp',
+        name: 'search_nodes',
+        args: { query: 'handoff' },
+        nonce: 1
+      }
+    })
+    render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    expect(screen.getByRole('textbox', { name: 'query' })).toHaveValue('handoff')
+    // The one-shot handoff is consumed.
+    expect(useServerStore.getState().pendingPrefill).toBeNull()
   })
 
   it('preserves Params form state across tab switches', () => {

@@ -53,6 +53,7 @@ beforeEach(() => {
     resourceHistory: {},
     promptHistory: {},
     protocolEvents: [],
+    pendingPrefill: null,
     selectedTool: null,
     selectedResource: null,
     selectedPrompt: null
@@ -103,6 +104,19 @@ describe('ActivityRail', () => {
     render(<ActivityRail<ToolCallRecord> thisRecords={[]} {...thisProps} />)
     fireEvent.click(screen.getByText('echo'))
     expect(useServerStore.getState().selectedTool).toEqual({ serverId: 's1', toolName: 'echo' })
+  })
+
+  it('stages the call args as a prefill when a tool row is activated', () => {
+    useServerStore.setState({
+      history: { [toolKey('s1', 'echo')]: [toolRec({ args: { message: 'hi' } })] }
+    })
+    render(<ActivityRail<ToolCallRecord> thisRecords={[]} {...thisProps} />)
+    fireEvent.click(screen.getByText('echo'))
+    expect(useServerStore.getState().pendingPrefill).toMatchObject({
+      serverId: 's1',
+      name: 'echo',
+      args: { message: 'hi' }
+    })
   })
 
   it('renders protocol rows as read-only (no navigation control)', () => {

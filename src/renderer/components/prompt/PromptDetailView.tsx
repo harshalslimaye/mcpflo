@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Prompt } from '../../../shared/mcp.types'
 import { useServerStore, promptKey } from '../../stores/serverStore'
 import { isPromptEmpty } from '../../lib/promptSchema'
@@ -58,6 +58,21 @@ export function PromptDetailView({
   // only drives the Response panel and skips the prefill.
   const isEmpty = isPromptEmpty(prompt)
 
+  // A cross-tab prefill handed off when this prompt was opened from the "All"
+  // history tab (see ToolDetailView for the shape). Feeds the form directly and
+  // is cleared right after so a later remount can't replay it.
+  const pendingPrefill = useServerStore((s) => s.pendingPrefill)
+  const clearPendingPrefill = useServerStore((s) => s.clearPendingPrefill)
+  const prefillMatches =
+    pendingPrefill?.serverId === serverId && pendingPrefill?.name === prompt.name
+  const effectivePrefill =
+    prefillMatches && !isEmpty
+      ? { args: pendingPrefill.args as Record<string, string>, nonce: pendingPrefill.nonce }
+      : prefill
+  useEffect(() => {
+    if (prefillMatches) clearPendingPrefill()
+  }, [prefillMatches, clearPendingPrefill])
+
   async function handleExecute(payload: Record<string, string>): Promise<void> {
     // Snap the Response panel back to the get we're about to make, and reveal
     // the dock if it was collapsed.
@@ -82,7 +97,7 @@ export function PromptDetailView({
             prompt={prompt}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            prefill={prefill}
+            prefill={effectivePrefill}
             running={running}
             onExecute={handleExecute}
           />

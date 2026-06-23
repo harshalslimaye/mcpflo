@@ -151,6 +151,17 @@ interface ServerStore {
   // no per-key home, newest first. Merged with the call histories to build the
   // "All" history tab; see lib/activityEvent.
   protocolEvents: ProtocolEvent[]
+  // A one-shot request to re-fill a tool/prompt form with a past call's args,
+  // set when a call row is activated from the "All" tab (which navigates to
+  // another entity, so the args can't ride along in the detail view's local
+  // state). `nonce` (a timestamp, disjoint from the small per-view nonces) lets
+  // the target form apply it once; the view clears it on arrival.
+  pendingPrefill: {
+    serverId: string
+    name: string
+    args: Record<string, unknown>
+    nonce: number
+  } | null
   // Notifications streamed by the currently running call for a tool, keyed by
   // `toolKey`. An entry exists only while that call is in flight.
   liveNotifications: Record<string, ToolCallNotification[]>
@@ -175,6 +186,13 @@ interface ServerStore {
   // Clears every history slice at once — backs the "clear" control on the "All"
   // history tab.
   clearAllActivity: () => void
+  // Stages / clears the cross-tab form prefill handoff (see pendingPrefill).
+  setPendingPrefill: (prefill: {
+    serverId: string
+    name: string
+    args: Record<string, unknown>
+  }) => void
+  clearPendingPrefill: () => void
   enqueueElicitation: (event: ElicitationRequestEvent) => void
   removeElicitation: (elicitationId: string) => void
   respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
@@ -210,6 +228,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   resourceHistory: {},
   promptHistory: {},
   protocolEvents: [],
+  pendingPrefill: null,
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
@@ -442,7 +461,21 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   },
 
   clearAllActivity: () =>
-    set({ history: {}, resourceHistory: {}, promptHistory: {}, protocolEvents: [] }),
+    set({
+      history: {},
+      resourceHistory: {},
+      promptHistory: {},
+      protocolEvents: [],
+      // A "clear all" should also drop any staged cross-tab prefill, so a pending
+      // handoff can't outlive the history it came from.
+      pendingPrefill: null
+    }),
+
+  // Timestamp nonce keeps each handoff distinct from the small, independent
+  // per-view prefill nonces, so the two never collide in the shared form prop.
+  setPendingPrefill: (prefill) => set({ pendingPrefill: { ...prefill, nonce: Date.now() } }),
+
+  clearPendingPrefill: () => set({ pendingPrefill: null }),
 
   enqueueElicitation: (event) =>
     set((state) => ({ pendingElicitations: [...state.pendingElicitations, event] })),
@@ -532,7 +565,10 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       promptHistory: Object.fromEntries(
         Object.entries(state.promptHistory).filter(([key]) => !key.startsWith(`${id}::`))
       ),
-      protocolEvents: state.protocolEvents.filter((e) => e.serverId !== id)
+      protocolEvents: state.protocolEvents.filter((e) => e.serverId !== id),
+      // Drop a staged prefill handoff belonging to the removed server, so it
+      // can't linger and fill a later form.
+      pendingPrefill: state.pendingPrefill?.serverId === id ? null : state.pendingPrefill
     }))
   },
 

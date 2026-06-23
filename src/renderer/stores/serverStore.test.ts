@@ -752,6 +752,41 @@ describe('serverStore', () => {
       expect(promptHistory['github-mcp::summarize']).toBeUndefined()
       expect(promptHistory['slack-mcp::translate']).toHaveLength(1)
     })
+
+    it('drops a staged prefill handoff belonging to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      useServerStore.setState({
+        pendingPrefill: { serverId: 'github-mcp', name: 'create_issue', args: {}, nonce: 1 }
+      })
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().pendingPrefill).toBeNull()
+    })
+
+    it('keeps a staged prefill handoff for a different server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      const prefill = { serverId: 'slack-mcp', name: 'post_message', args: {}, nonce: 1 }
+      useServerStore.setState({ pendingPrefill: prefill })
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().pendingPrefill).toEqual(prefill)
+    })
+  })
+
+  describe('clearAllActivity', () => {
+    it('empties every history slice and the staged prefill handoff', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+      useServerStore.setState({
+        pendingPrefill: { serverId: 'github-mcp', name: 'create_issue', args: {}, nonce: 1 }
+      })
+      useServerStore.getState().clearAllActivity()
+      const state = useServerStore.getState()
+      expect(state.history).toEqual({})
+      expect(state.resourceHistory).toEqual({})
+      expect(state.promptHistory).toEqual({})
+      expect(state.protocolEvents).toEqual([])
+      expect(state.pendingPrefill).toBeNull()
+    })
   })
 
   describe('fetchCapabilities', () => {

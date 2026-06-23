@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tool } from '../../../shared/mcp.types'
 import { useServerStore, toolKey } from '../../stores/serverStore'
 import { analyzeSchema } from '../../lib/toolSchema'
@@ -59,6 +59,21 @@ export function ToolDetailView({
   // only drives the Response panel and skips the prefill.
   const { isEmpty } = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
 
+  // A cross-tab prefill handed off when this tool was opened by clicking its row
+  // on the "All" history tab. It feeds the form directly (winning over a local
+  // History selection for the render it lands on) and is cleared right after, so
+  // a later remount can't replay it.
+  const pendingPrefill = useServerStore((s) => s.pendingPrefill)
+  const clearPendingPrefill = useServerStore((s) => s.clearPendingPrefill)
+  const prefillMatches = pendingPrefill?.serverId === serverId && pendingPrefill?.name === tool.name
+  const effectivePrefill =
+    prefillMatches && !isEmpty
+      ? { args: pendingPrefill.args, nonce: pendingPrefill.nonce }
+      : prefill
+  useEffect(() => {
+    if (prefillMatches) clearPendingPrefill()
+  }, [prefillMatches, clearPendingPrefill])
+
   async function handleExecute(payload: Record<string, unknown>): Promise<void> {
     // Snap the Response panel back to the call we're about to make, and reveal
     // the dock if it was collapsed.
@@ -84,7 +99,7 @@ export function ToolDetailView({
             tool={tool}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            prefill={prefill}
+            prefill={effectivePrefill}
             running={running}
             onExecute={handleExecute}
           />

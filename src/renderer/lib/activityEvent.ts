@@ -68,6 +68,9 @@ export interface ActivityEvent {
   source?: ActivitySource
   // Present only for call-type rows; identifies the entity to navigate to.
   target?: ActivityTarget
+  // The call's arguments, carried on tool/prompt rows so activating one from the
+  // "All" tab can re-fill the target form (resource reads have none).
+  args?: Record<string, unknown>
 }
 
 function summarizeArgs(args: Record<string, unknown>): string {
@@ -85,7 +88,8 @@ export function toolCallToActivity(record: ToolCallRecord): ActivityEvent {
     at: record.at,
     label: record.toolName,
     detail: summarizeArgs(record.args),
-    target: { kind: 'tool', serverId: record.serverId, toolName: record.toolName }
+    target: { kind: 'tool', serverId: record.serverId, toolName: record.toolName },
+    args: record.args
   }
 }
 
@@ -112,7 +116,8 @@ export function promptGetToActivity(record: PromptGetRecord): ActivityEvent {
     at: record.at,
     label: record.promptName,
     detail: summarizeArgs(record.args),
-    target: { kind: 'prompt', serverId: record.serverId, promptName: record.promptName }
+    target: { kind: 'prompt', serverId: record.serverId, promptName: record.promptName },
+    args: record.args
   }
 }
 

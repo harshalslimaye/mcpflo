@@ -23,6 +23,7 @@ export function useActivityLog(): ActivityLog {
   const selectTool = useServerStore((s) => s.selectTool)
   const selectResource = useServerStore((s) => s.selectResource)
   const selectPrompt = useServerStore((s) => s.selectPrompt)
+  const setPendingPrefill = useServerStore((s) => s.setPendingPrefill)
 
   const events = useMemo(
     () => mergeActivity(history, resourceHistory, promptHistory, protocolEvents),
@@ -33,11 +34,25 @@ export function useActivityLog(): ActivityLog {
     (event: ActivityEvent) => {
       const target = event.target
       if (!target) return
-      if (target.kind === 'tool') selectTool(target.serverId, target.toolName)
-      else if (target.kind === 'resource') selectResource(target.serverId, target.uri)
-      else selectPrompt(target.serverId, target.promptName)
+      // Tool/prompt rows carry their args, so navigating also re-fills the
+      // target form (consumed by the detail view). Resource reads have none.
+      if (target.kind === 'tool') {
+        selectTool(target.serverId, target.toolName)
+        if (event.args)
+          setPendingPrefill({ serverId: target.serverId, name: target.toolName, args: event.args })
+      } else if (target.kind === 'resource') {
+        selectResource(target.serverId, target.uri)
+      } else {
+        selectPrompt(target.serverId, target.promptName)
+        if (event.args)
+          setPendingPrefill({
+            serverId: target.serverId,
+            name: target.promptName,
+            args: event.args
+          })
+      }
     },
-    [selectTool, selectResource, selectPrompt]
+    [selectTool, selectResource, selectPrompt, setPendingPrefill]
   )
 
   return { events, navigateTo, clearAll }

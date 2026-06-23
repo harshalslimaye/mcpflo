@@ -36,7 +36,7 @@ function successRecord(over: Partial<PromptGetRecord> = {}): PromptGetRecord {
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetPrompt.mockResolvedValue(undefined)
-  useServerStore.setState({ promptHistory: {}, getPrompt: mockGetPrompt })
+  useServerStore.setState({ promptHistory: {}, pendingPrefill: null, getPrompt: mockGetPrompt })
 })
 
 describe('PromptDetailView — history selection', () => {
@@ -150,6 +150,15 @@ describe('PromptDetailView', () => {
     // History entries summarize their args; clicking one re-fills the form.
     fireEvent.click(screen.getByText('{"topic":"history"}'))
     expect(screen.getByRole('textbox', { name: 'topic' })).toHaveValue('history')
+  })
+
+  it('applies a cross-tab prefill handed off from the All tab', () => {
+    useServerStore.setState({
+      pendingPrefill: { serverId: 'srv', name: 'summarize', args: { topic: 'handoff' }, nonce: 1 }
+    })
+    renderView()
+    expect(screen.getByRole('textbox', { name: 'topic' })).toHaveValue('handoff')
+    expect(useServerStore.getState().pendingPrefill).toBeNull()
   })
 
   it('clears the get history when clear is clicked', () => {

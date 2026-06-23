@@ -70,6 +70,8 @@ describe('activity event mappers', () => {
     expect(event.label).toBe('echo')
     expect(event.detail).toBe('{"message":"hi"}')
     expect(event.target).toEqual({ kind: 'tool', serverId: 's1', toolName: 'echo' })
+    // The raw args ride along so an "All"-tab click can re-fill the form.
+    expect(event.args).toEqual({ message: 'hi' })
   })
 
   it('summarizes empty args as "no arguments"', () => {
