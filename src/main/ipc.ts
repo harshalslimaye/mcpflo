@@ -35,6 +35,7 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle('mcp:removeServer', async (_event, id: string) => {
+    await disconnectServer(id)
     removeServer(id)
     await removeServerDir(id)
   })
