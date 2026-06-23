@@ -43,8 +43,10 @@ export function Modal({ title, onClose, children }: ModalProps): React.JSX.Eleme
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-5 py-4">{children}</div>
+        {/* Body — capped so the panel never exceeds the viewport. Inner scroll
+            regions (e.g. the key/value editor) hit their own caps first, so this
+            only engages as a fallback on very short windows. */}
+        <div className="px-5 py-4 max-h-[80vh] overflow-y-auto">{children}</div>
       </div>
     </div>,
     document.body
