@@ -59,6 +59,7 @@ describe('PromptDetailView — history selection', () => {
     })
     useServerStore.setState({ promptHistory: { [promptKey('srv', prompt.name)]: [newest, older] } })
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This prompt' }))
     // Minimized by default — expand to reveal the latest get's response.
     fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('NEW MESSAGE')).toBeInTheDocument()
@@ -79,6 +80,7 @@ describe('PromptDetailView — history selection', () => {
     })
     useServerStore.setState({ promptHistory: { [promptKey('srv', 'ping')]: [record] } })
     render(<PromptDetailView prompt={pingPrompt} serverId="srv" serverName="Everything" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This prompt' }))
     // The arg-less entry is summarised as "no arguments" and is still clickable.
     const entry = screen.getByRole('button', { name: /no arguments/ })
     fireEvent.click(entry)
@@ -125,6 +127,7 @@ describe('PromptDetailView', () => {
 
   it('shows an empty history message when there are no gets', () => {
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This prompt' }))
     expect(screen.getByText('No gets yet.')).toBeInTheDocument()
   })
 
@@ -143,6 +146,7 @@ describe('PromptDetailView', () => {
       }
     })
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This prompt' }))
     // History entries summarize their args; clicking one re-fills the form.
     fireEvent.click(screen.getByText('{"topic":"history"}'))
     expect(screen.getByRole('textbox', { name: 'topic' })).toHaveValue('history')
@@ -153,6 +157,7 @@ describe('PromptDetailView', () => {
       promptHistory: { [promptKey('srv', prompt.name)]: [successRecord()] }
     })
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This prompt' }))
     fireEvent.click(screen.getByRole('button', { name: 'clear' }))
     expect(screen.getByText('No gets yet.')).toBeInTheDocument()
   })

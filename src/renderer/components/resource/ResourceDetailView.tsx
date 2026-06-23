@@ -4,8 +4,7 @@ import { useServerStore, resourceKey } from '../../stores/serverStore'
 import { ResourceHeader } from './ResourceHeader'
 import { ResourceRequestPanel } from './ResourceRequestPanel'
 import { ResourceContentView, type ResourceResultTab } from './ResourceContentView'
-import { History } from '../shared/History'
-import { HistoryRail } from '../shared/HistoryRail'
+import { ActivityRail } from '../shared/ActivityRail'
 import { ResultDock } from '../shared/ResultDock'
 import { useResultDock } from '../shared/useResultDock'
 
@@ -81,22 +80,19 @@ export function ResourceDetailView({
         </ResultDock>
       </div>
 
-      <HistoryRail
-        count={history.length}
-        onClear={() => clearResourceHistory(serverId, resource.uri)}
-      >
-        <History
-          records={history}
-          emptyLabel="No reads yet."
-          selectedId={displayed?.id}
-          // A read has no arguments to re-fill — selecting an entry just
-          // drives which read's content the panel shows (and reveals the dock).
-          onSelectRecord={(record) => {
-            setSelectedId(record.id)
-            dock.reveal()
-          }}
-        />
-      </HistoryRail>
+      <ActivityRail
+        thisRecords={history}
+        thisTabLabel="This resource"
+        emptyLabel="No reads yet."
+        selectedId={displayed?.id}
+        onClearThis={() => clearResourceHistory(serverId, resource.uri)}
+        // A read has no arguments to re-fill — selecting an entry just drives
+        // which read's content the panel shows (and reveals the dock).
+        onSelectThis={(record) => {
+          setSelectedId(record.id)
+          dock.reveal()
+        }}
+      />
     </div>
   )
 }

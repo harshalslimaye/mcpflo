@@ -108,6 +108,7 @@ describe('ResourceDetailView', () => {
       resourceHistory: { [resourceKey('srv', resource.uri)]: [newest, older] }
     })
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This resource' }))
     // Minimized by default — expand to reveal the latest read…
     fireEvent.click(screen.getByLabelText('Expand response'))
     expect(screen.getByText('# NEWEST')).toBeInTheDocument()
@@ -135,6 +136,7 @@ describe('ResourceDetailView', () => {
 
   it('shows an empty history message when there are no reads', () => {
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This resource' }))
     expect(screen.getByText('No reads yet.')).toBeInTheDocument()
   })
 
@@ -151,6 +153,7 @@ describe('ResourceDetailView', () => {
       resourceHistory: { [resourceKey('srv', resource.uri)]: [successRecord()] }
     })
     renderView()
+    fireEvent.click(screen.getByRole('button', { name: 'This resource' }))
     fireEvent.click(screen.getByRole('button', { name: 'clear' }))
     expect(screen.getByText('No reads yet.')).toBeInTheDocument()
   })

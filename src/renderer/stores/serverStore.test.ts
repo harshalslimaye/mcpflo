@@ -70,6 +70,7 @@ describe('serverStore', () => {
       history: {},
       resourceHistory: {},
       promptHistory: {},
+      protocolEvents: [],
       liveNotifications: {}
     })
   })
@@ -104,6 +105,34 @@ describe('serverStore', () => {
       expect(server.fetchedAt).toBe(1000)
       expect(server.tools).toHaveLength(1)
       expect(server.tools[0].name).toBe('list_issues')
+    })
+
+    it('replays cached capabilities as cache-sourced list events', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': {
+          tools: [{ name: 'list_issues', inputSchema: { type: 'object' } }],
+          resources: [],
+          prompts: [],
+          fetchedAt: 1000
+        }
+      })
+      await useServerStore.getState().hydrate()
+      const events = useServerStore.getState().protocolEvents
+      expect(events.map((e) => e.kind).sort()).toEqual([
+        'list-prompts',
+        'list-resources',
+        'list-tools'
+      ])
+      expect(events.every((e) => e.source === 'cache' && e.at === 1000)).toBe(true)
+      // No handshake happened on the cache path, so no connect event.
+      expect(events.some((e) => e.kind === 'connect')).toBe(false)
+    })
+
+    it('records no activity for an uncached server on hydrate', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      await useServerStore.getState().hydrate()
+      expect(useServerStore.getState().protocolEvents).toEqual([])
     })
 
     it('sets empty array when no servers stored', async () => {
@@ -787,6 +816,35 @@ describe('serverStore', () => {
       expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'github-mcp' })
       )
+    })
+
+    it('records connect + list protocol events on success', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      const tools = [{ name: 'list_issues', inputSchema: { type: 'object' as const } }]
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools, resources: [], prompts: [] })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const events = useServerStore.getState().protocolEvents
+      expect(events.map((e) => e.kind).sort()).toEqual([
+        'connect',
+        'list-prompts',
+        'list-resources',
+        'list-tools'
+      ])
+      expect(events.every((e) => e.serverId === 'github-mcp' && e.status === 'success')).toBe(true)
+      expect(events.find((e) => e.kind === 'list-tools')?.detail).toBe('1 tools')
+    })
+
+    it('records a single connect error protocol event on failure', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockRejectedValue(new Error('Connection refused'))
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const events = useServerStore.getState().protocolEvents
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({
+        kind: 'connect',
+        status: 'error',
+        detail: 'Connection refused'
+      })
     })
   })
 

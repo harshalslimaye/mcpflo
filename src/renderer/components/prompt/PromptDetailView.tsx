@@ -5,8 +5,7 @@ import { isPromptEmpty } from '../../lib/promptSchema'
 import { PromptHeader } from './PromptHeader'
 import { PromptRequestPanel, type RequestTab } from './PromptRequestPanel'
 import { PromptResultView, type PromptResultTab } from './PromptResultView'
-import { History } from '../shared/History'
-import { HistoryRail } from '../shared/HistoryRail'
+import { ActivityRail } from '../shared/ActivityRail'
 import { ResultDock } from '../shared/ResultDock'
 import { useResultDock } from '../shared/useResultDock'
 
@@ -107,30 +106,30 @@ export function PromptDetailView({
         </ResultDock>
       </div>
 
-      <HistoryRail count={history.length} onClear={() => clearPromptHistory(serverId, prompt.name)}>
-        <History
-          records={history}
-          emptyLabel="No gets yet."
-          selectedId={displayed?.id}
-          renderDetail={(record) => (
-            <span
-              className="block truncate font-mono text-[11px] text-code opacity-85"
-              title={summarizeArgs(record.args)}
-            >
-              {summarizeArgs(record.args)}
-            </span>
-          )}
-          // Selecting an entry always drives the Response panel; for a prompt
-          // with arguments it also re-fills the Request form.
-          onSelectRecord={(record) => {
-            setSelectedId(record.id)
-            dock.reveal()
-            if (!isEmpty) {
-              setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
-            }
-          }}
-        />
-      </HistoryRail>
+      <ActivityRail
+        thisRecords={history}
+        thisTabLabel="This prompt"
+        emptyLabel="No gets yet."
+        selectedId={displayed?.id}
+        onClearThis={() => clearPromptHistory(serverId, prompt.name)}
+        renderDetail={(record) => (
+          <span
+            className="block truncate font-mono text-[11px] text-code opacity-85"
+            title={summarizeArgs(record.args)}
+          >
+            {summarizeArgs(record.args)}
+          </span>
+        )}
+        // Selecting an entry always drives the Response panel; for a prompt with
+        // arguments it also re-fills the Request form.
+        onSelectThis={(record) => {
+          setSelectedId(record.id)
+          dock.reveal()
+          if (!isEmpty) {
+            setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+          }
+        }}
+      />
     </div>
   )
 }

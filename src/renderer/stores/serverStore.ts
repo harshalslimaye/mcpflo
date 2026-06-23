@@ -13,6 +13,7 @@ import type {
   SamplingResult
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
+import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
 
 // Routes an MCPFlo operational failure to the toast surface. Used by actions
@@ -146,6 +147,10 @@ interface ServerStore {
   resourceHistory: Record<string, ResourceReadRecord[]>
   // Per-prompt get history (newest first), keyed by `promptKey(serverId, promptName)`.
   promptHistory: Record<string, PromptGetRecord[]>
+  // Protocol-level events (connection handshakes, capability listings) that have
+  // no per-key home, newest first. Merged with the call histories to build the
+  // "All" history tab; see lib/activityEvent.
+  protocolEvents: ProtocolEvent[]
   // Notifications streamed by the currently running call for a tool, keyed by
   // `toolKey`. An entry exists only while that call is in flight.
   liveNotifications: Record<string, ToolCallNotification[]>
@@ -167,6 +172,9 @@ interface ServerStore {
   clearResourceHistory: (serverId: string, uri: string) => void
   getPrompt: (serverId: string, promptName: string, args: Record<string, string>) => Promise<void>
   clearPromptHistory: (serverId: string, promptName: string) => void
+  // Clears every history slice at once — backs the "clear" control on the "All"
+  // history tab.
+  clearAllActivity: () => void
   enqueueElicitation: (event: ElicitationRequestEvent) => void
   removeElicitation: (elicitationId: string) => void
   respondToElicitation: (elicitationId: string, result: ElicitationResult) => Promise<void>
@@ -201,6 +209,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   history: {},
   resourceHistory: {},
   promptHistory: {},
+  protocolEvents: [],
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
@@ -211,7 +220,34 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         window.api.mcp.getServers(),
         window.api.mcp.getCachedCapabilities()
       ])
-      set({ servers: configs.map((c) => toRuntime(c, cache[c.id])) })
+      // Replay each cached server's capability listing into the activity log so
+      // the "All" tab isn't empty on a cached startup. These are badged `cache`
+      // (and stamped at the cache's own fetch time, so their age is honest) —
+      // and deliberately carry no `connect` event, since no handshake happened.
+      const cachedEvents: ProtocolEvent[] = configs.flatMap((c) => {
+        const cached = cache[c.id]
+        if (!cached) return []
+        const list = (
+          kind: 'list-tools' | 'list-resources' | 'list-prompts',
+          detail: string
+        ): ProtocolEvent => ({
+          id: crypto.randomUUID(),
+          kind,
+          serverId: c.id,
+          serverName: c.name,
+          status: 'success',
+          detail,
+          source: 'cache',
+          durationMs: 0,
+          at: cached.fetchedAt
+        })
+        return [
+          list('list-tools', `${cached.tools.length} tools`),
+          list('list-resources', `${cached.resources.length} resources`),
+          list('list-prompts', `${cached.prompts.length} prompts`)
+        ]
+      })
+      set({ servers: configs.map((c) => toRuntime(c, cache[c.id])), protocolEvents: cachedEvents })
     } catch (err) {
       // A startup read failure would otherwise leave the app blank with no
       // explanation; surface it instead.
@@ -405,6 +441,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })
   },
 
+  clearAllActivity: () =>
+    set({ history: {}, resourceHistory: {}, promptHistory: {}, protocolEvents: [] }),
+
   enqueueElicitation: (event) =>
     set((state) => ({ pendingElicitations: [...state.pendingElicitations, event] })),
 
@@ -492,7 +531,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       ),
       promptHistory: Object.fromEntries(
         Object.entries(state.promptHistory).filter(([key]) => !key.startsWith(`${id}::`))
-      )
+      ),
+      protocolEvents: state.protocolEvents.filter((e) => e.serverId !== id)
     }))
   },
 
@@ -507,22 +547,51 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       )
     }))
 
+    // Stamps a protocol event for this server. `connect` carries the initialize
+    // handshake; the list-* kinds carry each capability listing the fetch does.
+    const startedAt = Date.now()
+    const proto = (
+      kind: ProtocolEvent['kind'],
+      status: ProtocolEvent['status'],
+      detail: string,
+      at: number
+    ): ProtocolEvent => ({
+      id: crypto.randomUUID(),
+      kind,
+      serverId: id,
+      serverName: server.name,
+      status,
+      detail,
+      source: 'live',
+      durationMs: Date.now() - startedAt,
+      at
+    })
+
     try {
       const { tools, resources, prompts } = await window.api.mcp.fetchCapabilities(server)
+      const finishedAt = Date.now()
       set((state) => ({
         servers: state.servers.map((s) =>
           s.id === id
-            ? { ...s, status: 'connected', tools, resources, prompts, fetchedAt: Date.now() }
+            ? { ...s, status: 'connected', tools, resources, prompts, fetchedAt: finishedAt }
             : s
-        )
+        ),
+        // The handshake precedes the listings (earlier `at`); all four land here.
+        protocolEvents: [
+          proto('list-prompts', 'success', `${prompts.length} prompts`, finishedAt),
+          proto('list-resources', 'success', `${resources.length} resources`, finishedAt),
+          proto('list-tools', 'success', `${tools.length} tools`, finishedAt),
+          proto('connect', 'success', 'initialized', startedAt),
+          ...state.protocolEvents
+        ]
       }))
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
       set((state) => ({
         servers: state.servers.map((s) =>
-          s.id === id
-            ? { ...s, status: 'error', error: err instanceof Error ? err.message : String(err) }
-            : s
-        )
+          s.id === id ? { ...s, status: 'error', error: message } : s
+        ),
+        protocolEvents: [proto('connect', 'error', message, startedAt), ...state.protocolEvents]
       }))
     }
   },

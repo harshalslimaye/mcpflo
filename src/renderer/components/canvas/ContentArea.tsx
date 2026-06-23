@@ -3,6 +3,7 @@ import { useServerStore } from '../../stores/serverStore'
 import { ToolDetailView } from '../tool/ToolDetailView'
 import { ResourceDetailView } from '../resource/ResourceDetailView'
 import { PromptDetailView } from '../prompt/PromptDetailView'
+import { GlobalActivityRail } from '../shared/GlobalActivityRail'
 
 function EmptyState({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
   return (
@@ -83,10 +84,16 @@ export function ContentArea(): React.JSX.Element {
     )
   }
 
+  // Servers exist but nothing is selected: keep the global activity rail visible
+  // on the right so the "All" history (incl. cached/connection events) is the
+  // first thing seen, not hidden until a tool is opened.
   return (
-    <EmptyState
-      title="Ready when you are"
-      subtitle="Choose a tool, resource, or prompt to get started"
-    />
+    <div className="flex-1 h-full bg-bg-primary flex overflow-hidden">
+      <EmptyState
+        title="Ready when you are"
+        subtitle="Choose a tool, resource, or prompt to get started"
+      />
+      <GlobalActivityRail />
+    </div>
   )
 }
