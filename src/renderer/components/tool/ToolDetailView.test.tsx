@@ -15,7 +15,7 @@ const tool: Tool = {
 }
 
 beforeEach(() => {
-  useServerStore.setState({ history: {} })
+  useServerStore.setState({ history: {}, pendingPrefill: null })
 })
 
 describe('ToolDetailView', () => {
@@ -27,9 +27,11 @@ describe('ToolDetailView', () => {
 
   it('shows the History panel on the right rail (not as a tab)', () => {
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
-    // History is always visible without switching tabs…
+    // The rail defaults to the global "All" tab; the tool's own history lives
+    // under "This tool".
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     expect(screen.getByText('No calls yet.')).toBeInTheDocument()
-    // …and is no longer one of the tab buttons.
+    // History is the right rail, not one of the Request (Params/Schema) tabs.
     expect(screen.queryByRole('button', { name: 'History' })).not.toBeInTheDocument()
   })
 
@@ -41,6 +43,7 @@ describe('ToolDetailView', () => {
 
   it('keeps the History panel visible on the Schema tab', () => {
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     fireEvent.click(screen.getByRole('button', { name: 'Schema' }))
     expect(screen.getByText('No calls yet.')).toBeInTheDocument()
   })
@@ -78,9 +81,25 @@ describe('ToolDetailView', () => {
     }
     useServerStore.setState({ history: { [toolKey('memory-mcp', 'search_nodes')]: [record] } })
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     expect(screen.getByText('1')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'clear' }))
     expect(screen.getByText('No calls yet.')).toBeInTheDocument()
+  })
+
+  it('applies a cross-tab prefill handed off from the All tab', () => {
+    useServerStore.setState({
+      pendingPrefill: {
+        serverId: 'memory-mcp',
+        name: 'search_nodes',
+        args: { query: 'handoff' },
+        nonce: 1
+      }
+    })
+    render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    expect(screen.getByRole('textbox', { name: 'query' })).toHaveValue('handoff')
+    // The one-shot handoff is consumed.
+    expect(useServerStore.getState().pendingPrefill).toBeNull()
   })
 
   it('preserves Params form state across tab switches', () => {
@@ -104,6 +123,7 @@ describe('ToolDetailView', () => {
     }
     useServerStore.setState({ history: { [toolKey('memory-mcp', 'search_nodes')]: [record] } })
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     fireEvent.click(screen.getByText('{"query":"from history"}'))
     expect((screen.getByRole('textbox', { name: 'query' }) as HTMLInputElement).value).toBe(
       'from history'
@@ -127,6 +147,7 @@ describe('ToolDetailView', () => {
     }
     useServerStore.setState({ history: { [toolKey('memory-mcp', 'ping')]: [record] } })
     render(<ToolDetailView tool={noParamTool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     // Even with no form to pre-fill, the entry is interactive so selecting it can
     // drive the Response panel — clicking it must not throw (no prefill path).
     const entry = screen.getByRole('button', { name: /no arguments/ })
@@ -164,6 +185,7 @@ describe('ToolDetailView', () => {
       history: { [toolKey('memory-mcp', 'search_nodes')]: [newest, older] }
     })
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     // The dock is minimized by default, so the response body is hidden on load…
     expect(screen.queryByText('NEW RESULT')).not.toBeInTheDocument()
     // …expanding it reveals the latest call's response…
@@ -205,6 +227,7 @@ describe('ToolDetailView', () => {
       history: { [toolKey('memory-mcp', 'search_nodes')]: [newest, older] }
     })
     render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+    fireEvent.click(screen.getByRole('button', { name: 'This tool' }))
     // Pin the older entry, then run a new call (executeTool no-ops with no server
     // registered, so history is unchanged) — the panel should drop the selection.
     fireEvent.click(screen.getByText('{"query":"old"}'))

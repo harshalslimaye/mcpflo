@@ -1,12 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tool } from '../../../shared/mcp.types'
 import { useServerStore, toolKey } from '../../stores/serverStore'
 import { analyzeSchema } from '../../lib/toolSchema'
 import { ToolHeader } from './ToolHeader'
 import { ToolRequestPanel, type RequestTab } from './ToolRequestPanel'
 import { ToolCallResultView, type ResultTab } from './ToolCallResultView'
-import { History } from '../shared/History'
-import { HistoryRail } from '../shared/HistoryRail'
+import { ActivityRail } from '../shared/ActivityRail'
 import { ResultDock } from '../shared/ResultDock'
 import { useResultDock } from '../shared/useResultDock'
 
@@ -60,6 +59,21 @@ export function ToolDetailView({
   // only drives the Response panel and skips the prefill.
   const { isEmpty } = useMemo(() => analyzeSchema(tool.inputSchema), [tool.inputSchema])
 
+  // A cross-tab prefill handed off when this tool was opened by clicking its row
+  // on the "All" history tab. It feeds the form directly (winning over a local
+  // History selection for the render it lands on) and is cleared right after, so
+  // a later remount can't replay it.
+  const pendingPrefill = useServerStore((s) => s.pendingPrefill)
+  const clearPendingPrefill = useServerStore((s) => s.clearPendingPrefill)
+  const prefillMatches = pendingPrefill?.serverId === serverId && pendingPrefill?.name === tool.name
+  const effectivePrefill =
+    prefillMatches && !isEmpty
+      ? { args: pendingPrefill.args, nonce: pendingPrefill.nonce }
+      : prefill
+  useEffect(() => {
+    if (prefillMatches) clearPendingPrefill()
+  }, [prefillMatches, clearPendingPrefill])
+
   async function handleExecute(payload: Record<string, unknown>): Promise<void> {
     // Snap the Response panel back to the call we're about to make, and reveal
     // the dock if it was collapsed.
@@ -85,7 +99,7 @@ export function ToolDetailView({
             tool={tool}
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            prefill={prefill}
+            prefill={effectivePrefill}
             running={running}
             onExecute={handleExecute}
           />
@@ -110,30 +124,30 @@ export function ToolDetailView({
         </ResultDock>
       </div>
 
-      <HistoryRail count={history.length} onClear={() => clearHistory(serverId, tool.name)}>
-        <History
-          records={history}
-          emptyLabel="No calls yet."
-          selectedId={displayed?.id}
-          renderDetail={(record) => (
-            <span
-              className="block truncate font-mono text-[11px] text-code opacity-85"
-              title={summarizeArgs(record.args)}
-            >
-              {summarizeArgs(record.args)}
-            </span>
-          )}
-          // Selecting an entry always drives the Response panel; for a tool
-          // with parameters it also re-fills the Request form.
-          onSelectRecord={(record) => {
-            setSelectedId(record.id)
-            dock.reveal()
-            if (!isEmpty) {
-              setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
-            }
-          }}
-        />
-      </HistoryRail>
+      <ActivityRail
+        thisRecords={history}
+        thisTabLabel="This tool"
+        emptyLabel="No calls yet."
+        selectedId={displayed?.id}
+        onClearThis={() => clearHistory(serverId, tool.name)}
+        renderDetail={(record) => (
+          <span
+            className="block truncate font-mono text-[11px] text-code opacity-85"
+            title={summarizeArgs(record.args)}
+          >
+            {summarizeArgs(record.args)}
+          </span>
+        )}
+        // Selecting an entry always drives the Response panel; for a tool with
+        // parameters it also re-fills the Request form.
+        onSelectThis={(record) => {
+          setSelectedId(record.id)
+          dock.reveal()
+          if (!isEmpty) {
+            setPrefill((prev) => ({ args: record.args, nonce: (prev?.nonce ?? 0) + 1 }))
+          }
+        }}
+      />
     </div>
   )
 }
