@@ -22,6 +22,7 @@ const mockApi = {
     getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
     fetchCapabilities: vi.fn(),
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
+    disconnectServer: vi.fn<(id: string) => Promise<void>>(),
     callTool: vi.fn(),
     readResource: vi.fn(),
     getPrompt: vi.fn(),
@@ -45,6 +46,7 @@ describe('serverStore', () => {
     mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
     mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
     mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
+    mockApi.mcp.disconnectServer.mockResolvedValue(undefined)
     mockApi.mcp.callTool.mockResolvedValue({
       response: { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: 'ok' }] } }
     })
@@ -909,6 +911,32 @@ describe('serverStore', () => {
       ).resolves.toBeUndefined()
       expect(mockApi.mcp.fetchCapabilities).toHaveBeenCalled()
       expect(useServerStore.getState().servers[0].status).toBe('connected')
+    })
+  })
+
+  describe('disconnectServer', () => {
+    it('disconnects and resets the server to disconnected (grey)', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      expect(useServerStore.getState().servers[0].status).toBe('connected')
+
+      await useServerStore.getState().disconnectServer('github-mcp')
+
+      expect(mockApi.mcp.disconnectServer).toHaveBeenCalledWith('github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('disconnected')
+    })
+
+    it('still resets status when the IPC call fails', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      mockApi.mcp.disconnectServer.mockRejectedValue(new Error('boom'))
+
+      await expect(
+        useServerStore.getState().disconnectServer('github-mcp')
+      ).resolves.toBeUndefined()
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('disconnected')
     })
   })
 })

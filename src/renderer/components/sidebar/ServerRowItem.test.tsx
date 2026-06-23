@@ -109,6 +109,58 @@ describe('ServerRowItem', () => {
     expect(icon).toHaveClass('animate-spin')
   })
 
+  it('renders a disconnect control when onDisconnect is provided and status is connected', () => {
+    render(<ServerRowItem {...defaultProps} status="connected" onDisconnect={vi.fn()} />)
+    expect(screen.getByTitle('Disconnect server')).toBeInTheDocument()
+  })
+
+  it('does not render a disconnect control when onDisconnect is omitted', () => {
+    render(<ServerRowItem {...defaultProps} status="connected" />)
+    expect(screen.queryByTitle('Disconnect server')).not.toBeInTheDocument()
+  })
+
+  it.each(['connecting', 'disconnected', 'error'] as const)(
+    'does not render a disconnect control when status is %s',
+    (status) => {
+      render(<ServerRowItem {...defaultProps} status={status} onDisconnect={vi.fn()} />)
+      expect(screen.queryByTitle('Disconnect server')).not.toBeInTheDocument()
+    }
+  )
+
+  it('calls onDisconnect (and not onToggle) when the disconnect control is clicked', () => {
+    const onToggle = vi.fn()
+    const onDisconnect = vi.fn()
+    render(
+      <ServerRowItem
+        {...defaultProps}
+        status="connected"
+        onToggle={onToggle}
+        onDisconnect={onDisconnect}
+      />
+    )
+    fireEvent.click(screen.getByTitle('Disconnect server'))
+    expect(onDisconnect).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('activates disconnect with Enter and Space without toggling the row', () => {
+    const onToggle = vi.fn()
+    const onDisconnect = vi.fn()
+    render(
+      <ServerRowItem
+        {...defaultProps}
+        status="connected"
+        onToggle={onToggle}
+        onDisconnect={onDisconnect}
+      />
+    )
+    const disconnect = screen.getByTitle('Disconnect server')
+    fireEvent.keyDown(disconnect, { key: 'Enter' })
+    fireEvent.keyDown(disconnect, { key: ' ' })
+    expect(onDisconnect).toHaveBeenCalledTimes(2)
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
   it('renders a delete control when onDelete is provided', () => {
     render(<ServerRowItem {...defaultProps} onDelete={vi.fn()} />)
     expect(screen.getByTitle('Delete server')).toBeInTheDocument()
@@ -151,11 +203,22 @@ describe('ServerRowItem', () => {
   })
 
   it('ignores other keys on the inline controls', () => {
+    const onDisconnect = vi.fn()
     const onRefresh = vi.fn()
     const onDelete = vi.fn()
-    render(<ServerRowItem {...defaultProps} onRefresh={onRefresh} onDelete={onDelete} />)
+    render(
+      <ServerRowItem
+        {...defaultProps}
+        status="connected"
+        onDisconnect={onDisconnect}
+        onRefresh={onRefresh}
+        onDelete={onDelete}
+      />
+    )
+    fireEvent.keyDown(screen.getByTitle('Disconnect server'), { key: 'Tab' })
     fireEvent.keyDown(screen.getByTitle('Refresh capabilities'), { key: 'a' })
     fireEvent.keyDown(screen.getByTitle('Delete server'), { key: 'Escape' })
+    expect(onDisconnect).not.toHaveBeenCalled()
     expect(onRefresh).not.toHaveBeenCalled()
     expect(onDelete).not.toHaveBeenCalled()
   })

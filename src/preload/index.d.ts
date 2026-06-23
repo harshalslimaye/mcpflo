@@ -28,6 +28,7 @@ declare global {
         getCachedCapabilities: () => Promise<Record<string, CachedCapabilities>>
         fetchCapabilities: (config: ServerConfig) => Promise<ConnectResult>
         clearCapabilities: (id: string) => Promise<void>
+        disconnectServer: (id: string) => Promise<void>
         callTool: (
           config: ServerConfig,
           toolName: string,

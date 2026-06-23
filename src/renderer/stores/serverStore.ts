@@ -204,6 +204,7 @@ interface ServerStore {
   removeServer: (id: string) => Promise<void>
   fetchCapabilities: (id: string) => Promise<void>
   refreshCapabilities: (id: string) => Promise<void>
+  disconnectServer: (id: string) => Promise<void>
 }
 
 function toRuntime(config: ServerConfig, cached?: CachedCapabilities): MCPServer {
@@ -642,5 +643,20 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       reportError(err)
     }
     await get().fetchCapabilities(id)
+  },
+
+  // Tears down the live connection and resets the server to its never-fetched
+  // (grey) state, so the next expand reconnects via the existing lazy-fetch path.
+  disconnectServer: async (id) => {
+    try {
+      await window.api.mcp.disconnectServer(id)
+    } catch (err) {
+      reportError(err)
+    }
+    set((state) => ({
+      servers: state.servers.map((s) =>
+        s.id === id ? { ...s, status: 'disconnected', error: undefined } : s
+      )
+    }))
   }
 }))

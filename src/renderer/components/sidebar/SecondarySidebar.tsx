@@ -63,6 +63,7 @@ interface ServerTreeProps {
   onSelectTool: (toolName: string) => void
   onSelectResource: (uri: string) => void
   onSelectPrompt: (promptName: string) => void
+  onDisconnect: () => void
   onRefresh: () => void
   onDelete: () => void
 }
@@ -80,6 +81,7 @@ function ServerTree({
   onSelectTool,
   onSelectResource,
   onSelectPrompt,
+  onDisconnect,
   onRefresh,
   onDelete
 }: ServerTreeProps): React.JSX.Element | null {
@@ -114,6 +116,7 @@ function ServerTree({
         expanded={serverExpanded}
         status={server.status}
         onToggle={onToggleServer}
+        onDisconnect={onDisconnect}
         onRefresh={onRefresh}
         onDelete={onDelete}
       />
@@ -180,6 +183,7 @@ export function SecondarySidebar(): React.JSX.Element {
   const servers = useServerStore((s) => s.servers)
   const fetchCapabilities = useServerStore((s) => s.fetchCapabilities)
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
+  const disconnectServer = useServerStore((s) => s.disconnectServer)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectTool = useServerStore((s) => s.selectTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
@@ -235,6 +239,22 @@ export function SecondarySidebar(): React.JSX.Element {
         fetchCapabilities(id)
       }
     }
+  }
+
+  // Disconnect always forces the row shut, regardless of current expand state,
+  // so the next expand re-triggers the lazy-fetch path in toggleServer above.
+  function collapseServer(id: string): void {
+    setExpandedServers((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }
+
+  function handleDisconnect(id: string): void {
+    disconnectServer(id)
+    collapseServer(id)
   }
 
   function toggleGroup(serverId: string, group: GroupKey): void {
@@ -362,6 +382,7 @@ export function SecondarySidebar(): React.JSX.Element {
                   onSelectTool={(toolName) => selectTool(server.id, toolName)}
                   onSelectResource={(uri) => selectResource(server.id, uri)}
                   onSelectPrompt={(promptName) => selectPrompt(server.id, promptName)}
+                  onDisconnect={() => handleDisconnect(server.id)}
                   onRefresh={() => refreshCapabilities(server.id)}
                   onDelete={() => setPendingDelete(server)}
                 />
