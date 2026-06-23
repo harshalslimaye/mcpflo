@@ -276,12 +276,20 @@ export interface CachedCapabilities {
   fetchedAt: number
 }
 
+// Advanced, rarely-changed connection knobs — layered on top of the transport
+// config rather than folded into it, since they're transport-agnostic.
+export interface ServerOverrides {
+  // Timeout (ms) for the initial connect handshake. Omitted means the MCP SDK's
+  // own default (60s) applies.
+  timeoutMs?: number
+}
+
 // The persistable subset — stored on disk, no runtime state
 export interface ServerConfig {
   id: string
   name: string
-  description?: string
   transport: TransportConfig
+  overrides?: ServerOverrides
 }
 
 // A configured MCP server and its discovered capabilities.

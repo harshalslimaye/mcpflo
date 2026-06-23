@@ -174,7 +174,7 @@ describe('store', () => {
 
     it('preserves other fields when patching', () => {
       addServer(githubConfig)
-      updateServer('github-mcp', { description: 'Updated desc' })
+      updateServer('github-mcp', { name: 'Updated name' })
       expect(getServers()[0].id).toBe('github-mcp')
       expect(getServers()[0].transport).toEqual(githubConfig.transport)
     })

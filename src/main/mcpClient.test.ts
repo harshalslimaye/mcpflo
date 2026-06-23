@@ -179,6 +179,16 @@ describe('mcpClient', () => {
       expect(result.prompts).toEqual([])
     })
 
+    it('connects with no explicit timeout when overrides are unset', async () => {
+      await mod.connectServer(stdioConfig)
+      expect(h.client.connect).toHaveBeenCalledWith(expect.anything(), { timeout: undefined })
+    })
+
+    it('passes overrides.timeoutMs as the connect timeout', async () => {
+      await mod.connectServer({ ...stdioConfig, overrides: { timeoutMs: 5000 } })
+      expect(h.client.connect).toHaveBeenCalledWith(expect.anything(), { timeout: 5000 })
+    })
+
     it('spawns with the safe default env plus the configured vars', async () => {
       await mod.connectServer(stdioConfig)
       expect(lastTransport().opts).toEqual({

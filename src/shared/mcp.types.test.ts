@@ -58,7 +58,6 @@ const prompt: Prompt = {
 const serverConfig: ServerConfig = {
   id: 'github-mcp',
   name: 'GitHub MCP',
-  description: 'GitHub integration via MCP',
   transport: stdioTransport
 }
 
@@ -208,22 +207,18 @@ describe('ServerConfig', () => {
     expect(serverConfig.transport).toBeDefined()
   })
 
-  it('accepts optional description', () => {
-    expect(serverConfig.description).toBe('GitHub integration via MCP')
-  })
-
-  it('works without optional fields', () => {
-    const minimal: ServerConfig = {
-      id: 'min',
-      name: 'Min',
-      transport: { type: 'stdio', command: 'node' }
-    }
-    expect(minimal.description).toBeUndefined()
-  })
-
   it('does not carry runtime state', () => {
     expect((serverConfig as Record<string, unknown>).status).toBeUndefined()
     expect((serverConfig as Record<string, unknown>).tools).toBeUndefined()
+  })
+
+  it('accepts an optional overrides.timeoutMs', () => {
+    const withTimeout: ServerConfig = { ...serverConfig, overrides: { timeoutMs: 5000 } }
+    expect(withTimeout.overrides?.timeoutMs).toBe(5000)
+  })
+
+  it('works without overrides', () => {
+    expect(serverConfig.overrides).toBeUndefined()
   })
 })
 
@@ -276,7 +271,6 @@ describe('MCPServer', () => {
       resources: [],
       prompts: []
     }
-    expect(minimal.description).toBeUndefined()
     expect(minimal.error).toBeUndefined()
   })
 })
