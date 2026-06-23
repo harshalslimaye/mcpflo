@@ -185,6 +185,8 @@ npm run lint        # lint with ESLint
 npm run format      # format with Prettier
 ```
 
+`npm install` sets up Husky hooks; `git push` runs `npm test` via the `pre-push` hook.
+
 ### Project structure
 
 ```
