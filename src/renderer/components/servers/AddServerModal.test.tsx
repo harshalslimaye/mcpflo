@@ -41,14 +41,14 @@ describe('AddServerModal', () => {
     renderModal()
     expect(screen.getByRole('textbox', { name: 'Command' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Args' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Env vars' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add variable' })).toBeInTheDocument()
   })
 
   it('shows url and header fields when streamable-http is selected', () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
     expect(screen.getByRole('textbox', { name: 'URL' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Headers' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add header' })).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Command' })).not.toBeInTheDocument()
   })
 
@@ -112,18 +112,65 @@ describe('AddServerModal', () => {
     expect(config.transport.url).toBe('https://slack.example.com/mcp')
   })
 
-  it('parses env vars as KEY=VALUE pairs', async () => {
+  it('collects env vars as key/value pairs', async () => {
     renderModal()
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
       target: { value: 'My Server' }
     })
     fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Env vars' }), {
-      target: { value: 'TOKEN=abc\nDEBUG=true' }
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Env var 1 key'), { target: { value: 'TOKEN' } })
+    fireEvent.change(screen.getByLabelText('Env var 1 value'), { target: { value: 'abc' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Env var 2 key'), { target: { value: 'DEBUG' } })
+    fireEvent.change(screen.getByLabelText('Env var 2 value'), { target: { value: 'true' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
     expect(mockAddServer.mock.calls[0][0].transport.env).toEqual({ TOKEN: 'abc', DEBUG: 'true' })
+  })
+
+  it('omits env vars whose key is left blank', async () => {
+    renderModal()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    // A value with no key should be dropped, leaving the env key absent entirely.
+    fireEvent.change(screen.getByLabelText('Env var 1 value'), { target: { value: 'orphan' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    expect('env' in mockAddServer.mock.calls[0][0].transport).toBe(false)
+  })
+
+  it('removes an env var row when its delete button is clicked', async () => {
+    renderModal()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Env var 1 key'), { target: { value: 'KEEP' } })
+    fireEvent.change(screen.getByLabelText('Env var 1 value'), { target: { value: 'yes' } })
+    fireEvent.change(screen.getByLabelText('Env var 2 key'), { target: { value: 'DROP' } })
+    fireEvent.change(screen.getByLabelText('Env var 2 value'), { target: { value: 'no' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove env var 2' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    expect(mockAddServer.mock.calls[0][0].transport.env).toEqual({ KEEP: 'yes' })
+  })
+
+  it('toggles a secret value between masked and visible', () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    const value = screen.getByLabelText('Header 1 value')
+    expect(value).toHaveAttribute('type', 'password')
+    fireEvent.click(screen.getByRole('button', { name: 'Show value' }))
+    expect(value).toHaveAttribute('type', 'text')
+    fireEvent.click(screen.getByRole('button', { name: 'Hide value' }))
+    expect(value).toHaveAttribute('type', 'password')
   })
 
   it('includes the trimmed description when provided', async () => {
@@ -151,7 +198,7 @@ describe('AddServerModal', () => {
     expect('description' in mockAddServer.mock.calls[0][0]).toBe(false)
   })
 
-  it('parses streamable-http headers as KEY=VALUE pairs', async () => {
+  it('collects streamable-http headers as key/value pairs', async () => {
     renderModal()
     fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
@@ -160,9 +207,12 @@ describe('AddServerModal', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
       target: { value: 'https://slack.example.com/mcp' }
     })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Headers' }), {
-      target: { value: 'Authorization=Bearer abc\nX-Team=ops' }
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    fireEvent.change(screen.getByLabelText('Header 1 key'), { target: { value: 'Authorization' } })
+    fireEvent.change(screen.getByLabelText('Header 1 value'), { target: { value: 'Bearer abc' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    fireEvent.change(screen.getByLabelText('Header 2 key'), { target: { value: 'X-Team' } })
+    fireEvent.change(screen.getByLabelText('Header 2 value'), { target: { value: 'ops' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
     expect(mockAddServer.mock.calls[0][0].transport.headers).toEqual({

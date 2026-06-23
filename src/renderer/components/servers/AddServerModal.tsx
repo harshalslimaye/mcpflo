@@ -1,9 +1,15 @@
 import { useState } from 'react'
+import { Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { useServerStore } from '../../stores/serverStore'
 import type { ServerConfig, TransportConfig } from '../../../shared/mcp.types'
 
 type TransportType = TransportConfig['type']
+
+interface KeyValue {
+  key: string
+  value: string
+}
 
 interface FormState {
   name: string
@@ -12,10 +18,10 @@ interface FormState {
   // stdio
   command: string
   args: string
-  env: string
+  env: KeyValue[]
   // streamable-http
   url: string
-  headers: string
+  headers: KeyValue[]
 }
 
 const defaults: FormState = {
@@ -24,28 +30,23 @@ const defaults: FormState = {
   transportType: 'stdio',
   command: '',
   args: '',
-  env: '',
+  env: [],
   url: '',
-  headers: ''
+  headers: []
 }
 
-function parseKeyValue(raw: string): Record<string, string> {
-  return Object.fromEntries(
-    raw
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.includes('='))
-      .map((l) => {
-        const idx = l.indexOf('=')
-        return [l.slice(0, idx).trim(), l.slice(idx + 1).trim()]
-      })
-  )
+/** Collapse editor rows into a record, dropping rows with a blank key.
+ *  Returns undefined when nothing usable remains, so the transport key is
+ *  omitted entirely rather than set to an empty object. */
+function rowsToRecord(rows: KeyValue[]): Record<string, string> | undefined {
+  const entries = rows.map((r) => [r.key.trim(), r.value.trim()] as const).filter(([k]) => k !== '')
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
 function buildTransport(form: FormState): TransportConfig {
   if (form.transportType === 'stdio') {
     const args = form.args.trim() ? form.args.trim().split(/\s+/) : undefined
-    const env = form.env.trim() ? parseKeyValue(form.env) : undefined
+    const env = rowsToRecord(form.env)
     return {
       type: 'stdio',
       command: form.command.trim(),
@@ -53,7 +54,7 @@ function buildTransport(form: FormState): TransportConfig {
       ...(env && { env })
     }
   }
-  const headers = form.headers.trim() ? parseKeyValue(form.headers) : undefined
+  const headers = rowsToRecord(form.headers)
   return {
     type: form.transportType,
     url: form.url.trim(),
@@ -118,7 +119,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
           {/* Name */}
           <Field label="Name" error={errors.name} required>
             <Input
-              placeholder="GitHub MCP"
+              placeholder="My MCP Server"
               value={form.name}
               onChange={(v) => set('name', v)}
               aria-label="Name"
@@ -168,18 +169,21 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
               </Field>
               <Field label="Args" hint="Space-separated">
                 <Input
-                  placeholder="-y @modelcontextprotocol/server-github"
+                  placeholder="-y my-mcp-server"
                   value={form.args}
                   onChange={(v) => set('args', v)}
                   aria-label="Args"
                 />
               </Field>
-              <Field label="Env vars" hint="One KEY=VALUE per line">
-                <Textarea
-                  placeholder={'GITHUB_TOKEN=ghp_xxx\nANOTHER=value'}
-                  value={form.env}
+              <Field label="Env vars" hint="Optional">
+                <KeyValueEditor
+                  rows={form.env}
                   onChange={(v) => set('env', v)}
-                  aria-label="Env vars"
+                  keyPlaceholder="API_KEY"
+                  valuePlaceholder="your-secret"
+                  ariaPrefix="Env var"
+                  addLabel="Add variable"
+                  secret
                 />
               </Field>
             </>
@@ -196,12 +200,15 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
                   aria-label="URL"
                 />
               </Field>
-              <Field label="Headers" hint="One KEY=VALUE per line">
-                <Textarea
-                  placeholder={'Authorization=Bearer token'}
-                  value={form.headers}
+              <Field label="Headers" hint="Optional">
+                <KeyValueEditor
+                  rows={form.headers}
                   onChange={(v) => set('headers', v)}
-                  aria-label="Headers"
+                  keyPlaceholder="Authorization"
+                  valuePlaceholder="Bearer token"
+                  ariaPrefix="Header"
+                  addLabel="Add header"
+                  secret
                 />
               </Field>
             </>
@@ -281,25 +288,149 @@ function Input({
   )
 }
 
-function Textarea({
-  value,
+// ── Key/value editor ──────────────────────────────────────────────────────────
+// A small "table" of key/value rows used for both HTTP headers and stdio env
+// vars. Replaces a freeform KEY=VALUE textarea: no syntax to learn, secret
+// values are masked with a per-row reveal toggle, and the row list is its own
+// scroll container — it caps at ~2 rows then scrolls internally, so the modal
+// itself never grows.
+
+const GRID_COLS = 'grid grid-cols-[1fr_1fr_2rem]'
+
+function KeyValueEditor({
+  rows,
   onChange,
-  placeholder,
-  'aria-label': ariaLabel
+  keyPlaceholder,
+  valuePlaceholder,
+  ariaPrefix,
+  addLabel,
+  secret = false
 }: {
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  'aria-label': string
+  rows: KeyValue[]
+  onChange: (rows: KeyValue[]) => void
+  keyPlaceholder: string
+  valuePlaceholder: string
+  /** Singular noun for row aria-labels, e.g. "Header" → "Header 1 key". */
+  ariaPrefix: string
+  addLabel: string
+  /** Mask value inputs and show a reveal toggle (tokens, bearer secrets…). */
+  secret?: boolean
 }): React.JSX.Element {
+  const update = (i: number, patch: Partial<KeyValue>): void =>
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  const remove = (i: number): void => onChange(rows.filter((_, idx) => idx !== i))
+  const add = (): void => onChange([...rows, { key: '', value: '' }])
+
   return (
-    <textarea
-      aria-label={ariaLabel}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={3}
-      className="w-full px-3 py-1.5 rounded border border-border bg-bg-elevated text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-none font-mono"
-    />
+    <div className="rounded-md border border-border bg-bg-elevated overflow-hidden">
+      {rows.length > 0 && (
+        // The scroll boundary: caps height, then scrolls. scrollbar-gutter keeps
+        // columns from shifting when the bar appears. The header lives inside so
+        // it shares the viewport width (stays aligned) and sticks while scrolling.
+        <div className="max-h-[104px] overflow-y-auto [scrollbar-gutter:stable]">
+          <div
+            className={`${GRID_COLS} sticky top-0 z-10 bg-bg-elevated border-b border-border text-[10px] uppercase tracking-wider text-fg-faint`}
+          >
+            <span className="px-2.5 py-1.5">Key</span>
+            <span className="px-2.5 py-1.5 border-l border-border">Value</span>
+            <span className="border-l border-border" />
+          </div>
+          {rows.map((row, i) => (
+            <KeyValueRow
+              key={i}
+              row={row}
+              index={i}
+              ariaPrefix={ariaPrefix}
+              keyPlaceholder={keyPlaceholder}
+              valuePlaceholder={valuePlaceholder}
+              secret={secret}
+              onChange={(patch) => update(i, patch)}
+              onRemove={() => remove(i)}
+            />
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={add}
+        className={`w-full flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs text-accent hover:bg-accent-soft transition-colors ${
+          rows.length > 0 ? 'border-t border-border' : ''
+        }`}
+      >
+        <Plus size={13} />
+        {addLabel}
+      </button>
+    </div>
+  )
+}
+
+function KeyValueRow({
+  row,
+  index,
+  ariaPrefix,
+  keyPlaceholder,
+  valuePlaceholder,
+  secret,
+  onChange,
+  onRemove
+}: {
+  row: KeyValue
+  index: number
+  ariaPrefix: string
+  keyPlaceholder: string
+  valuePlaceholder: string
+  secret: boolean
+  onChange: (patch: Partial<KeyValue>) => void
+  onRemove: () => void
+}): React.JSX.Element {
+  const [revealed, setRevealed] = useState(false)
+  const n = index + 1
+  const cell =
+    'min-w-0 bg-transparent px-2.5 py-1.5 text-sm text-text-primary placeholder:text-fg-faint focus:bg-accent-soft focus:outline-none font-mono'
+
+  return (
+    <div className={`${GRID_COLS} items-stretch border-b border-border last:border-b-0`}>
+      <input
+        type="text"
+        aria-label={`${ariaPrefix} ${n} key`}
+        value={row.key}
+        onChange={(e) => onChange({ key: e.target.value })}
+        placeholder={keyPlaceholder}
+        spellCheck={false}
+        autoComplete="off"
+        className={cell}
+      />
+      <div className="relative border-l border-border">
+        <input
+          type={secret && !revealed ? 'password' : 'text'}
+          aria-label={`${ariaPrefix} ${n} value`}
+          value={row.value}
+          onChange={(e) => onChange({ value: e.target.value })}
+          placeholder={valuePlaceholder}
+          spellCheck={false}
+          autoComplete="off"
+          className={`w-full ${cell} ${secret ? 'pr-7' : ''}`}
+        />
+        {secret && (
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setRevealed((v) => !v)}
+            aria-label={revealed ? 'Hide value' : 'Show value'}
+            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-fg-faint hover:text-text-primary transition-colors"
+          >
+            {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+          </button>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${ariaPrefix.toLowerCase()} ${n}`}
+        className="flex items-center justify-center border-l border-border text-fg-faint hover:text-accent hover:bg-accent-soft transition-colors"
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
   )
 }
