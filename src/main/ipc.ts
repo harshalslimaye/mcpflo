@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
-import { fetchCapabilities, callTool, readResource, getPrompt } from './mcpClient'
+import { fetchCapabilities, disconnectServer, callTool, readResource, getPrompt } from './mcpClient'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -35,6 +35,7 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle('mcp:removeServer', async (_event, id: string) => {
+    await disconnectServer(id)
     removeServer(id)
     await removeServerDir(id)
   })
