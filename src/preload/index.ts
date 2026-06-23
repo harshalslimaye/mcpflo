@@ -30,6 +30,7 @@ const api = {
       ipcRenderer.invoke('mcp:fetchCapabilities', config),
     clearCapabilities: (id: string): Promise<void> =>
       ipcRenderer.invoke('mcp:clearCapabilities', id),
+    disconnectServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnectServer', id),
     callTool: (
       config: ServerConfig,
       toolName: string,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { SecondarySidebar } from './SecondarySidebar'
 import { useServerStore } from '../../stores/serverStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -34,18 +34,21 @@ const mockServers: MCPServer[] = [
 
 const mockFetchCapabilities = vi.fn()
 const mockRefreshCapabilities = vi.fn()
+const mockDisconnectServer = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockFetchCapabilities.mockResolvedValue(undefined)
   mockRefreshCapabilities.mockResolvedValue(undefined)
+  mockDisconnectServer.mockResolvedValue(undefined)
   useServerStore.setState({
     servers: mockServers,
     selectedServerId: null,
     selectedTool: null,
     selectedResource: null,
     fetchCapabilities: mockFetchCapabilities,
-    refreshCapabilities: mockRefreshCapabilities
+    refreshCapabilities: mockRefreshCapabilities,
+    disconnectServer: mockDisconnectServer
   })
 })
 
@@ -245,6 +248,51 @@ describe('SecondarySidebar', () => {
     render(<SecondarySidebar />)
     const serverBtn = screen.getByText('Memory MCP').closest('button')
     expect(serverBtn?.querySelector('[title="connected"]')).toBeInTheDocument()
+  })
+
+  it('renders a disconnect control on a connected server but not a disconnected one', () => {
+    render(<SecondarySidebar />)
+    const memoryBtn = screen.getByText('Memory MCP').closest('button')
+    const slackBtn = screen.getByText('Slack MCP').closest('button')
+    expect(memoryBtn?.querySelector('[title="Disconnect server"]')).toBeInTheDocument()
+    expect(slackBtn?.querySelector('[title="Disconnect server"]')).not.toBeInTheDocument()
+  })
+
+  it('calls disconnectServer and collapses the row when the disconnect control is clicked', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP')) // expand
+    expect(screen.getByText('Tools')).toBeInTheDocument()
+
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    const disconnect = serverBtn?.querySelector('[title="Disconnect server"]') as HTMLElement
+    fireEvent.click(disconnect)
+
+    expect(mockDisconnectServer).toHaveBeenCalledWith('memory-mcp')
+    // Disconnecting forces the row shut regardless of expand state.
+    expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+  })
+
+  it('disconnect control does not toggle the server when collapsed', () => {
+    render(<SecondarySidebar />)
+    const serverBtn = screen.getByText('Memory MCP').closest('button')
+    const disconnect = serverBtn?.querySelector('[title="Disconnect server"]') as HTMLElement
+    fireEvent.click(disconnect)
+    // The row was never expanded — disconnecting it shouldn't expand it either.
+    expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+  })
+
+  it('re-fetches on next expand after a server is disconnected (grey)', () => {
+    render(<SecondarySidebar />)
+    // Simulates the post-disconnect state: status reset to disconnected (grey).
+    act(() => {
+      useServerStore.setState({
+        servers: mockServers.map((s) =>
+          s.id === 'memory-mcp' ? { ...s, status: 'disconnected' as const } : s
+        )
+      })
+    })
+    fireEvent.click(screen.getByText('Memory MCP'))
+    expect(mockFetchCapabilities).toHaveBeenCalledWith('memory-mcp')
   })
 
   it('opens the delete confirmation when the delete control is clicked', () => {

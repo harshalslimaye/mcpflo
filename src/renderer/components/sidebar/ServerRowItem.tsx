@@ -1,4 +1,4 @@
-import { ChevronRight, ChevronDown, RotateCw, Trash2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, RotateCw, Trash2, Unplug } from 'lucide-react'
 import type { ServerStatus } from '../../../shared/mcp.types'
 
 interface ServerRowItemProps {
@@ -10,6 +10,7 @@ interface ServerRowItemProps {
   disabled?: boolean
   status?: ServerStatus
   onToggle: () => void
+  onDisconnect?: () => void
   onRefresh?: () => void
   onDelete?: () => void
 }
@@ -30,6 +31,7 @@ export function ServerRowItem({
   disabled = false,
   status,
   onToggle,
+  onDisconnect,
   onRefresh,
   onDelete
 }: ServerRowItemProps): React.JSX.Element {
@@ -62,6 +64,29 @@ export function ServerRowItem({
       >
         {label}
       </span>
+
+      {onDisconnect && status === 'connected' && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Disconnect server"
+          title="Disconnect server"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDisconnect()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onDisconnect()
+            }
+          }}
+          className="shrink-0 text-text-muted hover:text-text-primary transition-opacity opacity-0 group-hover:opacity-100"
+        >
+          <Unplug size={11} />
+        </span>
+      )}
 
       {onRefresh && (
         <span
