@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { fixPath } from './fixPath'
 import { seedDefaultServers } from './store'
+import { disconnectAll } from './mcpClient'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -84,6 +85,16 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// Closes all spawned MCP server processes before exit. `before-quit` is
+// preempted once to await cleanup, then quit is re-triggered to actually exit.
+let isQuitting = false
+app.on('before-quit', (event) => {
+  if (isQuitting) return
+  isQuitting = true
+  event.preventDefault()
+  disconnectAll().finally(() => app.quit())
 })
 
 // In this file you can include the rest of your app's specific main process
