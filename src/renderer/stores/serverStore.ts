@@ -645,17 +645,29 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     await get().fetchCapabilities(id)
   },
 
-  // Tears down the live connection and resets the server to its never-fetched
-  // (grey) state, so the next expand reconnects via the existing lazy-fetch path.
+  // Tears down the live connection and clears its cached capabilities (not its
+  // config), resetting the server to its never-fetched (grey) state so the next
+  // expand reconnects and refetches via the existing lazy-fetch path.
   disconnectServer: async (id) => {
     try {
       await window.api.mcp.disconnectServer(id)
+      await window.api.mcp.clearCapabilities(id)
     } catch (err) {
       reportError(err)
     }
     set((state) => ({
       servers: state.servers.map((s) =>
-        s.id === id ? { ...s, status: 'disconnected', error: undefined } : s
+        s.id === id
+          ? {
+              ...s,
+              status: 'disconnected',
+              error: undefined,
+              tools: [],
+              resources: [],
+              prompts: [],
+              fetchedAt: undefined
+            }
+          : s
       )
     }))
   }
