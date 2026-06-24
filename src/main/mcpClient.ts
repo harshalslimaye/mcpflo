@@ -161,7 +161,7 @@ async function createSession(config: ServerConfig): Promise<Session> {
       taskStore: new InMemoryTaskStore()
     }
   )
-  await client.connect(transport)
+  await client.connect(transport, { timeout: config.overrides?.timeoutMs })
 
   const session: Session = { client, transport, active: null, queue: Promise.resolve() }
 

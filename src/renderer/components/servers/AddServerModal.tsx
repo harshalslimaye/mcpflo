@@ -1,8 +1,11 @@
-import { useState } from 'react'
-import { Plus, Trash2, Eye, EyeOff } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import JsonView from '@uiw/react-json-view'
+import { ChevronRight, ChevronDown, Braces, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { useServerStore } from '../../stores/serverStore'
-import type { ServerConfig, TransportConfig } from '../../../shared/mcp.types'
+import { parseServerConfigJson } from '../../lib/parseServerConfigJson'
+import { TREE_THEME } from '../shared/json/jsonViewTheme'
+import type { ServerConfig, ServerOverrides, TransportConfig } from '../../../shared/mcp.types'
 
 type TransportType = TransportConfig['type']
 
@@ -13,7 +16,6 @@ interface KeyValue {
 
 interface FormState {
   name: string
-  description: string
   transportType: TransportType
   // stdio
   command: string
@@ -22,17 +24,19 @@ interface FormState {
   // streamable-http
   url: string
   headers: KeyValue[]
+  // advanced
+  timeoutMs: string
 }
 
 const defaults: FormState = {
   name: '',
-  description: '',
   transportType: 'stdio',
   command: '',
   args: '',
   env: [],
   url: '',
-  headers: []
+  headers: [],
+  timeoutMs: ''
 }
 
 /** Collapse editor rows into a record, dropping rows with a blank key.
@@ -41,6 +45,12 @@ const defaults: FormState = {
 function rowsToRecord(rows: KeyValue[]): Record<string, string> | undefined {
   const entries = rows.map((r) => [r.key.trim(), r.value.trim()] as const).filter(([k]) => k !== '')
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+/** Number of rows with a non-blank key — shown as a badge on the collapsed
+ *  section header so filled-in data isn't hidden without a visible cue. */
+function filledCount(rows: KeyValue[]): number {
+  return rows.filter((r) => r.key.trim() !== '').length
 }
 
 function buildTransport(form: FormState): TransportConfig {
@@ -62,11 +72,24 @@ function buildTransport(form: FormState): TransportConfig {
   }
 }
 
+/** Builds the overrides object from the Advanced section, or undefined when
+ *  every override is left at its default (so the field is omitted entirely
+ *  rather than persisted as an empty object). */
+function buildOverrides(form: FormState): ServerOverrides | undefined {
+  const trimmed = form.timeoutMs.trim()
+  if (!trimmed) return undefined
+  return { timeoutMs: Number(trimmed) }
+}
+
 function validate(form: FormState): Partial<Record<keyof FormState, string>> {
   const errors: Partial<Record<keyof FormState, string>> = {}
   if (!form.name.trim()) errors.name = 'Name is required'
   if (form.transportType === 'stdio' && !form.command.trim()) errors.command = 'Command is required'
   if (form.transportType !== 'stdio' && !form.url.trim()) errors.url = 'URL is required'
+  const timeoutMs = form.timeoutMs.trim()
+  if (timeoutMs && (!/^\d+$/.test(timeoutMs) || Number(timeoutMs) <= 0)) {
+    errors.timeoutMs = 'Timeout must be a positive number'
+  }
   return errors
 }
 
@@ -76,9 +99,25 @@ interface AddServerModalProps {
 
 export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Element {
   const addServer = useServerStore((s) => s.addServer)
+  const servers = useServerStore((s) => s.servers)
+  const [mode, setMode] = useState<'manual' | 'json'>('manual')
+  const [json, setJson] = useState('')
+  const [jsonError, setJsonError] = useState<string | undefined>(undefined)
   const [form, setForm] = useState<FormState>(defaults)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [submitting, setSubmitting] = useState(false)
+
+  // Best-effort parse for the live preview tree — independent of the strict
+  // parseServerConfigJson validation that runs on submit, so the preview can
+  // show structurally-valid-but-not-yet-importable JSON as the user types.
+  const jsonPreview = useMemo(() => {
+    try {
+      const parsed = JSON.parse(json)
+      return parsed !== null && typeof parsed === 'object' ? parsed : undefined
+    } catch {
+      return undefined
+    }
+  }, [json])
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -87,17 +126,42 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
+
+    if (mode === 'json') {
+      const result = parseServerConfigJson(json, new Set(servers.map((srv) => srv.name)))
+      if (!result.ok) {
+        setJsonError(result.error)
+        return
+      }
+      setJsonError(undefined)
+      setSubmitting(true)
+      try {
+        for (const config of result.configs) {
+          await addServer(config)
+        }
+        onClose()
+      } catch {
+        // addServer already surfaced the failure as a toast; keep the modal
+        // open (and the pasted JSON) so the user can correct and retry. Any
+        // configs already added before the failure stay added.
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
+
     const errs = validate(form)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
       return
     }
 
+    const overrides = buildOverrides(form)
     const config: ServerConfig = {
       id: crypto.randomUUID(),
       name: form.name.trim(),
-      ...(form.description.trim() && { description: form.description.trim() }),
-      transport: buildTransport(form)
+      transport: buildTransport(form),
+      ...(overrides && { overrides })
     }
 
     setSubmitting(true)
@@ -116,101 +180,160 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
     <Modal title="Add MCP Server" onClose={onClose}>
       <form onSubmit={handleSubmit} noValidate>
         <div className="flex flex-col gap-4">
-          {/* Name */}
-          <Field label="Name" error={errors.name} required>
-            <Input
-              placeholder="My MCP Server"
-              value={form.name}
-              onChange={(v) => set('name', v)}
-              aria-label="Name"
-            />
-          </Field>
+          {/* JSON / manual toggle */}
+          <button
+            type="button"
+            onClick={() => setMode((m) => (m === 'manual' ? 'json' : 'manual'))}
+            className="flex w-full items-center gap-1.5 text-left text-xs text-accent hover:text-accent-hover transition-colors cursor-pointer"
+          >
+            {mode === 'manual' && <Braces size={13} className="shrink-0" />}
+            {mode === 'manual' ? 'Paste JSON config' : '← Back to form'}
+          </button>
 
-          {/* Description */}
-          <Field label="Description">
-            <Input
-              placeholder="Optional"
-              value={form.description}
-              onChange={(v) => set('description', v)}
-              aria-label="Description"
-            />
-          </Field>
-
-          {/* Transport type */}
-          <Field label="Transport">
-            <div className="flex gap-2">
-              {(['stdio', 'streamable-http'] as TransportType[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => set('transportType', t)}
-                  className={`px-3 py-1 rounded text-xs border transition-colors ${
-                    form.transportType === t
-                      ? 'border-accent text-accent bg-accent/10'
-                      : 'border-border text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          {/* stdio fields */}
-          {form.transportType === 'stdio' && (
+          {mode === 'json' ? (
             <>
-              <Field label="Command" error={errors.command} required>
-                <Input
-                  placeholder="npx"
-                  value={form.command}
-                  onChange={(v) => set('command', v)}
-                  aria-label="Command"
+              <Field label="JSON config" error={jsonError}>
+                <textarea
+                  aria-label="JSON config"
+                  value={json}
+                  onChange={(e) => {
+                    setJson(e.target.value)
+                    setJsonError(undefined)
+                  }}
+                  rows={8}
+                  spellCheck={false}
+                  placeholder={
+                    '{\n  "mcpServers": {\n    "my-server": {\n      "command": "npx",\n      "args": ["-y", "my-mcp-server"]\n    }\n  }\n}'
+                  }
+                  className="w-full px-3 py-2 rounded border border-border bg-bg-elevated text-text-primary text-xs placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors resize-y font-mono"
                 />
               </Field>
-              <Field label="Args" hint="Space-separated">
-                <Input
-                  placeholder="-y my-mcp-server"
-                  value={form.args}
-                  onChange={(v) => set('args', v)}
-                  aria-label="Args"
-                />
-              </Field>
-              <Field label="Env vars" hint="Optional">
-                <KeyValueEditor
-                  rows={form.env}
-                  onChange={(v) => set('env', v)}
-                  keyPlaceholder="API_KEY"
-                  valuePlaceholder="your-secret"
-                  ariaPrefix="Env var"
-                  addLabel="Add variable"
-                  secret
-                />
-              </Field>
+              {jsonPreview && (
+                <div className="max-h-[180px] overflow-y-auto rounded border border-border bg-bg-elevated p-2">
+                  <JsonView
+                    value={jsonPreview}
+                    style={TREE_THEME}
+                    displayDataTypes={false}
+                    enableClipboard={false}
+                    shortenTextAfterLength={0}
+                    className="font-mono text-xs leading-relaxed"
+                  />
+                </div>
+              )}
             </>
-          )}
-
-          {/* streamable-http fields */}
-          {form.transportType !== 'stdio' && (
+          ) : (
             <>
-              <Field label="URL" error={errors.url} required>
+              {/* Name */}
+              <Field label="Name" error={errors.name} required>
                 <Input
-                  placeholder="https://mcp.example.com/mcp"
-                  value={form.url}
-                  onChange={(v) => set('url', v)}
-                  aria-label="URL"
+                  placeholder="My MCP Server"
+                  value={form.name}
+                  onChange={(v) => set('name', v)}
+                  aria-label="Name"
                 />
               </Field>
-              <Field label="Headers" hint="Optional">
-                <KeyValueEditor
-                  rows={form.headers}
-                  onChange={(v) => set('headers', v)}
-                  keyPlaceholder="Authorization"
-                  valuePlaceholder="Bearer token"
-                  ariaPrefix="Header"
-                  addLabel="Add header"
-                  secret
-                />
+
+              {/* Transport type */}
+              <Field label="Transport">
+                <div className="flex gap-2">
+                  {(['stdio', 'streamable-http'] as TransportType[]).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => set('transportType', t)}
+                      className={`px-3 py-1 rounded text-xs border transition-colors cursor-pointer ${
+                        form.transportType === t
+                          ? 'border-accent text-accent bg-accent/10'
+                          : 'border-border text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </Field>
+
+              {/* stdio fields */}
+              {form.transportType === 'stdio' && (
+                <>
+                  <Field label="Command" error={errors.command} required>
+                    <Input
+                      placeholder="npx"
+                      value={form.command}
+                      onChange={(v) => set('command', v)}
+                      aria-label="Command"
+                    />
+                  </Field>
+                  <Field label="Args" hint="Space-separated">
+                    <Input
+                      placeholder="-y my-mcp-server"
+                      value={form.args}
+                      onChange={(v) => set('args', v)}
+                      aria-label="Args"
+                    />
+                  </Field>
+                  <CollapsibleSection
+                    label="Environment Variables"
+                    hint="Optional"
+                    count={filledCount(form.env)}
+                  >
+                    <KeyValueEditor
+                      rows={form.env}
+                      onChange={(v) => set('env', v)}
+                      keyPlaceholder="API_KEY"
+                      valuePlaceholder="your-secret"
+                      ariaPrefix="Environment Variables"
+                      addLabel="Add variable"
+                      secret
+                    />
+                  </CollapsibleSection>
+                </>
+              )}
+
+              {/* streamable-http fields */}
+              {form.transportType !== 'stdio' && (
+                <>
+                  <Field label="URL" error={errors.url} required>
+                    <Input
+                      placeholder="https://mcp.example.com/mcp"
+                      value={form.url}
+                      onChange={(v) => set('url', v)}
+                      aria-label="URL"
+                    />
+                  </Field>
+                  <CollapsibleSection
+                    label="Headers"
+                    hint="Optional"
+                    count={filledCount(form.headers)}
+                  >
+                    <KeyValueEditor
+                      rows={form.headers}
+                      onChange={(v) => set('headers', v)}
+                      keyPlaceholder="Authorization"
+                      valuePlaceholder="Bearer token"
+                      ariaPrefix="Header"
+                      addLabel="Add header"
+                      secret
+                    />
+                  </CollapsibleSection>
+                </>
+              )}
+
+              <CollapsibleSection
+                label="Advanced"
+                hint="Optional"
+                count={form.timeoutMs.trim() ? 1 : 0}
+              >
+                <Field label="Connection timeout" hint="ms" error={errors.timeoutMs}>
+                  <Input
+                    type="number"
+                    placeholder="60000"
+                    value={form.timeoutMs}
+                    onChange={(v) => set('timeoutMs', v)}
+                    aria-label="Connection timeout"
+                  />
+                </Field>
+              </CollapsibleSection>
             </>
           )}
 
@@ -219,14 +342,14 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded text-sm text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+              className="px-3 py-1.5 rounded text-sm text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-3 py-1.5 rounded text-sm bg-accent hover:bg-accent-hover text-white transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 rounded text-sm bg-accent hover:bg-accent-hover text-white transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-default"
             >
               {submitting ? 'Adding…' : 'Add Server'}
             </button>
@@ -265,20 +388,64 @@ function Field({
   )
 }
 
+/** Collapsed-by-default section for optional, bulky inputs (env vars,
+ *  headers) — a toggleable header with a count badge so already-entered
+ *  rows stay visible even while the editor itself is hidden. */
+function CollapsibleSection({
+  label,
+  hint,
+  count,
+  children
+}: {
+  label: string
+  hint?: string
+  count: number
+  children: React.ReactNode
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const Chevron = open ? ChevronDown : ChevronRight
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={label}
+        className="flex w-full items-center gap-1 text-left cursor-pointer"
+      >
+        <Chevron size={12} className="shrink-0 text-text-muted" />
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-muted">
+          {label}
+        </span>
+        {hint && <span className="text-[10px] text-text-muted opacity-60">({hint})</span>}
+        {count > 0 && (
+          <span className="rounded-full border border-border-soft bg-bg-elevated px-[7px] py-px text-[10px] text-text-muted">
+            {count}
+          </span>
+        )}
+      </button>
+      {open && children}
+    </div>
+  )
+}
+
 function Input({
   value,
   onChange,
   placeholder,
+  type = 'text',
   'aria-label': ariaLabel
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
+  type?: 'text' | 'number'
   'aria-label': string
 }): React.JSX.Element {
   return (
     <input
-      type="text"
+      type={type}
       aria-label={ariaLabel}
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -353,7 +520,7 @@ function KeyValueEditor({
       <button
         type="button"
         onClick={add}
-        className={`w-full flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs text-accent hover:bg-accent-soft transition-colors ${
+        className={`w-full flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs text-accent hover:bg-accent-soft transition-colors cursor-pointer ${
           rows.length > 0 ? 'border-t border-border' : ''
         }`}
       >
@@ -417,7 +584,7 @@ function KeyValueRow({
             tabIndex={-1}
             onClick={() => setRevealed((v) => !v)}
             aria-label={revealed ? 'Hide value' : 'Show value'}
-            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-fg-faint hover:text-text-primary transition-colors"
+            className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded text-fg-faint hover:text-text-primary transition-colors cursor-pointer"
           >
             {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
@@ -427,7 +594,7 @@ function KeyValueRow({
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${ariaPrefix.toLowerCase()} ${n}`}
-        className="flex items-center justify-center border-l border-border text-fg-faint hover:text-accent hover:bg-accent-soft transition-colors"
+        className="flex items-center justify-center border-l border-border text-fg-faint hover:text-accent hover:bg-accent-soft transition-colors cursor-pointer"
       >
         <Trash2 size={13} />
       </button>
