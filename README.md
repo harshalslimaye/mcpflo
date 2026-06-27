@@ -46,6 +46,12 @@ Everything below is implemented and working today.
   connect to a remote one over Streamable HTTP. HTTP connections support custom
   request headers (e.g. an `Authorization: Bearer …` token) for token-authed
   servers.
+- **OAuth 2.1 for Streamable HTTP.** Sign in to OAuth-protected servers with the
+  authorization-code + PKCE flow: MCPFlo opens your system browser, captures the
+  redirect on a loopback listener (RFC 8252), and reconnects. Clients register
+  automatically via Dynamic Client Registration, with a manual Client ID fallback
+  when a server doesn't support it. Tokens are encrypted at rest using the OS
+  keychain (`safeStorage`), and static custom headers still work alongside OAuth.
 - **Browse capabilities.** View every tool, resource, and prompt across all
   connected servers in a grouped tree.
 - **Unified filter.** A single search box (⌘K) filters tools, resources, and
@@ -80,9 +86,6 @@ Everything below is implemented and working today.
 
 These are deliberate limitations, called out so there are no surprises:
 
-- **No OAuth.** Authenticated HTTP servers are supported only via static request
-  headers (e.g. a bearer token you paste in). There is no OAuth authorization
-  flow.
 - **No SSE transport.** Only stdio and Streamable HTTP are supported. The
   deprecated HTTP+SSE transport is intentionally omitted.
 - **History does not persist.** Call history is cleared when the app closes.

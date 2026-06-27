@@ -13,6 +13,12 @@ const slackConfig: ServerConfig = {
   transport: { type: 'streamable-http', url: 'https://slack.example.com/mcp' }
 }
 
+const oauthConfig: ServerConfig = {
+  id: 'oauth-mcp',
+  name: 'OAuth MCP',
+  transport: { type: 'streamable-http', url: 'https://oauth.example.com/mcp', auth: 'oauth' }
+}
+
 const mockApi = {
   mcp: {
     getServers: vi.fn<() => Promise<ServerConfig[]>>(),
@@ -26,7 +32,9 @@ const mockApi = {
     callTool: vi.fn(),
     readResource: vi.fn(),
     getPrompt: vi.fn(),
-    onToolNotification: vi.fn()
+    onToolNotification: vi.fn(),
+    authorizeServer: vi.fn<(c: ServerConfig) => Promise<void>>(),
+    clearAuth: vi.fn<(id: string) => Promise<void>>()
   }
 }
 
@@ -60,6 +68,8 @@ describe('serverStore', () => {
         result: { messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }] }
       }
     })
+    mockApi.mcp.authorizeServer.mockResolvedValue(undefined)
+    mockApi.mcp.clearAuth.mockResolvedValue(undefined)
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -805,6 +815,20 @@ describe('serverStore', () => {
       expect(server?.prompts).toEqual([])
     })
 
+    it('drops to a neutral disconnected state (not error) when sign-in is needed', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [],
+        resources: [],
+        prompts: [],
+        authRequired: true
+      })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('disconnected')
+      expect(server?.error).toBeUndefined()
+    })
+
     it('sets status to error on failure', async () => {
       await useServerStore.getState().addServer(githubConfig)
       mockApi.mcp.fetchCapabilities.mockRejectedValue(new Error('Connection refused'))
@@ -943,6 +967,134 @@ describe('serverStore', () => {
       const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
       expect(server?.status).toBe('disconnected')
       expect(server?.tools).toEqual([])
+    })
+  })
+
+  describe('OAuth', () => {
+    const authOf = (id: string): import('../../shared/mcp.types').ServerAuthState | undefined =>
+      useServerStore.getState().servers.find((s) => s.id === id)?.auth
+
+    it('seeds an OAuth server with idle auth and leaves others without an auth field', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig, slackConfig, oauthConfig])
+      await useServerStore.getState().hydrate()
+      expect(authOf('oauth-mcp')).toEqual({ status: 'idle' })
+      expect(authOf('github-mcp')).toBeUndefined()
+      expect(authOf('slack-mcp')).toBeUndefined()
+    })
+
+    describe('handleAuthEvent', () => {
+      beforeEach(async () => {
+        mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
+        await useServerStore.getState().hydrate()
+      })
+
+      it('maps each event type to the matching auth state', () => {
+        const { handleAuthEvent } = useServerStore.getState()
+
+        handleAuthEvent({ type: 'pending', serverId: 'oauth-mcp' })
+        expect(authOf('oauth-mcp')).toEqual({ status: 'authenticating' })
+
+        handleAuthEvent({ type: 'success', serverId: 'oauth-mcp' })
+        expect(authOf('oauth-mcp')).toEqual({ status: 'authenticated' })
+
+        // dcr_required is the structured "registration unsupported" signal (it
+        // drives the recovery modal), so it maps to auth_required with no reason
+        // text rather than surfacing "Sign in (DCR_FAILED)".
+        handleAuthEvent({ type: 'dcr_required', serverId: 'oauth-mcp' })
+        expect(authOf('oauth-mcp')).toEqual({ status: 'auth_required' })
+
+        handleAuthEvent({ type: 'auth_required', serverId: 'oauth-mcp', reason: 'expired' })
+        expect(authOf('oauth-mcp')).toEqual({ status: 'auth_required', reason: 'expired' })
+
+        handleAuthEvent({ type: 'idle', serverId: 'oauth-mcp' })
+        expect(authOf('oauth-mcp')).toEqual({ status: 'idle' })
+      })
+
+      it('ignores events for an unknown server', () => {
+        useServerStore.getState().handleAuthEvent({ type: 'success', serverId: 'ghost' })
+        expect(authOf('oauth-mcp')).toEqual({ status: 'idle' })
+      })
+    })
+
+    describe('authorizeServer', () => {
+      beforeEach(async () => {
+        mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
+        await useServerStore.getState().hydrate()
+      })
+
+      it('optimistically shows authenticating and calls the bridge', async () => {
+        await useServerStore.getState().authorizeServer('oauth-mcp')
+        expect(mockApi.mcp.authorizeServer).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'oauth-mcp' })
+        )
+      })
+
+      it('falls back to auth_required when the flow rejects', async () => {
+        mockApi.mcp.authorizeServer.mockRejectedValue(new Error('flow failed'))
+        await useServerStore.getState().authorizeServer('oauth-mcp')
+        expect(authOf('oauth-mcp')).toEqual({ status: 'auth_required' })
+      })
+
+      it('is a no-op for an unknown server', async () => {
+        await useServerStore.getState().authorizeServer('ghost')
+        expect(mockApi.mcp.authorizeServer).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('clearAuth', () => {
+      it('calls the bridge to sign out', async () => {
+        await useServerStore.getState().clearAuth('oauth-mcp')
+        expect(mockApi.mcp.clearAuth).toHaveBeenCalledWith('oauth-mcp')
+      })
+
+      it('swallows a sign-out failure', async () => {
+        mockApi.mcp.clearAuth.mockRejectedValue(new Error('boom'))
+        await expect(useServerStore.getState().clearAuth('oauth-mcp')).resolves.toBeUndefined()
+      })
+    })
+
+    describe('operation auth_required handoff', () => {
+      beforeEach(async () => {
+        mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
+        await useServerStore.getState().hydrate()
+      })
+
+      it('flips auth to auth_required when a tool call reports authRequired', async () => {
+        mockApi.mcp.callTool.mockResolvedValue({ authRequired: true })
+        await useServerStore.getState().executeTool('oauth-mcp', 'echo', {})
+        expect(authOf('oauth-mcp')).toEqual({ status: 'auth_required', reason: undefined })
+      })
+
+      it('logs no phantom error record for an auth_required tool call', async () => {
+        mockApi.mcp.callTool.mockResolvedValue({ authRequired: true })
+        await useServerStore.getState().executeTool('oauth-mcp', 'echo', {})
+        // An auth_required outcome isn't a failed invocation — no blank error row.
+        expect(useServerStore.getState().history['oauth-mcp::echo']).toBeUndefined()
+      })
+
+      it('flips auth to auth_required when a resource read reports authRequired', async () => {
+        mockApi.mcp.readResource.mockResolvedValue({ authRequired: true })
+        await useServerStore.getState().readResource('oauth-mcp', 'mem://x')
+        expect(authOf('oauth-mcp')).toEqual({ status: 'auth_required', reason: undefined })
+      })
+
+      it('logs no phantom error record for an auth_required resource read', async () => {
+        mockApi.mcp.readResource.mockResolvedValue({ authRequired: true })
+        await useServerStore.getState().readResource('oauth-mcp', 'mem://x')
+        expect(useServerStore.getState().resourceHistory['oauth-mcp::mem://x']).toBeUndefined()
+      })
+
+      it('flips auth to auth_required when a prompt get reports authRequired', async () => {
+        mockApi.mcp.getPrompt.mockResolvedValue({ authRequired: true })
+        await useServerStore.getState().getPrompt('oauth-mcp', 'p', {})
+        expect(authOf('oauth-mcp')).toEqual({ status: 'auth_required', reason: undefined })
+      })
+
+      it('logs no phantom error record for an auth_required prompt get', async () => {
+        mockApi.mcp.getPrompt.mockResolvedValue({ authRequired: true })
+        await useServerStore.getState().getPrompt('oauth-mcp', 'p', {})
+        expect(useServerStore.getState().promptHistory['oauth-mcp::p']).toBeUndefined()
+      })
     })
   })
 })

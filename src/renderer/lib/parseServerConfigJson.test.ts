@@ -140,4 +140,49 @@ describe('parseServerConfigJson', () => {
     const result = parseServerConfigJson(JSON.stringify({ mcpServers: 'oops' }), new Set())
     expect(result).toEqual({ ok: false, error: '"mcpServers" must be an object' })
   })
+
+  it('rejects a malformed URL', () => {
+    const result = parseServerConfigJson(
+      JSON.stringify({ name: 'bad', url: 'not a url' }),
+      new Set()
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: '"bad": Enter a valid URL, e.g. https://mcp.example.com/mcp'
+    })
+  })
+
+  it('rejects a non-http(s) URL scheme', () => {
+    const result = parseServerConfigJson(
+      JSON.stringify({ name: 'bad', url: 'ftp://example.com/mcp' }),
+      new Set()
+    )
+    expect(result).toEqual({ ok: false, error: '"bad": URL must start with http:// or https://' })
+  })
+
+  it('rejects a credential header sent over plain http to a non-loopback host', () => {
+    const result = parseServerConfigJson(
+      JSON.stringify({
+        name: 'insecure',
+        url: 'http://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer x' }
+      }),
+      new Set()
+    )
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.error).toContain('cleartext over http')
+  })
+
+  it('allows a credential header over http to localhost (dev server)', () => {
+    const result = parseServerConfigJson(
+      JSON.stringify({
+        name: 'local',
+        url: 'http://localhost:3000/mcp',
+        headers: { Authorization: 'Bearer x' }
+      }),
+      new Set()
+    )
+    expect(result.ok).toBe(true)
+  })
 })

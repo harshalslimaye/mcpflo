@@ -66,6 +66,8 @@ interface ServerTreeProps {
   onDisconnect: () => void
   onRefresh: () => void
   onDelete: () => void
+  onAuthorize: () => void
+  onClearAuth: () => void
 }
 
 function ServerTree({
@@ -83,7 +85,9 @@ function ServerTree({
   onSelectPrompt,
   onDisconnect,
   onRefresh,
-  onDelete
+  onDelete,
+  onAuthorize,
+  onClearAuth
 }: ServerTreeProps): React.JSX.Element | null {
   const filtering = filter.length > 0
 
@@ -115,10 +119,14 @@ function ServerTree({
         depth={0}
         expanded={serverExpanded}
         status={server.status}
+        auth={server.auth}
+        credentialsUnavailable={server.credentialsUnavailable}
         onToggle={onToggleServer}
         onDisconnect={onDisconnect}
         onRefresh={onRefresh}
         onDelete={onDelete}
+        onAuthorize={onAuthorize}
+        onClearAuth={onClearAuth}
       />
 
       {serverExpanded &&
@@ -184,6 +192,8 @@ export function SecondarySidebar(): React.JSX.Element {
   const fetchCapabilities = useServerStore((s) => s.fetchCapabilities)
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
   const disconnectServer = useServerStore((s) => s.disconnectServer)
+  const authorizeServer = useServerStore((s) => s.authorizeServer)
+  const clearAuth = useServerStore((s) => s.clearAuth)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectTool = useServerStore((s) => s.selectTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
@@ -271,9 +281,7 @@ export function SecondarySidebar(): React.JSX.Element {
   // expand so their trees actually populate.
   function expandAll(): void {
     setExpandedServers(new Set(servers.map((s) => s.id)))
-    setExpandedGroups(
-      new Set(servers.flatMap((s) => GROUP_KEYS.map((g) => groupId(s.id, g))))
-    )
+    setExpandedGroups(new Set(servers.flatMap((s) => GROUP_KEYS.map((g) => groupId(s.id, g)))))
     for (const server of servers) {
       if (server.status === 'disconnected') fetchCapabilities(server.id)
     }
@@ -385,6 +393,8 @@ export function SecondarySidebar(): React.JSX.Element {
                   onDisconnect={() => handleDisconnect(server.id)}
                   onRefresh={() => refreshCapabilities(server.id)}
                   onDelete={() => setPendingDelete(server)}
+                  onAuthorize={() => authorizeServer(server.id)}
+                  onClearAuth={() => clearAuth(server.id)}
                 />
               ))}
             </div>

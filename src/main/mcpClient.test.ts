@@ -7,6 +7,7 @@ interface MockTransport {
   opts: Record<string, unknown> | undefined
   send: (message: unknown) => unknown
   onmessage: ((message: unknown) => void) | undefined
+  finishAuth?: (code: string) => unknown
 }
 
 const h = vi.hoisted(() => ({
@@ -28,7 +29,19 @@ const h = vi.hoisted(() => ({
     opts: Record<string, unknown> | undefined
     send: (message: unknown) => unknown
     onmessage: ((message: unknown) => void) | undefined
-  }>
+    finishAuth?: (code: string) => unknown
+  }>,
+  // OAuth dependency mocks (oauthProvider / oauthStore / secrets).
+  startLoopbackListener: vi.fn(),
+  createOAuthProvider: vi.fn(() => ({})),
+  readOAuthState: vi.fn(),
+  saveRedirectPort: vi.fn(),
+  clearClientInformation: vi.fn(),
+  isSecretStorageAvailable: vi.fn(() => true),
+  // Login-shell PATH resolution used to build a stdio server's spawn env.
+  resolveShellPath: vi.fn<() => string | undefined>(() => '/opt/homebrew/bin:/usr/bin'),
+  // A controllable loopback handle: tests set `result` and inspect `close`.
+  loopback: { port: 0, result: Promise.resolve({ code: 'CODE' }), close: vi.fn() }
 }))
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
@@ -59,6 +72,7 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
     opts: Record<string, unknown> | undefined
     send = vi.fn()
     onmessage: ((message: unknown) => void) | undefined
+    finishAuth = vi.fn()
     constructor(url: URL, opts?: Record<string, unknown>) {
       this.url = url
       this.opts = opts
@@ -66,6 +80,41 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
     }
   }
 }))
+
+// Minimal UnauthorizedError so mcpClient's `instanceof` checks have a class to
+// match. Re-imported post-reset in beforeEach so identities line up (same as the
+// schemas pattern below).
+vi.mock('@modelcontextprotocol/sdk/client/auth.js', () => ({
+  UnauthorizedError: class UnauthorizedError extends Error {
+    constructor(message?: string) {
+      super(message)
+      this.name = 'UnauthorizedError'
+    }
+  }
+}))
+
+vi.mock('./secrets', () => ({
+  isSecretStorageAvailable: h.isSecretStorageAvailable
+}))
+
+vi.mock('./oauthStore', () => ({
+  readOAuthState: h.readOAuthState,
+  saveRedirectPort: h.saveRedirectPort,
+  clearClientInformation: h.clearClientInformation,
+  EncryptionUnavailableError: class EncryptionUnavailableError extends Error {
+    code = 'ENCRYPTION_UNAVAILABLE'
+    constructor() {
+      super('OAuth tokens require OS-level encryption, which is not available on this system.')
+    }
+  }
+}))
+
+vi.mock('./oauthProvider', () => ({
+  startLoopbackListener: h.startLoopbackListener,
+  createOAuthProvider: h.createOAuthProvider
+}))
+
+vi.mock('./shellPath', () => ({ resolveShellPath: h.resolveShellPath }))
 
 const stdioConfig: ServerConfig = {
   id: 'srv-1',
@@ -89,6 +138,12 @@ const streamableHttpNoHeadersConfig: ServerConfig = {
   transport: { type: 'streamable-http', url: 'https://example.com/mcp' }
 }
 
+const oauthConfig: ServerConfig = {
+  id: 'srv-oauth',
+  name: 'OAuth Server',
+  transport: { type: 'streamable-http', url: 'https://example.com/mcp', auth: 'oauth', oauth: {} }
+}
+
 // The last transport openClient constructed — the one the current call taps.
 function lastTransport(): MockTransport {
   return h.transports[h.transports.length - 1]
@@ -99,6 +154,9 @@ describe('mcpClient', () => {
   // Loaded from the same (post-reset) module instance as `mod`, so schema
   // references match the ones mcpClient passes to setRequestHandler.
   let schemas: typeof import('@modelcontextprotocol/sdk/types.js')
+  // Same reason for UnauthorizedError: mcpClient's `instanceof` check must see
+  // the class from the same post-reset import the test throws.
+  let authMod: typeof import('@modelcontextprotocol/sdk/client/auth.js')
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -113,9 +171,21 @@ describe('mcpClient', () => {
     h.client.readResource.mockResolvedValue({ contents: [] })
     h.client.getPrompt.mockResolvedValue({ messages: [] })
     h.client.close.mockResolvedValue(undefined)
+    // OAuth mock defaults: a successful token-valid connect, fresh loopback.
+    h.isSecretStorageAvailable.mockReturnValue(true)
+    h.resolveShellPath.mockReturnValue('/opt/homebrew/bin:/usr/bin')
+    h.readOAuthState.mockResolvedValue(null)
+    h.saveRedirectPort.mockResolvedValue(undefined)
+    h.clearClientInformation.mockResolvedValue(undefined)
+    h.createOAuthProvider.mockReturnValue({})
+    h.loopback.port = 51234
+    h.loopback.result = Promise.resolve({ code: 'CODE' })
+    h.loopback.close = vi.fn()
+    h.startLoopbackListener.mockResolvedValue(h.loopback)
     vi.resetModules()
     mod = await import('./mcpClient')
     schemas = await import('@modelcontextprotocol/sdk/types.js')
+    authMod = await import('@modelcontextprotocol/sdk/client/auth.js')
   })
 
   // The handler mcpClient registered for a given server-request schema.
@@ -189,13 +259,28 @@ describe('mcpClient', () => {
       expect(h.client.connect).toHaveBeenCalledWith(expect.anything(), { timeout: 5000 })
     })
 
-    it('spawns with the safe default env plus the configured vars', async () => {
+    it('spawns with the login-shell PATH plus the safe default and configured vars', async () => {
       await mod.connectServer(stdioConfig)
       expect(lastTransport().opts).toEqual({
         command: 'npx',
         args: ['-y', 'server'],
-        env: { PATH: '/usr/bin', FOO: 'bar' }
+        // PATH comes from the resolved login shell, overriding the default env's.
+        env: { PATH: '/opt/homebrew/bin:/usr/bin', FOO: 'bar' }
       })
+    })
+
+    it('keeps the default env PATH when login-shell resolution yields nothing', async () => {
+      h.resolveShellPath.mockReturnValue(undefined)
+      await mod.connectServer(stdioConfig)
+      expect((lastTransport().opts?.env as Record<string, string>).PATH).toBe('/usr/bin')
+    })
+
+    it('lets a user-configured PATH override the resolved login-shell PATH', async () => {
+      await mod.connectServer({
+        ...stdioConfig,
+        transport: { type: 'stdio', command: 'npx', args: [], env: { PATH: '/custom/bin' } }
+      })
+      expect((lastTransport().opts?.env as Record<string, string>).PATH).toBe('/custom/bin')
     })
 
     it('connects over a streamable-http transport', async () => {
@@ -216,6 +301,34 @@ describe('mcpClient', () => {
     it('passes no opts to a streamable-http transport without headers', async () => {
       await mod.connectServer(streamableHttpNoHeadersConfig)
       expect(lastTransport().opts).toBeUndefined()
+    })
+
+    it('refuses to build a transport that ships a credential header over plain http', async () => {
+      // A config that bypassed the form (e.g. hand-edited config.json) must not
+      // leak a credential in cleartext — the guard fails the connect.
+      const insecure: ServerConfig = {
+        id: 'srv-insecure',
+        name: 'Insecure',
+        transport: {
+          type: 'streamable-http',
+          url: 'http://mcp.example.com/mcp',
+          headers: { Authorization: 'Bearer tok' }
+        }
+      }
+      await expect(mod.connectServer(insecure)).rejects.toThrow('cleartext over http')
+    })
+
+    it('allows a credential header over http to a loopback host', async () => {
+      const local: ServerConfig = {
+        id: 'srv-local',
+        name: 'Local',
+        transport: {
+          type: 'streamable-http',
+          url: 'http://127.0.0.1:8080/mcp',
+          headers: { Authorization: 'Bearer tok' }
+        }
+      }
+      await expect(mod.connectServer(local)).resolves.toBeDefined()
     })
   })
 
@@ -982,6 +1095,296 @@ describe('mcpClient', () => {
       h.client.close.mockClear()
       await mod.disconnectAll()
       expect(h.client.close).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('OAuth', () => {
+    // Collects auth events for the duration of one test.
+    function captureAuthEvents(): import('../shared/mcp.types').AuthEvent[] {
+      const events: import('../shared/mcp.types').AuthEvent[] = []
+      mod.onAuthEvent((e) => events.push(e))
+      return events
+    }
+
+    function unauthorized(): Error {
+      return new authMod.UnauthorizedError('401')
+    }
+
+    describe('transport construction', () => {
+      it('attaches an auth provider and forwards static headers', async () => {
+        const headered: ServerConfig = {
+          ...oauthConfig,
+          transport: {
+            type: 'streamable-http',
+            url: 'https://example.com/mcp',
+            auth: 'oauth',
+            oauth: {},
+            headers: { 'X-Trace': '1' }
+          }
+        }
+        await mod.connectServer(headered)
+        const opts = lastTransport().opts as Record<string, unknown>
+        expect(opts.authProvider).toBeDefined()
+        expect(opts.requestInit).toEqual({ headers: { 'X-Trace': '1' } })
+        expect(h.createOAuthProvider).toHaveBeenCalledWith(
+          'srv-oauth',
+          {},
+          'http://127.0.0.1:51234/callback',
+          expect.any(String)
+        )
+      })
+
+      it('blocks the flow when OS encryption is unavailable', async () => {
+        h.isSecretStorageAvailable.mockReturnValue(false)
+        const outcome = await mod.callTool(oauthConfig, 'echo', {})
+        expect(outcome.error).toMatch(/encryption/i)
+        expect(h.startLoopbackListener).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('redirect port persistence', () => {
+      it('persists a freshly bound ephemeral port', async () => {
+        await mod.connectServer(oauthConfig)
+        expect(h.startLoopbackListener).toHaveBeenCalledWith(expect.any(String), undefined)
+        expect(h.saveRedirectPort).toHaveBeenCalledWith('srv-oauth', 51234)
+      })
+
+      it('reuses the persisted port without rewriting it', async () => {
+        h.readOAuthState.mockResolvedValue({ redirect_port: 51234 })
+        await mod.connectServer(oauthConfig)
+        expect(h.startLoopbackListener).toHaveBeenCalledWith(expect.any(String), 51234)
+        expect(h.saveRedirectPort).not.toHaveBeenCalled()
+        expect(h.clearClientInformation).not.toHaveBeenCalled()
+      })
+
+      it('drops a DCR registration when the persisted port was taken (fallback)', async () => {
+        // Persisted port 40000, but the listener fell back to 51234 — the prior
+        // registration's redirect_uri now points at the wrong port, so it must be
+        // cleared to force re-registration against the new redirect_uri.
+        h.readOAuthState.mockResolvedValue({
+          redirect_port: 40000,
+          client_information: { client_id: 'registered' }
+        })
+        await mod.connectServer(oauthConfig)
+        expect(h.saveRedirectPort).toHaveBeenCalledWith('srv-oauth', 51234)
+        expect(h.clearClientInformation).toHaveBeenCalledWith('srv-oauth')
+      })
+
+      it('keeps a manual clientId registration intact on a port fallback', async () => {
+        // A configured clientId isn't a DCR registration, so there's nothing to
+        // invalidate even when the port changes.
+        const withClientId: ServerConfig = {
+          ...oauthConfig,
+          transport: {
+            type: 'streamable-http',
+            url: 'https://example.com/mcp',
+            auth: 'oauth',
+            oauth: { clientId: 'cid' }
+          }
+        }
+        h.readOAuthState.mockResolvedValue({
+          redirect_port: 40000,
+          client_information: { client_id: 'cid' }
+        })
+        await mod.connectServer(withClientId)
+        expect(h.saveRedirectPort).toHaveBeenCalledWith('srv-oauth', 51234)
+        expect(h.clearClientInformation).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('handshake', () => {
+      it('connects with valid tokens without opening the browser', async () => {
+        const events = captureAuthEvents()
+        await mod.connectServer(oauthConfig)
+        expect(h.client.connect).toHaveBeenCalledTimes(1)
+        expect(h.loopback.close).toHaveBeenCalledTimes(1)
+        expect(lastTransport().finishAuth).not.toHaveBeenCalled()
+        expect(events).toEqual([{ type: 'success', serverId: 'srv-oauth' }])
+      })
+
+      it('runs the 401 → browser → finishAuth → retry flow', async () => {
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValueOnce(unauthorized()).mockResolvedValue(undefined)
+        const events = captureAuthEvents()
+
+        await mod.connectServer(oauthConfig)
+
+        expect(lastTransport().finishAuth).toHaveBeenCalledWith('CODE')
+        expect(h.client.connect).toHaveBeenCalledTimes(2)
+        expect(events).toEqual([
+          { type: 'pending', serverId: 'srv-oauth' },
+          { type: 'success', serverId: 'srv-oauth' }
+        ])
+      })
+
+      it('reports an error when the retry is still unauthorized', async () => {
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValue(unauthorized())
+        const events = captureAuthEvents()
+
+        await expect(mod.connectServer(oauthConfig)).rejects.toThrow()
+        expect(events).toEqual([
+          { type: 'pending', serverId: 'srv-oauth' },
+          { type: 'error', serverId: 'srv-oauth', reason: 'Auth failed after code exchange' }
+        ])
+      })
+
+      it('reports an error and skips finishAuth when the callback never resolves', async () => {
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValueOnce(unauthorized()).mockResolvedValue(undefined)
+        const rejected = Promise.reject(new Error('Authorization timed out'))
+        rejected.catch(() => {})
+        h.loopback.result = rejected
+        const events = captureAuthEvents()
+
+        await expect(mod.connectServer(oauthConfig)).rejects.toThrow('timed out')
+        expect(lastTransport().finishAuth).not.toHaveBeenCalled()
+        expect(events).toEqual([
+          { type: 'pending', serverId: 'srv-oauth' },
+          { type: 'error', serverId: 'srv-oauth', reason: 'Authorization timed out' }
+        ])
+      })
+    })
+
+    describe('DCR failure heuristic', () => {
+      it('reports dcr_required when registration was the only path to credentials', async () => {
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValue(new Error('Incompatible auth server'))
+        const events = captureAuthEvents()
+
+        await expect(mod.connectServer(oauthConfig)).rejects.toThrow(
+          'Dynamic client registration is not supported'
+        )
+        expect(h.loopback.close).toHaveBeenCalled()
+        expect(events).toEqual([{ type: 'dcr_required', serverId: 'srv-oauth' }])
+      })
+
+      it('fetchCapabilities translates a DCR failure into an authRequired outcome', async () => {
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValue(new Error('Incompatible auth server'))
+        const events = captureAuthEvents()
+
+        // No throw — the dcr_required event (which drives the recovery modal) still
+        // fires, but the fetch resolves to a benign authRequired outcome so the
+        // renderer shows the sign-in affordance instead of a red error.
+        const result = await mod.fetchCapabilities(oauthConfig)
+        expect(result).toEqual({ tools: [], resources: [], prompts: [], authRequired: true })
+        expect(events).toEqual([{ type: 'dcr_required', serverId: 'srv-oauth' }])
+      })
+
+      it('treats a network error on first connect as retryable, not a DCR failure', async () => {
+        h.client.connect.mockReset()
+        // Offline / host unreachable: a connectivity error, not a 401 → never
+        // reached registration. It must surface its raw message and open no modal.
+        h.client.connect.mockRejectedValue(new Error('fetch failed'))
+        const events = captureAuthEvents()
+
+        await expect(mod.connectServer(oauthConfig)).rejects.toThrow('fetch failed')
+        expect(events).toEqual([{ type: 'error', serverId: 'srv-oauth', reason: 'fetch failed' }])
+      })
+
+      it('treats a network errno (cause chain) as retryable, not a DCR failure', async () => {
+        h.client.connect.mockReset()
+        const wrapped = new Error('connect error')
+        ;(wrapped as { cause?: unknown }).cause = Object.assign(new Error('getaddrinfo'), {
+          code: 'ENOTFOUND'
+        })
+        h.client.connect.mockRejectedValue(wrapped)
+        const events = captureAuthEvents()
+
+        await expect(mod.connectServer(oauthConfig)).rejects.toThrow('connect error')
+        expect(events).toEqual([{ type: 'error', serverId: 'srv-oauth', reason: 'connect error' }])
+      })
+
+      it('surfaces the raw error when a clientId is configured', async () => {
+        const withClientId: ServerConfig = {
+          ...oauthConfig,
+          transport: {
+            type: 'streamable-http',
+            url: 'https://example.com/mcp',
+            auth: 'oauth',
+            oauth: { clientId: 'cid' }
+          }
+        }
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValue(new Error('network down'))
+        const events = captureAuthEvents()
+
+        await expect(mod.connectServer(withClientId)).rejects.toThrow('network down')
+        expect(events).toEqual([{ type: 'error', serverId: 'srv-oauth', reason: 'network down' }])
+      })
+    })
+
+    describe('operation-path auth errors', () => {
+      it('flags re-auth and drops the session when a tool call is unauthorized', async () => {
+        await mod.connectServer(oauthConfig) // warm a valid session
+        h.client.callTool.mockRejectedValue(unauthorized())
+        const events = captureAuthEvents()
+
+        const outcome = await mod.callTool(oauthConfig, 'echo', {})
+
+        expect(outcome).toEqual({ authRequired: true })
+        expect(events).toContainEqual({ type: 'auth_required', serverId: 'srv-oauth' })
+        expect(h.client.close).toHaveBeenCalled() // session torn down
+      })
+
+      it('flags re-auth when a resource read is unauthorized', async () => {
+        await mod.connectServer(oauthConfig)
+        h.client.readResource.mockRejectedValue(unauthorized())
+        const outcome = await mod.readResource(oauthConfig, 'mem://x')
+        expect(outcome).toEqual({ authRequired: true })
+      })
+
+      it('flags re-auth when a prompt get is unauthorized', async () => {
+        await mod.connectServer(oauthConfig)
+        h.client.getPrompt.mockRejectedValue(unauthorized())
+        const outcome = await mod.getPrompt(oauthConfig, 'p', {})
+        expect(outcome).toEqual({ authRequired: true })
+      })
+    })
+
+    describe('authorizeServer', () => {
+      it('establishes the session and reuses it on a second call', async () => {
+        const events = captureAuthEvents()
+        await mod.authorizeServer(oauthConfig)
+        await mod.authorizeServer(oauthConfig)
+        expect(h.client.connect).toHaveBeenCalledTimes(1)
+        expect(events.filter((e) => e.type === 'success')).toHaveLength(1)
+      })
+
+      it('swallows a DCR failure (the dcr_required event drives the modal)', async () => {
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValue(new Error('Incompatible auth server'))
+        const events = captureAuthEvents()
+
+        // Resolves rather than rejecting — no raw rejection to log in main, no
+        // redundant toast in the renderer — while dcr_required still fires.
+        await expect(mod.authorizeServer(oauthConfig)).resolves.toBeUndefined()
+        expect(events).toEqual([{ type: 'dcr_required', serverId: 'srv-oauth' }])
+      })
+
+      it('still rejects on a non-DCR failure', async () => {
+        const withClientId: ServerConfig = {
+          ...oauthConfig,
+          transport: {
+            type: 'streamable-http',
+            url: 'https://example.com/mcp',
+            auth: 'oauth',
+            oauth: { clientId: 'cid' }
+          }
+        }
+        h.client.connect.mockReset()
+        h.client.connect.mockRejectedValue(new Error('network down'))
+        await expect(mod.authorizeServer(withClientId)).rejects.toThrow('network down')
+      })
+    })
+
+    it('onAuthEvent unsubscribe stops delivery', async () => {
+      const events: import('../shared/mcp.types').AuthEvent[] = []
+      const unsub = mod.onAuthEvent((e) => events.push(e))
+      unsub()
+      await mod.connectServer(oauthConfig)
+      expect(events).toHaveLength(0)
     })
   })
 })

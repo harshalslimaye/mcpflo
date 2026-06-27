@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   ServerConfig,
+  LoadedServer,
   MCPServer,
   CachedCapabilities,
   ToolCallOutcome,
@@ -10,7 +11,9 @@ import type {
   ElicitationRequestEvent,
   ElicitationResult,
   SamplingRequestEvent,
-  SamplingResult
+  SamplingResult,
+  ServerAuthState,
+  AuthEvent
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
 import type { ProtocolEvent } from '../lib/activityEvent'
@@ -205,9 +208,20 @@ interface ServerStore {
   fetchCapabilities: (id: string) => Promise<void>
   refreshCapabilities: (id: string) => Promise<void>
   disconnectServer: (id: string) => Promise<void>
+  // OAuth: start (or re-run) the sign-in flow for a server.
+  authorizeServer: (id: string) => Promise<void>
+  // OAuth: sign out — clears tokens in the main process.
+  clearAuth: (id: string) => Promise<void>
+  // Applies an OAuth flow event (pushed over mcp:authEvent via AuthHost) to the
+  // owning server's `auth` field. Status is never touched here.
+  handleAuthEvent: (event: AuthEvent) => void
 }
 
-function toRuntime(config: ServerConfig, cached?: CachedCapabilities): MCPServer {
+function toRuntime(config: LoadedServer, cached?: CachedCapabilities): MCPServer {
+  // OAuth servers begin idle (not signed in); auth events promote them as the
+  // flow progresses (and on restart, a silent token-based reconnect emits
+  // success). Non-OAuth servers carry no auth field at all.
+  const isOAuth = config.transport.type === 'streamable-http' && config.transport.auth === 'oauth'
   return {
     ...config,
     // A cached server starts green (capabilities available); an unfetched one grey.
@@ -215,7 +229,8 @@ function toRuntime(config: ServerConfig, cached?: CachedCapabilities): MCPServer
     tools: cached?.tools ?? [],
     resources: cached?.resources ?? [],
     prompts: cached?.prompts ?? [],
-    fetchedAt: cached?.fetchedAt
+    fetchedAt: cached?.fetchedAt,
+    ...(isOAuth ? { auth: { status: 'idle' as const } } : {})
   }
 }
 
@@ -306,23 +321,30 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })
 
     const at = Date.now()
-    let record: ToolCallRecord
+    // Null when the call ended in an auth-required outcome: that's not a failed
+    // invocation, so it flips the server to "needs sign-in" without leaving a
+    // blank, message-less error record behind in history.
+    let record: ToolCallRecord | null = null
     try {
       const taskSupport = server.tools.find((t) => t.name === toolName)?.execution?.taskSupport
       const outcome = await window.api.mcp.callTool(server, toolName, args, callId, taskSupport)
-      const { response, truncated } = capResponse(outcome.response)
-      record = {
-        id: crypto.randomUUID(),
-        serverId,
-        toolName,
-        args,
-        status: outcomeStatus(outcome),
-        response,
-        responseTruncated: truncated,
-        error: outcome.error,
-        notifications,
-        durationMs: Date.now() - at,
-        at
+      if (outcome.authRequired) {
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+      } else {
+        const { response, truncated } = capResponse(outcome.response)
+        record = {
+          id: crypto.randomUUID(),
+          serverId,
+          toolName,
+          args,
+          status: outcomeStatus(outcome),
+          response,
+          responseTruncated: truncated,
+          error: outcome.error,
+          notifications,
+          durationMs: Date.now() - at,
+          at
+        }
       }
     } catch (err) {
       record = {
@@ -344,7 +366,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       const live = { ...state.liveNotifications }
       delete live[key]
       return {
-        history: { ...state.history, [key]: pushCapped(state.history[key], record) },
+        history: record
+          ? { ...state.history, [key]: pushCapped(state.history[key], record) }
+          : state.history,
         liveNotifications: live
       }
     })
@@ -365,20 +389,25 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
     const key = resourceKey(serverId, uri)
     const at = Date.now()
-    let record: ResourceReadRecord
+    // Null on an auth-required outcome — see executeTool: no phantom error record.
+    let record: ResourceReadRecord | null = null
     try {
       const outcome = await window.api.mcp.readResource(server, uri)
-      const { response, truncated } = capResponse(outcome.response)
-      record = {
-        id: crypto.randomUUID(),
-        serverId,
-        uri,
-        status: outcomeStatus(outcome),
-        response,
-        responseTruncated: truncated,
-        error: outcome.error,
-        durationMs: Date.now() - at,
-        at
+      if (outcome.authRequired) {
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+      } else {
+        const { response, truncated } = capResponse(outcome.response)
+        record = {
+          id: crypto.randomUUID(),
+          serverId,
+          uri,
+          status: outcomeStatus(outcome),
+          response,
+          responseTruncated: truncated,
+          error: outcome.error,
+          durationMs: Date.now() - at,
+          at
+        }
       }
     } catch (err) {
       record = {
@@ -392,10 +421,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       }
     }
 
+    if (!record) return
+    const committed = record
     set((state) => ({
       resourceHistory: {
         ...state.resourceHistory,
-        [key]: pushCapped(state.resourceHistory[key], record)
+        [key]: pushCapped(state.resourceHistory[key], committed)
       }
     }))
   },
@@ -415,21 +446,26 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
     const key = promptKey(serverId, promptName)
     const at = Date.now()
-    let record: PromptGetRecord
+    // Null on an auth-required outcome — see executeTool: no phantom error record.
+    let record: PromptGetRecord | null = null
     try {
       const outcome = await window.api.mcp.getPrompt(server, promptName, args)
-      const { response, truncated } = capResponse(outcome.response)
-      record = {
-        id: crypto.randomUUID(),
-        serverId,
-        promptName,
-        args,
-        status: outcomeStatus(outcome),
-        response,
-        responseTruncated: truncated,
-        error: outcome.error,
-        durationMs: Date.now() - at,
-        at
+      if (outcome.authRequired) {
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+      } else {
+        const { response, truncated } = capResponse(outcome.response)
+        record = {
+          id: crypto.randomUUID(),
+          serverId,
+          promptName,
+          args,
+          status: outcomeStatus(outcome),
+          response,
+          responseTruncated: truncated,
+          error: outcome.error,
+          durationMs: Date.now() - at,
+          at
+        }
       }
     } catch (err) {
       record = {
@@ -444,10 +480,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       }
     }
 
+    if (!record) return
+    const committed = record
     set((state) => ({
       promptHistory: {
         ...state.promptHistory,
-        [key]: pushCapped(state.promptHistory[key], record)
+        [key]: pushCapped(state.promptHistory[key], committed)
       }
     }))
   },
@@ -605,7 +643,20 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })
 
     try {
-      const { tools, resources, prompts } = await window.api.mcp.fetchCapabilities(server)
+      const result = await window.api.mcp.fetchCapabilities(server)
+      // Sign-in needed (token expired/rejected, or DCR unsupported with no Client
+      // ID): the auth event already moved `auth` to auth_required — and, for DCR,
+      // opened the recovery modal. Drop back to a neutral disconnected state
+      // rather than a red error; signing in, not a failed fetch, is what's needed.
+      if (result.authRequired) {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === id ? { ...s, status: 'disconnected', error: undefined } : s
+          )
+        }))
+        return
+      }
+      const { tools, resources, prompts } = result
       const finishedAt = Date.now()
       set((state) => ({
         servers: state.servers.map((s) =>
@@ -669,6 +720,51 @@ export const useServerStore = create<ServerStore>((set, get) => ({
             }
           : s
       )
+    }))
+  },
+
+  authorizeServer: async (id) => {
+    const server = get().servers.find((s) => s.id === id)
+    if (!server) return
+    // Optimistic: show the in-progress affordance before the browser opens. The
+    // 'pending' auth event would set the same state once the 401 lands.
+    get().handleAuthEvent({ type: 'pending', serverId: id })
+    try {
+      await window.api.mcp.authorizeServer(server)
+    } catch (err) {
+      reportError(err)
+      // The flow rejected; if no 'error' event arrived to move us off
+      // 'authenticating', fall back to auth_required so the row isn't stuck.
+      get().handleAuthEvent({ type: 'auth_required', serverId: id })
+    }
+  },
+
+  clearAuth: async (id) => {
+    try {
+      // Main disconnects the session, clears tokens, then pushes an 'idle' auth
+      // event which resets the field.
+      await window.api.mcp.clearAuth(id)
+    } catch (err) {
+      reportError(err)
+    }
+  },
+
+  handleAuthEvent: (event) => {
+    // dcr_required carries no reason: it's the structured "registration
+    // unsupported" signal that AuthHost turns into the recovery modal, so the
+    // sign-in affordance shows no tooltip text (never "Sign in (DCR_FAILED)").
+    const next: ServerAuthState =
+      event.type === 'pending'
+        ? { status: 'authenticating' }
+        : event.type === 'success'
+          ? { status: 'authenticated' }
+          : event.type === 'idle'
+            ? { status: 'idle' }
+            : event.type === 'dcr_required'
+              ? { status: 'auth_required' }
+              : { status: 'auth_required', reason: event.reason }
+    set((state) => ({
+      servers: state.servers.map((s) => (s.id === event.serverId ? { ...s, auth: next } : s))
     }))
   }
 }))

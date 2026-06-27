@@ -5,11 +5,17 @@ import { useServerStore } from '../../stores/serverStore'
 
 const mockAddServer = vi.fn()
 const mockOnClose = vi.fn()
+const mockIsEncryptionAvailable = vi.fn<() => Promise<boolean>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   useServerStore.setState({ servers: [], selectedServerId: null, addServer: mockAddServer })
   mockAddServer.mockResolvedValue(undefined)
+  mockIsEncryptionAvailable.mockResolvedValue(true)
+  Object.defineProperty(window, 'api', {
+    configurable: true,
+    value: { mcp: { isEncryptionAvailable: mockIsEncryptionAvailable } }
+  })
 })
 
 function renderModal(): ReturnType<typeof render> {
@@ -96,6 +102,100 @@ describe('AddServerModal', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
     expect(await screen.findByText('URL is required')).toBeInTheDocument()
+  })
+
+  it('shows a url error for a malformed URL', async () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+      target: { value: 'not a url' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    expect(
+      await screen.findByText('Enter a valid URL, e.g. https://mcp.example.com/mcp')
+    ).toBeInTheDocument()
+    expect(mockAddServer).not.toHaveBeenCalled()
+  })
+
+  it('blocks submit on a duplicate header key', async () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+      target: { value: 'https://mcp.example.com/mcp' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Headers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    fireEvent.change(screen.getByLabelText('Header 1 key'), { target: { value: 'X-Team' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    // Same key, different case — HTTP headers are case-insensitive.
+    fireEvent.change(screen.getByLabelText('Header 2 key'), { target: { value: 'x-team' } })
+    expect(
+      await screen.findByText('Duplicate header "x-team" — keys must be unique.')
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    expect(mockAddServer).not.toHaveBeenCalled()
+  })
+
+  it('blocks a credential header over plain http to a remote host', async () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+      target: { value: 'http://mcp.example.com/mcp' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Headers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    fireEvent.change(screen.getByLabelText('Header 1 key'), { target: { value: 'Authorization' } })
+    expect(await screen.findByText(/cleartext over http/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    expect(mockAddServer).not.toHaveBeenCalled()
+  })
+
+  it('allows a credential header over http to localhost', async () => {
+    renderModal()
+    fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Local MCP' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+      target: { value: 'http://localhost:3000/mcp' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Headers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+    fireEvent.change(screen.getByLabelText('Header 1 key'), { target: { value: 'Authorization' } })
+    fireEvent.change(screen.getByLabelText('Header 1 value'), { target: { value: 'Bearer x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+  })
+
+  it('blocks submit on a duplicate env var name', async () => {
+    renderModal()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'My Server' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), { target: { value: 'npx' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Environment Variables' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Environment Variables 1 key'), {
+      target: { value: 'TOKEN' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Environment Variables 2 key'), {
+      target: { value: 'TOKEN' }
+    })
+    expect(
+      await screen.findByText('Duplicate variable "TOKEN" — names must be unique.')
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+    expect(mockAddServer).not.toHaveBeenCalled()
   })
 
   it('calls addServer with correct stdio config on submit', async () => {
@@ -462,6 +562,101 @@ describe('AddServerModal', () => {
         target: { value: JSON.stringify({ name: 'X', command: 'node' }) }
       })
       expect(screen.queryByText('Invalid JSON')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('OAuth', () => {
+    function selectHttp(): void {
+      fireEvent.click(screen.getByRole('button', { name: 'streamable-http' }))
+    }
+    function fillBasics(): void {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'OAuth MCP' }
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+        target: { value: 'https://oauth.example.com/mcp' }
+      })
+    }
+
+    it('offers an Auth selector defaulting to None, with OAuth fields hidden', () => {
+      renderModal()
+      selectHttp()
+      expect(screen.getByRole('button', { name: 'None' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'OAuth' })).toBeInTheDocument()
+      expect(screen.queryByRole('textbox', { name: 'Client ID' })).not.toBeInTheDocument()
+    })
+
+    it('reveals Client ID / Client Secret / Scope when OAuth is selected', () => {
+      renderModal()
+      selectHttp()
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      expect(screen.getByRole('textbox', { name: 'Client ID' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Client Secret')).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: 'Scope' })).toBeInTheDocument()
+    })
+
+    it('builds an oauth transport with the entered client config', async () => {
+      renderModal()
+      selectHttp()
+      fillBasics()
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      fireEvent.change(screen.getByRole('textbox', { name: 'Client ID' }), {
+        target: { value: 'cid' }
+      })
+      fireEvent.change(screen.getByLabelText('Client Secret'), { target: { value: 'sec' } })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Scope' }), {
+        target: { value: 'read:tools' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+      expect(mockAddServer.mock.calls[0][0].transport).toMatchObject({
+        type: 'streamable-http',
+        url: 'https://oauth.example.com/mcp',
+        auth: 'oauth',
+        oauth: { clientId: 'cid', clientSecret: 'sec', scope: 'read:tools' }
+      })
+    })
+
+    it('omits the oauth object entirely for pure DCR (no fields filled)', async () => {
+      renderModal()
+      selectHttp()
+      fillBasics()
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+      const transport = mockAddServer.mock.calls[0][0].transport
+      expect(transport.auth).toBe('oauth')
+      expect(transport.oauth).toBeUndefined()
+    })
+
+    it('blocks submit and shows an error when a custom Authorization header is set', () => {
+      renderModal()
+      selectHttp()
+      fillBasics()
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Headers' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add header' }))
+      fireEvent.change(screen.getByLabelText('Header 1 key'), {
+        target: { value: 'Authorization' }
+      })
+      expect(
+        screen.getByText('Authorization is managed by OAuth — remove it from headers.')
+      ).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      expect(mockAddServer).not.toHaveBeenCalled()
+    })
+
+    it('blocks OAuth mode when OS encryption is unavailable', async () => {
+      mockIsEncryptionAvailable.mockResolvedValue(false)
+      renderModal()
+      selectHttp()
+      fillBasics()
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      expect(
+        await screen.findByText(/OAuth tokens require OS-level encryption/i)
+      ).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      expect(mockAddServer).not.toHaveBeenCalled()
     })
   })
 })

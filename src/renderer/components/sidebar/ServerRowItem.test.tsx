@@ -22,6 +22,16 @@ describe('ServerRowItem', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
   })
 
+  it('shows a credentials-unavailable badge when flagged', () => {
+    render(<ServerRowItem {...defaultProps} credentialsUnavailable />)
+    expect(screen.getByLabelText('Credentials unavailable')).toBeInTheDocument()
+  })
+
+  it('omits the credentials-unavailable badge by default', () => {
+    render(<ServerRowItem {...defaultProps} />)
+    expect(screen.queryByLabelText('Credentials unavailable')).not.toBeInTheDocument()
+  })
+
   it('does not render count when omitted', () => {
     const { container } = render(<ServerRowItem {...defaultProps} />)
     expect(container.querySelectorAll('span.ml-auto')).toHaveLength(0)
@@ -221,5 +231,80 @@ describe('ServerRowItem', () => {
     expect(onDisconnect).not.toHaveBeenCalled()
     expect(onRefresh).not.toHaveBeenCalled()
     expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  describe('OAuth affordance', () => {
+    it('renders no auth control when there is no auth state', () => {
+      render(<ServerRowItem {...defaultProps} onAuthorize={vi.fn()} onClearAuth={vi.fn()} />)
+      expect(screen.queryByLabelText('Sign in')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Sign out')).not.toBeInTheDocument()
+    })
+
+    it.each(['idle', 'auth_required'] as const)('shows Sign in when auth is %s', (status) => {
+      render(<ServerRowItem {...defaultProps} auth={{ status }} onAuthorize={vi.fn()} />)
+      expect(screen.getByLabelText('Sign in')).toBeInTheDocument()
+    })
+
+    it('surfaces the auth_required reason in the Sign in title', () => {
+      render(
+        <ServerRowItem
+          {...defaultProps}
+          auth={{ status: 'auth_required', reason: 'token expired' }}
+          onAuthorize={vi.fn()}
+        />
+      )
+      expect(screen.getByTitle('Sign in (token expired)')).toBeInTheDocument()
+    })
+
+    it('calls onAuthorize (and not onToggle) when Sign in is clicked', () => {
+      const onToggle = vi.fn()
+      const onAuthorize = vi.fn()
+      render(
+        <ServerRowItem
+          {...defaultProps}
+          auth={{ status: 'idle' }}
+          onToggle={onToggle}
+          onAuthorize={onAuthorize}
+        />
+      )
+      fireEvent.click(screen.getByLabelText('Sign in'))
+      expect(onAuthorize).toHaveBeenCalledOnce()
+      expect(onToggle).not.toHaveBeenCalled()
+    })
+
+    it('shows a disabled-looking signing-in indicator while authenticating', () => {
+      render(<ServerRowItem {...defaultProps} auth={{ status: 'authenticating' }} />)
+      expect(screen.getByText('Signing in…')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Sign in')).not.toBeInTheDocument()
+    })
+
+    it('shows Sign out when authenticated and calls onClearAuth', () => {
+      const onToggle = vi.fn()
+      const onClearAuth = vi.fn()
+      render(
+        <ServerRowItem
+          {...defaultProps}
+          auth={{ status: 'authenticated' }}
+          onToggle={onToggle}
+          onClearAuth={onClearAuth}
+        />
+      )
+      fireEvent.click(screen.getByLabelText('Sign out'))
+      expect(onClearAuth).toHaveBeenCalledOnce()
+      expect(onToggle).not.toHaveBeenCalled()
+    })
+
+    it('keeps the auth affordance independent of the status dot', () => {
+      const { container } = render(
+        <ServerRowItem
+          {...defaultProps}
+          status="connected"
+          auth={{ status: 'idle' }}
+          onAuthorize={vi.fn()}
+        />
+      )
+      expect(screen.getByLabelText('Sign in')).toBeInTheDocument()
+      expect(container.querySelector('[title="connected"]')).toBeInTheDocument()
+    })
   })
 })

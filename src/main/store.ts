@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { chmodSync } from 'node:fs'
 import Store from 'electron-store'
-import type { ServerConfig } from '../shared/mcp.types'
+import type { ServerConfig, LoadedServer } from '../shared/mcp.types'
 import { encryptSecret, decryptSecret } from './secrets'
 
 // What we actually persist for a server: the public config with its secret
@@ -39,12 +39,23 @@ function persist(servers: StoredServer[]): void {
   tightenPermissions()
 }
 
-// The transport fields that carry credentials, by transport type.
-function extractSecrets(config: ServerConfig): { env?: unknown; headers?: unknown } {
+// The transport fields that carry credentials, by transport type. Note: only
+// the OAuth client *secret* is sensitive — clientId and scope are not, so they
+// stay in cleartext config.json. Issued tokens live in oauth.json, not here.
+interface TransportSecrets {
+  env?: unknown
+  headers?: unknown
+  oauthClientSecret?: string
+}
+
+function extractSecrets(config: ServerConfig): TransportSecrets {
   const t = config.transport
-  const secrets: { env?: unknown; headers?: unknown } = {}
+  const secrets: TransportSecrets = {}
   if (t.type === 'stdio' && t.env) secrets.env = t.env
   if (t.type === 'streamable-http' && t.headers) secrets.headers = t.headers
+  if (t.type === 'streamable-http' && t.oauth?.clientSecret) {
+    secrets.oauthClientSecret = t.oauth.clientSecret
+  }
   return secrets
 }
 
@@ -58,6 +69,15 @@ function toStored(config: ServerConfig): StoredServer {
   const transport = { ...config.transport }
   delete (transport as { env?: unknown }).env
   delete (transport as { headers?: unknown }).headers
+  // Strip the OAuth client secret out of transport.oauth, keeping the
+  // non-secret oauth fields (clientId, scope) in cleartext. Drop oauth entirely
+  // if the secret was its only field.
+  if (transport.type === 'streamable-http' && transport.oauth?.clientSecret) {
+    const oauth = { ...transport.oauth }
+    delete oauth.clientSecret
+    if (Object.keys(oauth).length > 0) transport.oauth = oauth
+    else delete (transport as { oauth?: unknown }).oauth
+  }
 
   return {
     ...config,
@@ -67,18 +87,29 @@ function toStored(config: ServerConfig): StoredServer {
 }
 
 // Reverses toStored: decrypts the secret blob (if any) and merges the fields
-// back into the transport, yielding the full runtime config.
-function fromStored(stored: StoredServer): ServerConfig {
+// back into the transport, yielding the full runtime config. A decrypt failure
+// is contained per entry — the server is returned with its public config and
+// flagged `credentialsUnavailable`, so one unreadable secret (e.g. config copied
+// from another machine) can't abort loading of the whole list.
+function fromStored(stored: StoredServer): LoadedServer {
   const { secrets, ...config } = stored
   if (!secrets) return config
 
-  const payload = JSON.parse(decryptSecret(secrets)) as { env?: unknown; headers?: unknown }
+  let payload: TransportSecrets
+  try {
+    payload = JSON.parse(decryptSecret(secrets)) as TransportSecrets
+  } catch {
+    return { ...config, credentialsUnavailable: true }
+  }
   const transport = { ...config.transport }
   if (payload.env && transport.type === 'stdio') {
     ;(transport as { env?: unknown }).env = payload.env
   }
   if (payload.headers && transport.type === 'streamable-http') {
     ;(transport as { headers?: unknown }).headers = payload.headers
+  }
+  if (payload.oauthClientSecret && transport.type === 'streamable-http') {
+    transport.oauth = { ...transport.oauth, clientSecret: payload.oauthClientSecret }
   }
   return { ...config, transport }
 }
@@ -109,7 +140,7 @@ export function seedDefaultServers(): void {
   store.set('seeded', true)
 }
 
-export function getServers(): ServerConfig[] {
+export function getServers(): LoadedServer[] {
   return store.get('servers').map(fromStored)
 }
 
@@ -126,8 +157,21 @@ export function updateServer(id: string, patch: Partial<Omit<ServerConfig, 'id'>
   const index = servers.findIndex((s) => s.id === id)
   if (index === -1) throw new Error(`Server "${id}" not found`)
   // Merge against the decrypted config so a patched transport re-encrypts cleanly.
-  const merged = { ...fromStored(servers[index]), ...patch } as ServerConfig
-  persist(servers.map((s, i) => (i === index ? toStored(merged) : s)))
+  // Drop the read-time credentialsUnavailable flag so it never round-trips to disk.
+  const { credentialsUnavailable, ...current } = fromStored(servers[index])
+  const merged = { ...current, ...patch } as ServerConfig
+  const restored = toStored(merged)
+  // If the original secret couldn't be decrypted, we can't faithfully re-encrypt
+  // it. Preserve the original blob unless this patch actually supplied a fresh
+  // credential — which toStored would have re-encrypted into restored.secrets,
+  // superseding the unreadable one. Keying off whether new secrets were provided
+  // (rather than whether the patch merely touched the transport) means a transport
+  // edit that doesn't re-enter the credential — e.g. a URL change — no longer
+  // silently destroys the still-unreadable credential.
+  if (credentialsUnavailable && servers[index].secrets && !restored.secrets) {
+    restored.secrets = servers[index].secrets
+  }
+  persist(servers.map((s, i) => (i === index ? restored : s)))
 }
 
 export function removeServer(id: string): void {
