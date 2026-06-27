@@ -8,7 +8,9 @@ import type {
   TransportConfig,
   StdioTransportConfig,
   StreamableHttpTransportConfig,
-  ServerStatus
+  ServerStatus,
+  ServerAuthState,
+  AuthEvent
 } from './mcp.types'
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -111,6 +113,30 @@ describe('StreamableHttpTransportConfig', () => {
       url: 'https://example.com'
     }
     expect(minimal.headers).toBeUndefined()
+    expect(minimal.auth).toBeUndefined()
+    expect(minimal.oauth).toBeUndefined()
+  })
+
+  it('accepts an oauth auth mode with optional client config', () => {
+    const oauth: StreamableHttpTransportConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      auth: 'oauth',
+      oauth: { clientId: 'abc', clientSecret: 'shh', scope: 'read:tools' }
+    }
+    expect(oauth.auth).toBe('oauth')
+    expect(oauth.oauth?.clientId).toBe('abc')
+    expect(oauth.oauth?.scope).toBe('read:tools')
+  })
+
+  it('accepts oauth mode relying purely on DCR (no client config)', () => {
+    const oauth: StreamableHttpTransportConfig = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      auth: 'oauth'
+    }
+    expect(oauth.auth).toBe('oauth')
+    expect(oauth.oauth).toBeUndefined()
   })
 })
 
@@ -132,6 +158,48 @@ describe('ServerStatus', () => {
   it('accepts all valid statuses', () => {
     const statuses: ServerStatus[] = ['connected', 'connecting', 'disconnected', 'error']
     expect(statuses).toHaveLength(4)
+  })
+})
+
+// ── ServerAuthState ───────────────────────────────────────────────────────────
+
+describe('ServerAuthState', () => {
+  it('accepts each auth status', () => {
+    const states: ServerAuthState[] = [
+      { status: 'idle' },
+      { status: 'authenticating' },
+      { status: 'authenticated' },
+      { status: 'auth_required' }
+    ]
+    expect(states).toHaveLength(4)
+  })
+
+  it('carries an optional reason on auth_required', () => {
+    const s: ServerAuthState = { status: 'auth_required', reason: 'token expired' }
+    if (s.status === 'auth_required') expect(s.reason).toBe('token expired')
+  })
+
+  it('attaches to an MCPServer as an optional runtime field', () => {
+    const authed: MCPServer = { ...server, auth: { status: 'authenticated' } }
+    expect(authed.auth?.status).toBe('authenticated')
+    expect(server.auth).toBeUndefined()
+  })
+})
+
+// ── AuthEvent ─────────────────────────────────────────────────────────────────
+
+describe('AuthEvent', () => {
+  it('models each push variant and narrows on type', () => {
+    const events: AuthEvent[] = [
+      { type: 'pending', serverId: 's1' },
+      { type: 'success', serverId: 's1' },
+      { type: 'error', serverId: 's1', reason: 'DCR_FAILED' },
+      { type: 'idle', serverId: 's1' },
+      { type: 'auth_required', serverId: 's1', reason: 'expired' }
+    ]
+    const err = events.find((e) => e.type === 'error')
+    if (err?.type === 'error') expect(err.reason).toBe('DCR_FAILED')
+    expect(events).toHaveLength(5)
   })
 })
 

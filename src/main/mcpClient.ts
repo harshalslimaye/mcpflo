@@ -4,6 +4,7 @@ import {
   getDefaultEnvironment
 } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   ElicitRequestSchema,
@@ -15,6 +16,8 @@ import {
   type Result
 } from '@modelcontextprotocol/sdk/types.js'
 import { InMemoryTaskStore } from '@modelcontextprotocol/sdk/experimental/tasks'
+import { EventEmitter } from 'node:events'
+import { randomUUID } from 'node:crypto'
 import type {
   ServerConfig,
   Tool,
@@ -28,8 +31,19 @@ import type {
   ElicitationParams,
   ElicitationResult,
   SamplingParams,
-  SamplingResult
+  SamplingResult,
+  AuthEvent
 } from '../shared/mcp.types'
+import { isSecretStorageAvailable } from './secrets'
+import {
+  readOAuthState,
+  saveRedirectPort,
+  clearClientInformation,
+  EncryptionUnavailableError
+} from './oauthStore'
+import { createOAuthProvider, startLoopbackListener, type LoopbackListener } from './oauthProvider'
+import { resolveShellPath } from './shellPath'
+import { credentialOverHttp } from '../shared/transportSafety'
 
 // Answers an elicitation/create request from the server. `signal` aborts when
 // the server cancels the request (e.g. its own elicitation timeout fires).
@@ -49,6 +63,22 @@ export interface ConnectResult {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
+  // Set (with empty listings) when the connect couldn't proceed because the
+  // server needs (re-)authorization — see the shared ConnectResult for details.
+  authRequired?: boolean
+}
+
+// Thrown by the OAuth handshake when the server doesn't support Dynamic Client
+// Registration and no manual Client ID is configured — registration is then the
+// only route to credentials, so there's nothing to retry without one. Distinct
+// from the SDK's UnauthorizedError so fetchCapabilities can translate it into a
+// benign authRequired outcome (the dcr_required auth event, emitted alongside,
+// drives the recovery modal).
+class DcrRegistrationRequiredError extends Error {
+  constructor() {
+    super('Dynamic client registration is not supported by this server')
+    this.name = 'DcrRegistrationRequiredError'
+  }
 }
 
 // The context of the single in-flight tool call on a session. Calls are
@@ -82,6 +112,21 @@ interface Session {
 // racing to create duplicate processes.
 const sessions = new Map<string, Promise<Session>>()
 
+// OAuth flow progress is broadcast over a module-level emitter rather than the
+// per-call `active` slot used by elicitation/sampling: auth events aren't tied
+// to any tool call. ipc.ts subscribes via `onAuthEvent` and forwards to the
+// renderer (with a sender-lifecycle guard) over the `mcp:authEvent` channel.
+const authEmitter = new EventEmitter()
+
+function emitAuth(event: AuthEvent): void {
+  authEmitter.emit('event', event)
+}
+
+export function onAuthEvent(listener: (event: AuthEvent) => void): () => void {
+  authEmitter.on('event', listener)
+  return () => authEmitter.off('event', listener)
+}
+
 function isResponseId(value: unknown): value is string | number {
   return typeof value === 'string' || typeof value === 'number'
 }
@@ -114,31 +159,218 @@ function getSession(config: ServerConfig): Promise<Session> {
 function createTransport(config: ServerConfig): Transport {
   const t = config.transport
   switch (t.type) {
-    case 'stdio':
+    case 'stdio': {
+      // Inherit only a safe baseline (PATH, HOME, …) rather than the full host
+      // environment, so secrets in process.env never leak into spawned servers.
+      // Override PATH with the login-shell value so binaries like npx resolve,
+      // then layer the user's explicitly configured env vars on top (so a
+      // user-set PATH still wins).
+      const env: Record<string, string> = { ...getDefaultEnvironment() }
+      const shellPath = resolveShellPath()
+      if (shellPath) env.PATH = shellPath
       return new StdioClientTransport({
         command: t.command,
         args: t.args,
-        // Inherit only a safe baseline (PATH, HOME, …) rather than the full host
-        // environment, so secrets in process.env never leak into spawned servers.
-        // The user's explicitly configured env vars are layered on top.
-        env: {
-          ...getDefaultEnvironment(),
-          ...t.env
-        }
+        env: { ...env, ...t.env }
       })
-    case 'streamable-http':
+    }
+    case 'streamable-http': {
       // requestInit.headers applies to every request (POST + the fetch-based GET
       // stream), so an Authorization header covers token-authed servers.
+      const url = new URL(t.url)
+      // Enforce the cleartext-credential guardrail here, not only in the UI, so a
+      // config that bypassed the form (hand-edited config.json, a future import)
+      // can't leak a credential header over plain http to a non-loopback host.
+      assertCredentialSafe(url, t.headers)
       return new StreamableHTTPClientTransport(
-        new URL(t.url),
+        url,
         t.headers ? { requestInit: { headers: t.headers } } : undefined
       )
+    }
   }
 }
 
-async function createSession(config: ServerConfig): Promise<Session> {
-  const transport = createTransport(config)
+// Refuses to build a transport that would send a credential header in cleartext
+// over non-loopback http. Throws (failing the connect) rather than silently
+// stripping the header — a misconfigured-but-secret-bearing server should surface
+// loudly, not connect unauthenticated.
+function assertCredentialSafe(url: URL, headers?: Record<string, string>): void {
+  if (!headers) return
+  const unsafe = credentialOverHttp(url, Object.keys(headers))
+  if (unsafe) throw new Error(unsafe)
+}
 
+// Builds the OAuth-mode streamable-http transport. Binds the loopback listener
+// up front (the bound port goes into the redirect_uri), reusing the persisted
+// port so the DCR-registered redirect_uri stays stable across restarts; a fresh
+// ephemeral port (stale persisted port taken) is written back. The returned
+// `loopback` is awaited only if connect throws UnauthorizedError.
+async function buildOAuthTransport(
+  config: ServerConfig
+): Promise<{ transport: StreamableHTTPClientTransport; loopback: LoopbackListener }> {
+  const t = config.transport
+  if (t.type !== 'streamable-http') {
+    throw new Error('OAuth is only supported on streamable-http transports')
+  }
+  // No silent in-memory fallback: OAuth tokens must be encryptable at rest.
+  if (!isSecretStorageAvailable()) throw new EncryptionUnavailableError()
+
+  const url = new URL(t.url)
+  // Static headers still ride alongside OAuth (Authorization is blocked in the UI,
+  // so it can't collide with the bearer token the provider injects) — but they're
+  // subject to the same cleartext-credential guardrail as a plain http transport.
+  assertCredentialSafe(url, t.headers)
+
+  const saved = await readOAuthState(config.id)
+  const oauthState = randomUUID()
+  const loopback = await startLoopbackListener(oauthState, saved?.redirect_port)
+  if (loopback.port !== saved?.redirect_port) {
+    await saveRedirectPort(config.id, loopback.port)
+    // The persisted port was taken and the listener fell back to a fresh one, so
+    // the redirect_uri just changed. A prior DCR registration still carries the
+    // old port's redirect_uri and the auth server would reject the mismatch —
+    // drop that registration so the SDK re-registers against the new redirect_uri.
+    // Manual clientId configs have no DCR registration to invalidate.
+    if (saved?.client_information && !t.oauth?.clientId) {
+      await clearClientInformation(config.id)
+    }
+  }
+
+  const redirectUrl = `http://127.0.0.1:${loopback.port}/callback`
+  const provider = createOAuthProvider(config.id, t.oauth ?? {}, redirectUrl, oauthState)
+  const transport = new StreamableHTTPClientTransport(url, {
+    authProvider: provider,
+    requestInit: { headers: t.headers ?? {} }
+  })
+  return { transport, loopback }
+}
+
+// Drives the 401 → browser → finishAuth → retry handshake around connect. On the
+// token-valid path no browser opens: connect succeeds and the listener is torn
+// down without ever being awaited.
+async function authorizeAndConnect(
+  config: ServerConfig,
+  client: Client,
+  transport: StreamableHTTPClientTransport,
+  loopback: LoopbackListener
+): Promise<void> {
+  const serverId = config.id
+  const timeout = config.overrides?.timeoutMs
+  try {
+    await client.connect(transport, { timeout })
+    loopback.close()
+    emitAuth({ type: 'success', serverId })
+    return
+  } catch (err) {
+    if (!(err instanceof UnauthorizedError)) {
+      loopback.close()
+      // DCR failures throw a typed error so fetchCapabilities can present them as
+      // an authRequired outcome rather than a hard connect error; everything else
+      // propagates raw.
+      if (await emitConnectFailure(config, err)) throw new DcrRegistrationRequiredError()
+      throw err
+    }
+  }
+
+  // 401: the SDK already opened the browser via redirectToAuthorization during
+  // the failed connect. Wait for the loopback redirect, exchange the code, retry.
+  emitAuth({ type: 'pending', serverId })
+  let code: string
+  try {
+    ;({ code } = await loopback.result)
+  } catch (err) {
+    emitAuth({ type: 'error', serverId, reason: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
+  await transport.finishAuth(code)
+  try {
+    await client.connect(transport, { timeout })
+  } catch (err) {
+    emitAuth({ type: 'error', serverId, reason: 'Auth failed after code exchange' })
+    throw err
+  }
+  emitAuth({ type: 'success', serverId })
+}
+
+// Connectivity errno codes (offline, DNS, refused, TLS handshake) raised by
+// fetch/undici. A connect failure carrying one of these never reached the point
+// of attempting registration, so it must not be misread as a DCR failure.
+const NETWORK_ERROR_CODES = new Set([
+  'ENOTFOUND',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EPIPE',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET'
+])
+
+// True when a connect failure is a transport/connectivity problem rather than a
+// server-side auth outcome. Walks the error's `cause` chain (fetch wraps the
+// real socket error) checking both the errno code and the message, so a
+// retryable network error is never mistaken for "registration unsupported".
+function isNetworkError(err: unknown): boolean {
+  for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
+    const code = (e as { code?: unknown }).code
+    if (typeof code === 'string' && NETWORK_ERROR_CODES.has(code)) return true
+    if (
+      /fetch failed|network|getaddrinfo|socket hang up|timed out|tls|certificate/i.test(e.message)
+    )
+      return true
+  }
+  return false
+}
+
+// Classifies a non-UnauthorizedError connect failure and emits the matching auth
+// event. DCR is the only route to credentials when there's no configured clientId
+// and nothing registered yet — so a failure under those preconditions is treated
+// as "registration unsupported" (emit dcr_required, return true so the caller
+// throws the typed DCR error and the recovery modal opens) *unless* it's a
+// recognizable network error, which is retryable and surfaces its raw message.
+async function emitConnectFailure(config: ServerConfig, err: unknown): Promise<boolean> {
+  const t = config.transport
+  const reason = err instanceof Error ? err.message : String(err)
+  const hasClientId = t.type === 'streamable-http' && !!t.oauth?.clientId
+  if (!hasClientId && !isNetworkError(err)) {
+    const saved = await readOAuthState(config.id)
+    if (!saved?.client_information) {
+      emitAuth({ type: 'dcr_required', serverId: config.id })
+      return true
+    }
+  }
+  emitAuth({ type: 'error', serverId: config.id, reason })
+  return false
+}
+
+// Triggers (or re-triggers) the OAuth flow by establishing the server's session.
+// Re-auth relies on the stale session having been dropped first (clearAuth and
+// the operation-path auth handler both do this), so concurrency stays bounded by
+// the sessions map: getSession shares one in-flight connect per server.
+export async function authorizeServer(config: ServerConfig): Promise<void> {
+  try {
+    await getSession(config)
+  } catch (err) {
+    // A DCR failure already emitted dcr_required, which opens the recovery modal —
+    // that's the handled outcome, not a flow error. Swallow it so the IPC handler
+    // doesn't log a raw rejection and the renderer doesn't show a redundant toast
+    // on top of the modal. Every other failure path emits its own auth 'error'
+    // event and is re-thrown for the renderer's safety-net catch.
+    if (err instanceof DcrRegistrationRequiredError) return
+    throw err
+  }
+}
+
+// Tears down a session left unusable by an UnauthorizedError mid-operation and
+// flips the renderer into auth_required so the re-auth affordance appears.
+function handleOperationAuthError(serverId: string): void {
+  void disconnectServer(serverId)
+  emitAuth({ type: 'auth_required', serverId })
+}
+
+async function createSession(config: ServerConfig): Promise<Session> {
   const client = new Client(
     { name: 'mcpflo', version: '1.0.0' },
     {
@@ -161,7 +393,20 @@ async function createSession(config: ServerConfig): Promise<Session> {
       taskStore: new InMemoryTaskStore()
     }
   )
-  await client.connect(transport, { timeout: config.overrides?.timeoutMs })
+
+  // OAuth-mode streamable-http routes through the auth-aware handshake; every
+  // other transport connects directly. createTransport stays synchronous — only
+  // the OAuth branch needs async setup (loopback bind).
+  const t = config.transport
+  let transport: Transport
+  if (t.type === 'streamable-http' && t.auth === 'oauth') {
+    const built = await buildOAuthTransport(config)
+    transport = built.transport
+    await authorizeAndConnect(config, client, built.transport, built.loopback)
+  } else {
+    transport = createTransport(config)
+    await client.connect(transport, { timeout: config.overrides?.timeoutMs })
+  }
 
   const session: Session = { client, transport, active: null, queue: Promise.resolve() }
 
@@ -403,13 +648,25 @@ export async function callTool(
   try {
     session = await getSession(config)
   } catch (err) {
+    // The initial OAuth handshake failed (auth events were already emitted by
+    // authorizeAndConnect); tell the renderer to show the re-auth affordance.
+    if (err instanceof UnauthorizedError) return { authRequired: true }
     // A pre-response failure (e.g. spawn/connection error, unsupported
     // transport) never produced a JSON-RPC envelope.
     return { error: err instanceof Error ? err.message : String(err) }
   }
 
   const run = session.queue.then(() =>
-    runToolCall(session, toolName, args, onNotification, onElicitation, onSampling, taskSupport)
+    runToolCall(
+      config,
+      session,
+      toolName,
+      args,
+      onNotification,
+      onElicitation,
+      onSampling,
+      taskSupport
+    )
   )
   // Keep the serialization chain alive regardless of this call's outcome so a
   // failure here doesn't wedge later calls. `run` itself never rejects.
@@ -421,6 +678,7 @@ export async function callTool(
 }
 
 async function runToolCall(
+  config: ServerConfig,
   session: Session,
   toolName: string,
   args: Record<string, unknown>,
@@ -455,6 +713,12 @@ async function runToolCall(
     // A JSON-RPC error still arrives as a response frame (captured by the tap);
     // only a transport-level failure has no envelope.
     if (call.response !== undefined) return { response: call.response }
+    // A token expired mid-session and refresh failed: drop the dead session and
+    // flag re-auth rather than surfacing a raw transport error.
+    if (err instanceof UnauthorizedError) {
+      handleOperationAuthError(config.id)
+      return { authRequired: true }
+    }
     return { error: err instanceof Error ? err.message : String(err) }
   } finally {
     session.active = null
@@ -542,6 +806,7 @@ export async function readResource(
   try {
     session = await getSession(config)
   } catch (err) {
+    if (err instanceof UnauthorizedError) return { authRequired: true }
     // A pre-response failure (spawn/connection error, unsupported transport)
     // never produced a JSON-RPC envelope.
     return { error: err instanceof Error ? err.message : String(err) }
@@ -551,6 +816,10 @@ export async function readResource(
     const result = await session.client.readResource({ uri })
     return { response: { jsonrpc: '2.0', result } }
   } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      handleOperationAuthError(config.id)
+      return { authRequired: true }
+    }
     return { error: err instanceof Error ? err.message : String(err) }
   }
 }
@@ -570,6 +839,7 @@ export async function getPrompt(
   try {
     session = await getSession(config)
   } catch (err) {
+    if (err instanceof UnauthorizedError) return { authRequired: true }
     // A pre-response failure (spawn/connection error, unsupported transport)
     // never produced a JSON-RPC envelope.
     return { error: err instanceof Error ? err.message : String(err) }
@@ -579,6 +849,10 @@ export async function getPrompt(
     const result = await session.client.getPrompt({ name, arguments: args })
     return { response: { jsonrpc: '2.0', result } }
   } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      handleOperationAuthError(config.id)
+      return { authRequired: true }
+    }
     return { error: err instanceof Error ? err.message : String(err) }
   }
 }
@@ -586,7 +860,23 @@ export async function getPrompt(
 // Fetches a snapshot of a server's capabilities, warming the connection so the
 // first tool call on it is instant.
 export async function fetchCapabilities(config: ServerConfig): Promise<ConnectResult> {
-  return connectServer(config)
+  try {
+    return await connectServer(config)
+  } catch (err) {
+    // Auth-required conditions aren't capability failures — the auth event has
+    // already fired (UnauthorizedError below also drops the dead session; the DCR
+    // path emitted dcr_required, which opens the recovery modal). Surface them as a
+    // benign authRequired outcome so the renderer shows the sign-in affordance
+    // instead of a red error, and the IPC handler doesn't log a raw rejection.
+    if (err instanceof UnauthorizedError) {
+      handleOperationAuthError(config.id)
+      return { tools: [], resources: [], prompts: [], authRequired: true }
+    }
+    if (err instanceof DcrRegistrationRequiredError) {
+      return { tools: [], resources: [], prompts: [], authRequired: true }
+    }
+    throw err
+  }
 }
 
 export async function disconnectServer(id: string): Promise<void> {

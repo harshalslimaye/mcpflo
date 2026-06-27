@@ -26,12 +26,18 @@ vi.mock('electron-store', () => {
 })
 
 // Mock Electron's safeStorage with a reversible stand-in so secrets round-trip
-// in tests while staying obviously non-plaintext (prefixed + base64).
+// in tests while staying obviously non-plaintext (prefixed + base64). A blob that
+// decodes to the CORRUPT_BLOB marker throws on decrypt, simulating ciphertext
+// from another machine/OS user that safeStorage can't open here.
+const CORRUPT_BLOB = Buffer.from('corrupt').toString('base64')
 vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => true,
     encryptString: (s: string) => Buffer.from(`enc:${s}`),
-    decryptString: (b: Buffer) => b.toString().replace(/^enc:/, '')
+    decryptString: (b: Buffer) => {
+      if (b.toString() === 'corrupt') throw new Error('cannot decrypt blob from another machine')
+      return b.toString().replace(/^enc:/, '')
+    }
   }
 }))
 
@@ -65,6 +71,28 @@ const httpWithSecret: ServerConfig = {
     type: 'streamable-http',
     url: 'https://mcp.example.com/mcp',
     headers: { Authorization: 'Bearer tok_supersecret' }
+  }
+}
+
+const oauthWithSecret: ServerConfig = {
+  id: 'oauth-secret',
+  name: 'OAuth Secret',
+  transport: {
+    type: 'streamable-http',
+    url: 'https://oauth.example.com/mcp',
+    auth: 'oauth',
+    oauth: { clientId: 'public-client-id', clientSecret: 'oauth_supersecret', scope: 'read:tools' }
+  }
+}
+
+const oauthSecretOnly: ServerConfig = {
+  id: 'oauth-secret-only',
+  name: 'OAuth Secret Only',
+  transport: {
+    type: 'streamable-http',
+    url: 'https://oauth.example.com/mcp',
+    auth: 'oauth',
+    oauth: { clientSecret: 'oauth_lonely_secret' }
   }
 }
 
@@ -162,6 +190,133 @@ describe('store', () => {
       })
       expect(store.get('servers')[0].secrets).toBeUndefined()
       expect(getServers()[0].transport).toEqual({ type: 'stdio', command: 'npx' })
+    })
+
+    it('round-trips the OAuth client secret while keeping clientId/scope cleartext', () => {
+      addServer(oauthWithSecret)
+      expect(getServers()[0].transport).toEqual(oauthWithSecret.transport)
+
+      const stored = store.get('servers')[0]
+      const oauth = (stored.transport as { oauth?: Record<string, unknown> }).oauth
+      // Non-secret oauth fields stay in cleartext; only the secret is stripped.
+      expect(oauth).toEqual({ clientId: 'public-client-id', scope: 'read:tools' })
+      expect(JSON.stringify(store.get('servers'))).not.toContain('oauth_supersecret')
+    })
+
+    it('drops the oauth object from cleartext when the secret was its only field', () => {
+      addServer(oauthSecretOnly)
+      const stored = store.get('servers')[0]
+      expect((stored.transport as { oauth?: unknown }).oauth).toBeUndefined()
+      // …but it's restored intact on read.
+      expect(getServers()[0].transport).toEqual(oauthSecretOnly.transport)
+      expect(JSON.stringify(store.get('servers'))).not.toContain('oauth_lonely_secret')
+    })
+
+    it('re-encrypts an http header secret when the transport is patched', () => {
+      addServer(httpWithSecret)
+      updateServer('http-secret', {
+        transport: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+          headers: { Authorization: 'Bearer tok_rotated' }
+        }
+      })
+      expect(getServers()[0].transport).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer tok_rotated' }
+      })
+      // The cleartext transport never carries the header value.
+      const stored = store.get('servers')[0]
+      expect((stored.transport as { headers?: unknown }).headers).toBeUndefined()
+      expect(JSON.stringify(store.get('servers'))).not.toContain('tok_rotated')
+    })
+  })
+
+  describe('undecryptable secrets', () => {
+    // A stored server whose encrypted blob can't be opened on this machine.
+    function injectCorrupt(): void {
+      store.set('servers', [
+        ...store.get('servers'),
+        {
+          id: 'broken',
+          name: 'Broken',
+          transport: { type: 'streamable-http', url: 'https://broken.example.com/mcp' },
+          secrets: CORRUPT_BLOB
+        }
+      ])
+    }
+
+    it('keeps loading other servers when one secret cannot be decrypted', () => {
+      addServer(stdioWithSecret) // good, decryptable
+      injectCorrupt()
+
+      const loaded = getServers()
+      expect(loaded).toHaveLength(2)
+      // The unrelated server still loads with its secret intact.
+      const good = loaded.find((s) => s.id === 'stdio-secret')
+      expect(good?.transport).toEqual(stdioWithSecret.transport)
+      expect(good?.credentialsUnavailable).toBeFalsy()
+    })
+
+    it('flags the undecryptable server with credentialsUnavailable and keeps its public config', () => {
+      injectCorrupt()
+      const broken = getServers().find((s) => s.id === 'broken')
+      expect(broken?.credentialsUnavailable).toBe(true)
+      expect(broken?.name).toBe('Broken')
+      expect(broken?.transport).toEqual({
+        type: 'streamable-http',
+        url: 'https://broken.example.com/mcp'
+      })
+    })
+
+    it('preserves the unreadable blob across a non-transport patch (rename)', () => {
+      injectCorrupt()
+      updateServer('broken', { name: 'Renamed' })
+      const stored = store.get('servers').find((s) => s.id === 'broken')
+      expect(stored?.name).toBe('Renamed')
+      // The blob we couldn't read is kept, not silently dropped.
+      expect(stored?.secrets).toBe(CORRUPT_BLOB)
+    })
+
+    it('preserves the unreadable blob across a transport edit that re-enters no credential', () => {
+      injectCorrupt()
+      // A URL-only edit touches the transport but supplies no new secret, so the
+      // still-unreadable credential must survive rather than be destroyed.
+      updateServer('broken', {
+        transport: { type: 'streamable-http', url: 'https://moved.example.com/mcp' }
+      })
+      const stored = store.get('servers').find((s) => s.id === 'broken')
+      expect((stored?.transport as { url: string }).url).toBe('https://moved.example.com/mcp')
+      expect(stored?.secrets).toBe(CORRUPT_BLOB)
+    })
+
+    it('replaces the unreadable blob when a patch supplies a fresh credential', () => {
+      injectCorrupt()
+      updateServer('broken', {
+        transport: {
+          type: 'streamable-http',
+          url: 'https://broken.example.com/mcp',
+          headers: { Authorization: 'Bearer fresh' }
+        }
+      })
+      const stored = store.get('servers').find((s) => s.id === 'broken')
+      // A re-supplied secret supersedes the unreadable one (new ciphertext blob).
+      expect(stored?.secrets).toBeDefined()
+      expect(stored?.secrets).not.toBe(CORRUPT_BLOB)
+      // …and it round-trips back out decrypted, clearing the unavailable flag.
+      const loaded = getServers().find((s) => s.id === 'broken')
+      expect(loaded?.credentialsUnavailable).toBeFalsy()
+      expect((loaded?.transport as { headers?: Record<string, string> }).headers).toEqual({
+        Authorization: 'Bearer fresh'
+      })
+    })
+
+    it('never persists the credentialsUnavailable flag back to disk', () => {
+      injectCorrupt()
+      updateServer('broken', { name: 'Renamed' })
+      const stored = store.get('servers').find((s) => s.id === 'broken')
+      expect(Object.keys(stored ?? {})).not.toContain('credentialsUnavailable')
     })
   })
 

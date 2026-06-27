@@ -1,9 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import JsonView from '@uiw/react-json-view'
 import { ChevronRight, ChevronDown, Braces, Plus, Trash2, Eye, EyeOff } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { useServerStore } from '../../stores/serverStore'
 import { parseServerConfigJson } from '../../lib/parseServerConfigJson'
+import {
+  parseTransportUrl,
+  credentialOverHttp,
+  findDuplicateKey,
+  duplicateKeyMessage
+} from '../../lib/transportValidation'
 import { TREE_THEME } from '../shared/json/jsonViewTheme'
 import type { ServerConfig, ServerOverrides, TransportConfig } from '../../../shared/mcp.types'
 
@@ -24,6 +30,11 @@ interface FormState {
   // streamable-http
   url: string
   headers: KeyValue[]
+  // streamable-http OAuth
+  auth: 'none' | 'oauth'
+  oauthClientId: string
+  oauthClientSecret: string
+  oauthScope: string
   // advanced
   timeoutMs: string
 }
@@ -36,7 +47,18 @@ const defaults: FormState = {
   env: [],
   url: '',
   headers: [],
+  auth: 'none',
+  oauthClientId: '',
+  oauthClientSecret: '',
+  oauthScope: '',
   timeoutMs: ''
+}
+
+// True when a custom header named "Authorization" is present (case-insensitive).
+// In OAuth mode the bearer token is managed by the provider, so a manual
+// Authorization header would collide with it.
+function hasAuthorizationHeader(rows: KeyValue[]): boolean {
+  return rows.some((r) => r.key.trim().toLowerCase() === 'authorization')
 }
 
 /** Collapse editor rows into a record, dropping rows with a blank key.
@@ -65,6 +87,24 @@ function buildTransport(form: FormState): TransportConfig {
     }
   }
   const headers = rowsToRecord(form.headers)
+  if (form.auth === 'oauth') {
+    const clientId = form.oauthClientId.trim()
+    const clientSecret = form.oauthClientSecret.trim()
+    const scope = form.oauthScope.trim()
+    const oauth = {
+      ...(clientId && { clientId }),
+      ...(clientSecret && { clientSecret }),
+      ...(scope && { scope })
+    }
+    return {
+      type: form.transportType,
+      url: form.url.trim(),
+      ...(headers && { headers }),
+      auth: 'oauth',
+      // Omit oauth entirely when no field was filled (pure DCR).
+      ...(Object.keys(oauth).length > 0 && { oauth })
+    }
+  }
   return {
     type: form.transportType,
     url: form.url.trim(),
@@ -84,8 +124,43 @@ function buildOverrides(form: FormState): ServerOverrides | undefined {
 function validate(form: FormState): Partial<Record<keyof FormState, string>> {
   const errors: Partial<Record<keyof FormState, string>> = {}
   if (!form.name.trim()) errors.name = 'Name is required'
-  if (form.transportType === 'stdio' && !form.command.trim()) errors.command = 'Command is required'
-  if (form.transportType !== 'stdio' && !form.url.trim()) errors.url = 'URL is required'
+
+  if (form.transportType === 'stdio') {
+    if (!form.command.trim()) errors.command = 'Command is required'
+    const dupEnv = findDuplicateKey(
+      form.env.map((r) => r.key),
+      false
+    )
+    if (dupEnv) errors.env = duplicateKeyMessage('variable', dupEnv)
+  } else {
+    const url = form.url.trim()
+    let parsedUrl: URL | undefined
+    if (!url) {
+      errors.url = 'URL is required'
+    } else {
+      const parsed = parseTransportUrl(url)
+      if ('error' in parsed) errors.url = parsed.error
+      else parsedUrl = parsed.url
+    }
+    // Header errors, first applicable wins: a structural duplicate, then the
+    // OAuth-managed Authorization collision, then a credential sent over plain http.
+    const dupHeader = findDuplicateKey(
+      form.headers.map((r) => r.key),
+      true
+    )
+    if (dupHeader) {
+      errors.headers = duplicateKeyMessage('header', dupHeader)
+    } else if (form.auth === 'oauth' && hasAuthorizationHeader(form.headers)) {
+      errors.headers = 'Authorization is managed by OAuth — remove it from headers.'
+    } else if (parsedUrl) {
+      const cleartext = credentialOverHttp(
+        parsedUrl,
+        form.headers.map((r) => r.key)
+      )
+      if (cleartext) errors.headers = cleartext
+    }
+  }
+
   const timeoutMs = form.timeoutMs.trim()
   if (timeoutMs && (!/^\d+$/.test(timeoutMs) || Number(timeoutMs) <= 0)) {
     errors.timeoutMs = 'Timeout must be a positive number'
@@ -106,6 +181,51 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
   const [form, setForm] = useState<FormState>(defaults)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [submitting, setSubmitting] = useState(false)
+  // null until the availability check resolves; false blocks OAuth mode (tokens
+  // can't be encrypted at rest).
+  const [encryptionAvailable, setEncryptionAvailable] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let active = true
+    window.api.mcp
+      .isEncryptionAvailable()
+      .then((v) => {
+        if (active) setEncryptionAvailable(v)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Live OAuth-mode validation cues (independent of the on-submit errors map).
+  const isOAuth = mode === 'manual' && form.transportType !== 'stdio' && form.auth === 'oauth'
+  const authHeaderCollision = isOAuth && hasAuthorizationHeader(form.headers)
+  const oauthBlocked = isOAuth && encryptionAvailable === false
+
+  // Live header/env validation cues (mirror authHeaderCollision: shown inline as
+  // the user edits; validate() re-derives the same checks to block submit even
+  // when the section is collapsed). A duplicate key takes precedence over the
+  // credential-over-http warning.
+  const isHttp = mode === 'manual' && form.transportType !== 'stdio'
+  const headerKeys = form.headers.map((r) => r.key)
+  const duplicateHeader = isHttp ? findDuplicateKey(headerKeys, true) : undefined
+  const parsedUrl = useMemo(() => {
+    const r = parseTransportUrl(form.url.trim())
+    return 'url' in r ? r.url : undefined
+  }, [form.url])
+  const headerIssue = duplicateHeader
+    ? duplicateKeyMessage('header', duplicateHeader)
+    : isHttp && parsedUrl
+      ? credentialOverHttp(parsedUrl, headerKeys)
+      : undefined
+  const duplicateEnv =
+    mode === 'manual' && form.transportType === 'stdio'
+      ? findDuplicateKey(
+          form.env.map((r) => r.key),
+          false
+        )
+      : undefined
 
   // Best-effort parse for the live preview tree — independent of the strict
   // parseServerConfigJson validation that runs on submit, so the preview can
@@ -155,6 +275,9 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
       setErrors(errs)
       return
     }
+    // OAuth with no OS encryption is blocked (message shown inline + button
+    // disabled); guard here too so a race can't slip through.
+    if (oauthBlocked) return
 
     const overrides = buildOverrides(form)
     const config: ServerConfig = {
@@ -287,6 +410,11 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
                       secret
                     />
                   </CollapsibleSection>
+                  {duplicateEnv && (
+                    <p className="text-xs text-red-400">
+                      {duplicateKeyMessage('variable', duplicateEnv)}
+                    </p>
+                  )}
                 </>
               )}
 
@@ -301,6 +429,66 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
                       aria-label="URL"
                     />
                   </Field>
+
+                  {/* Auth mode */}
+                  <Field label="Auth">
+                    <div className="flex gap-2">
+                      {(['none', 'oauth'] as const).map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => set('auth', a)}
+                          className={`px-3 py-1 rounded text-xs border transition-colors cursor-pointer ${
+                            form.auth === a
+                              ? 'border-accent text-accent bg-accent/10'
+                              : 'border-border text-text-muted hover:text-text-primary'
+                          }`}
+                        >
+                          {a === 'none' ? 'None' : 'OAuth'}
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+
+                  {form.auth === 'oauth' && (
+                    <>
+                      {oauthBlocked && (
+                        <p className="text-xs text-red-400">
+                          OAuth tokens require OS-level encryption, which is not available on this
+                          system. Use a static token instead.
+                        </p>
+                      )}
+                      <Field label="Client ID" hint="Optional">
+                        <Input
+                          placeholder="Leave blank to auto-register"
+                          value={form.oauthClientId}
+                          onChange={(v) => set('oauthClientId', v)}
+                          aria-label="Client ID"
+                        />
+                      </Field>
+                      <Field label="Client Secret" hint="Optional">
+                        <SecretInput
+                          value={form.oauthClientSecret}
+                          onChange={(v) => set('oauthClientSecret', v)}
+                          aria-label="Client Secret"
+                        />
+                      </Field>
+                      <Field label="Scope" hint="Optional">
+                        <Input
+                          placeholder="e.g. read:tools write:resources"
+                          value={form.oauthScope}
+                          onChange={(v) => set('oauthScope', v)}
+                          aria-label="Scope"
+                        />
+                      </Field>
+                      {authHeaderCollision && (
+                        <p className="text-xs text-red-400">
+                          Authorization is managed by OAuth — remove it from headers.
+                        </p>
+                      )}
+                    </>
+                  )}
+
                   <CollapsibleSection
                     label="Headers"
                     hint="Optional"
@@ -316,6 +504,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
                       secret
                     />
                   </CollapsibleSection>
+                  {headerIssue && <p className="text-xs text-red-400">{headerIssue}</p>}
                 </>
               )}
 
@@ -348,7 +537,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || oauthBlocked}
               className="px-3 py-1.5 rounded text-sm bg-accent hover:bg-accent-hover text-white transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-default"
             >
               {submitting ? 'Adding…' : 'Add Server'}
@@ -452,6 +641,45 @@ function Input({
       placeholder={placeholder}
       className="w-full px-3 py-1.5 rounded border border-border bg-bg-elevated text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
     />
+  )
+}
+
+// A single-line masked input with a reveal toggle — for OAuth client secrets,
+// mirroring the masking pattern the key/value editor uses for header/env values.
+function SecretInput({
+  value,
+  onChange,
+  placeholder,
+  'aria-label': ariaLabel
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  'aria-label': string
+}): React.JSX.Element {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <div className="relative">
+      <input
+        type={revealed ? 'text' : 'password'}
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        spellCheck={false}
+        autoComplete="off"
+        className="w-full px-3 py-1.5 pr-9 rounded border border-border bg-bg-elevated text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={() => setRevealed((v) => !v)}
+        aria-label={revealed ? 'Hide value' : 'Show value'}
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-fg-faint hover:text-text-primary transition-colors cursor-pointer"
+      >
+        {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+      </button>
+    </div>
   )
 }
 

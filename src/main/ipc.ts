@@ -1,6 +1,16 @@
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import { getServers, addServer, updateServer, removeServer } from './store'
-import { fetchCapabilities, disconnectServer, callTool, readResource, getPrompt } from './mcpClient'
+import {
+  fetchCapabilities,
+  disconnectServer,
+  callTool,
+  readResource,
+  getPrompt,
+  authorizeServer,
+  onAuthEvent
+} from './mcpClient'
+import { clearOAuthTokens } from './oauthStore'
+import { isSecretStorageAvailable } from './secrets'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -21,10 +31,23 @@ import type {
   ServerConfig,
   TaskSupport,
   ElicitationResult,
-  SamplingResult
+  SamplingResult,
+  AuthEvent
 } from '../shared/mcp.types'
 
 export function registerIpcHandlers(): void {
+  // Fan OAuth flow events out to every live renderer (single-window today, but
+  // resilient to multi-window), guarded against destroyed senders — the same
+  // lifecycle guard the callTool side channels use.
+  const broadcastAuthEvent = (payload: AuthEvent): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send('mcp:authEvent', payload)
+      }
+    }
+  }
+  onAuthEvent(broadcastAuthEvent)
+
   ipcMain.handle('mcp:getServers', () => getServers())
 
   ipcMain.handle('mcp:addServer', (_event, config: ServerConfig) => addServer(config))
@@ -45,13 +68,32 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('mcp:fetchCapabilities', async (_event, config: ServerConfig) => {
     const result = await fetchCapabilities(config)
-    await writeCapabilities(config.id, result)
+    // Don't cache the empty placeholder returned when sign-in is needed — the
+    // real listing is written once auth completes and capabilities are fetched.
+    if (!result.authRequired) await writeCapabilities(config.id, result)
     return result
   })
 
   ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => clearCapabilities(id))
 
   ipcMain.handle('mcp:disconnectServer', (_event, id: string) => disconnectServer(id))
+
+  // Whether OS-level encryption is available — gates OAuth mode in the UI, since
+  // OAuth tokens must be encryptable at rest (no in-memory fallback).
+  ipcMain.handle('mcp:isEncryptionAvailable', () => isSecretStorageAvailable())
+
+  // OAuth: kick off (or re-run) the authorization flow. Progress is reported
+  // out-of-band over `mcp:authEvent`, so this resolves once the flow settles.
+  ipcMain.handle('mcp:authorizeServer', (_event, config: ServerConfig) => authorizeServer(config))
+
+  // Sign out: tear down the live session first, then drop the tokens (preserving
+  // client_information so re-auth doesn't re-register), then reset the renderer's
+  // auth field to idle.
+  ipcMain.handle('mcp:clearAuth', async (_event, id: string) => {
+    await disconnectServer(id)
+    await clearOAuthTokens(id)
+    broadcastAuthEvent({ type: 'idle', serverId: id })
+  })
 
   // Tool execution. Notifications arriving mid-call are pushed to the calling
   // window over `mcp:toolNotification`, tagged with the renderer-chosen callId.

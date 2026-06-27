@@ -6,16 +6,59 @@ export type StdioTransportConfig = {
   env?: Record<string, string>
 }
 
+// OAuth 2.1 client credentials for a streamable-http server. All fields are
+// optional: with none set, the client relies on Dynamic Client Registration
+// (RFC 7591). `clientId`/`clientSecret` are the manual fallback when a server
+// doesn't support DCR. Issued tokens never live here — they're persisted
+// separately, encrypted, in servers/<id>/oauth.json.
+export type OAuthConfig = {
+  clientId?: string
+  clientSecret?: string
+  scope?: string
+}
+
 export type StreamableHttpTransportConfig = {
   type: 'streamable-http'
   url: string
   headers?: Record<string, string>
+  // 'none' (default) = static headers / no auth. 'oauth' = authorization-code +
+  // PKCE flow managed by the MCP SDK's auth provider.
+  auth?: 'none' | 'oauth'
+  oauth?: OAuthConfig
 }
 
 export type TransportConfig = StdioTransportConfig | StreamableHttpTransportConfig
 
 // Lifecycle status of a server connection
 export type ServerStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
+
+// OAuth sign-in state for a server, tracked separately from `ServerStatus`:
+// `status` is the capability-cache lifecycle, this is the token lifecycle.
+// Absent on a server object = not an OAuth server.
+//   idle           — OAuth configured, not signed in yet
+//   authenticating — browser flow in progress
+//   authenticated  — valid tokens held
+//   auth_required  — tokens missing/expired/rejected; re-auth needed
+export type ServerAuthState =
+  | { status: 'idle' }
+  | { status: 'authenticating' }
+  | { status: 'authenticated' }
+  | { status: 'auth_required'; reason?: string }
+
+// Pushed from main to renderer over the `mcp:authEvent` channel as an OAuth flow
+// progresses. Drives the server's `auth` field; never touches `status`.
+export type AuthEvent =
+  | { type: 'pending'; serverId: string }
+  | { type: 'success'; serverId: string }
+  | { type: 'error'; serverId: string; reason: string }
+  | { type: 'idle'; serverId: string }
+  | { type: 'auth_required'; serverId: string; reason?: string }
+  // Dynamic Client Registration isn't supported and no manual Client ID is
+  // configured, so sign-in can't proceed without one. A structured signal rather
+  // than an { type: 'error', reason: 'DCR_FAILED' } magic string: AuthHost opens
+  // the recovery modal off the discriminant, and serverStore maps it to
+  // auth_required with no user-facing reason text.
+  | { type: 'dcr_required'; serverId: string }
 
 // MCP capability types — mirrors @modelcontextprotocol/sdk schema shapes
 export interface ToolInputSchema {
@@ -98,13 +141,21 @@ export interface GetPromptResult {
 export interface PromptGetOutcome {
   response?: unknown
   error?: string
+  // See ToolCallOutcome.authRequired.
+  authRequired?: boolean
 }
 
-// Capabilities returned after a successful server connection
+// Capabilities returned after a successful server connection. `authRequired` is
+// set instead of the listings when the fetch couldn't proceed because the server
+// needs (re-)authorization — an expired/rejected token, or an OAuth server that
+// doesn't support DCR and has no manual Client ID yet. It's a benign outcome, not
+// a failure: the auth event already fired (and, for DCR, opened the recovery
+// modal), so the renderer shows the sign-in affordance rather than a red error.
 export interface ConnectResult {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
+  authRequired?: boolean
 }
 
 // A single content block in a tool-call result (text, image, resource, …).
@@ -239,6 +290,10 @@ export interface SamplingClosedEvent {
 export interface ToolCallOutcome {
   response?: unknown
   error?: string
+  // True when the call failed because the server requires (re-)authorization
+  // (SDK `UnauthorizedError`). The renderer uses this to flip the server's
+  // `auth` field to `auth_required` and surface the re-auth affordance.
+  authRequired?: boolean
 }
 
 // A single content entry of a resources/read result. Mirrors the MCP SDK's
@@ -265,6 +320,8 @@ export interface ResourceReadResult {
 export interface ResourceReadOutcome {
   response?: unknown
   error?: string
+  // See ToolCallOutcome.authRequired.
+  authRequired?: boolean
 }
 
 // Capabilities persisted to disk (servers/<id>/capabilities.json) so they're
@@ -292,6 +349,15 @@ export interface ServerConfig {
   overrides?: ServerOverrides
 }
 
+// What getServers hands back: the stored config plus a read-time flag set when
+// its encrypted secret couldn't be decrypted on this machine (e.g. config.json
+// copied from another install/OS user). The server still loads with its public
+// config so one unreadable secret can't hide the whole list — the flag lets the
+// UI mark it degraded and prompt the user to re-enter credentials.
+export interface LoadedServer extends ServerConfig {
+  credentialsUnavailable?: boolean
+}
+
 // A configured MCP server and its discovered capabilities.
 //
 // `status` reflects capability-cache state, not a live socket:
@@ -307,4 +373,11 @@ export interface MCPServer extends ServerConfig {
   prompts: Prompt[]
   // When capabilities were last fetched. Undefined = never fetched.
   fetchedAt?: number
+  // OAuth sign-in state. Runtime-only (never persisted to config.json) and
+  // present only for servers whose transport uses `auth: 'oauth'`.
+  auth?: ServerAuthState
+  // True when the server's encrypted secret couldn't be decrypted on load (see
+  // LoadedServer). The server is usable for non-secret operations but its
+  // credentials are missing until re-entered.
+  credentialsUnavailable?: boolean
 }

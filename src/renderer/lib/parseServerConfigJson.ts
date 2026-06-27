@@ -1,4 +1,5 @@
 import type { ServerConfig } from '../../shared/mcp.types'
+import { parseTransportUrl, credentialOverHttp } from './transportValidation'
 
 // Parses pasted JSON into one or more ServerConfigs, for the "Paste JSON
 // config" import in AddServerModal. Two shapes are accepted, both lifted
@@ -57,14 +58,21 @@ function toTransport(name: string, body: Record<string, unknown>): TransportResu
 
   if (typeof body.url === 'string') {
     if (!body.url.trim()) return { error: `"${name}": url must not be empty` }
+    const parsed = parseTransportUrl(body.url.trim())
+    if ('error' in parsed) return { error: `"${name}": ${parsed.error}` }
     if (body.headers !== undefined && !isStringRecord(body.headers)) {
       return { error: `"${name}": headers must be an object of string values` }
+    }
+    const headers = body.headers as Record<string, string> | undefined
+    if (headers) {
+      const cleartext = credentialOverHttp(parsed.url, Object.keys(headers))
+      if (cleartext) return { error: `"${name}": ${cleartext}` }
     }
     return {
       transport: {
         type: 'streamable-http',
         url: body.url.trim(),
-        ...(body.headers ? { headers: body.headers as Record<string, string> } : {})
+        ...(headers ? { headers } : {})
       }
     }
   }
@@ -88,7 +96,9 @@ function toConfig(
   }
 
   const result = toTransport(trimmedName, body)
-  if ('error' in result) return { error: result.error }
+  // Narrow on the success member: the error member has no `transport`, and the
+  // success member's `error?: undefined` keeps `'error' in result` from narrowing.
+  if (!('transport' in result)) return { error: result.error }
 
   return { config: { id: crypto.randomUUID(), name: trimmedName, transport: result.transport } }
 }

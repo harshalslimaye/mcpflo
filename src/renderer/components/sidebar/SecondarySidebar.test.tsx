@@ -41,6 +41,12 @@ beforeEach(() => {
   mockFetchCapabilities.mockResolvedValue(undefined)
   mockRefreshCapabilities.mockResolvedValue(undefined)
   mockDisconnectServer.mockResolvedValue(undefined)
+  // AddServerModal (rendered by the sidebar) queries encryption availability on
+  // mount; stub the bridge so its effect doesn't crash.
+  Object.defineProperty(window, 'api', {
+    configurable: true,
+    value: { mcp: { isEncryptionAvailable: vi.fn().mockResolvedValue(true) } }
+  })
   useServerStore.setState({
     servers: mockServers,
     selectedServerId: null,

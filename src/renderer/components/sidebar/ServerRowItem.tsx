@@ -1,5 +1,15 @@
-import { ChevronRight, ChevronDown, RotateCw, Trash2, Unplug } from 'lucide-react'
-import type { ServerStatus } from '../../../shared/mcp.types'
+import {
+  ChevronRight,
+  ChevronDown,
+  RotateCw,
+  Trash2,
+  Unplug,
+  LogIn,
+  LogOut,
+  Loader2,
+  AlertTriangle
+} from 'lucide-react'
+import type { ServerStatus, ServerAuthState } from '../../../shared/mcp.types'
 
 interface ServerRowItemProps {
   icon: React.ReactNode
@@ -9,10 +19,18 @@ interface ServerRowItemProps {
   expanded: boolean
   disabled?: boolean
   status?: ServerStatus
+  // OAuth sign-in state — present only for OAuth servers. Additive to `status`:
+  // it drives a separate sign-in/out affordance and never affects the dot color.
+  auth?: ServerAuthState
+  // True when the server's stored credentials couldn't be decrypted on this
+  // machine — shows a warning badge prompting the user to re-enter them.
+  credentialsUnavailable?: boolean
   onToggle: () => void
   onDisconnect?: () => void
   onRefresh?: () => void
   onDelete?: () => void
+  onAuthorize?: () => void
+  onClearAuth?: () => void
 }
 
 const STATUS_DOT: Record<ServerStatus, string> = {
@@ -30,14 +48,19 @@ export function ServerRowItem({
   expanded,
   disabled = false,
   status,
+  auth,
+  credentialsUnavailable = false,
   onToggle,
   onDisconnect,
   onRefresh,
-  onDelete
+  onDelete,
+  onAuthorize,
+  onClearAuth
 }: ServerRowItemProps): React.JSX.Element {
   const Chevron = expanded ? ChevronDown : ChevronRight
   const indent = depth === 0 ? 'pl-2' : 'pl-6'
   const fetching = status === 'connecting'
+  const needsSignIn = auth?.status === 'idle' || auth?.status === 'auth_required'
 
   return (
     <button
@@ -64,6 +87,16 @@ export function ServerRowItem({
       >
         {label}
       </span>
+
+      {credentialsUnavailable && (
+        <span
+          aria-label="Credentials unavailable"
+          title="Stored credentials couldn't be decrypted on this device (e.g. config copied from another machine). Re-enter them to use this server."
+          className="shrink-0 text-amber-500"
+        >
+          <AlertTriangle size={11} />
+        </span>
+      )}
 
       {onDisconnect && status === 'connected' && (
         <span
@@ -132,6 +165,68 @@ export function ServerRowItem({
           className="shrink-0 text-text-muted hover:text-red-400 transition-opacity opacity-0 group-hover:opacity-100"
         >
           <Trash2 size={11} />
+        </span>
+      )}
+
+      {/* OAuth: a call-to-action when sign-in is needed, a spinner while it runs,
+          and a hover-only sign-out once authenticated. Additive to the status dot. */}
+      {needsSignIn && onAuthorize && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Sign in"
+          title={
+            auth?.status === 'auth_required' && auth.reason ? `Sign in (${auth.reason})` : 'Sign in'
+          }
+          onClick={(e) => {
+            e.stopPropagation()
+            onAuthorize()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onAuthorize()
+            }
+          }}
+          className="shrink-0 flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+        >
+          <LogIn size={11} />
+          Sign in
+        </span>
+      )}
+
+      {auth?.status === 'authenticating' && (
+        <span
+          aria-label="Signing in"
+          title="Signing in…"
+          className="shrink-0 flex items-center gap-1 text-[11px] text-text-muted"
+        >
+          <Loader2 size={11} className="animate-spin" />
+          Signing in…
+        </span>
+      )}
+
+      {auth?.status === 'authenticated' && onClearAuth && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="Sign out"
+          title="Sign out"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClearAuth()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onClearAuth()
+            }
+          }}
+          className="shrink-0 text-text-muted hover:text-text-primary transition-opacity opacity-0 group-hover:opacity-100"
+        >
+          <LogOut size={11} />
         </span>
       )}
 

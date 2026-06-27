@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type {
   ServerConfig,
+  LoadedServer,
   TaskSupport,
   ConnectResult,
   CachedCapabilities,
@@ -14,12 +15,13 @@ import type {
   ElicitationResult,
   SamplingRequestEvent,
   SamplingClosedEvent,
-  SamplingResult
+  SamplingResult,
+  AuthEvent
 } from '../shared/mcp.types'
 
 const api = {
   mcp: {
-    getServers: (): Promise<ServerConfig[]> => ipcRenderer.invoke('mcp:getServers'),
+    getServers: (): Promise<LoadedServer[]> => ipcRenderer.invoke('mcp:getServers'),
     addServer: (config: ServerConfig): Promise<void> => ipcRenderer.invoke('mcp:addServer', config),
     updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>): Promise<void> =>
       ipcRenderer.invoke('mcp:updateServer', id, patch),
@@ -91,7 +93,22 @@ const api = {
       }
     },
     respondToSampling: (samplingId: string, result: SamplingResult): Promise<void> =>
-      ipcRenderer.invoke('mcp:respondToSampling', samplingId, result)
+      ipcRenderer.invoke('mcp:respondToSampling', samplingId, result),
+    // OAuth: trigger / re-trigger the authorization flow for a server.
+    authorizeServer: (config: ServerConfig): Promise<void> =>
+      ipcRenderer.invoke('mcp:authorizeServer', config),
+    // OAuth: sign out — disconnect, clear tokens, reset auth state.
+    clearAuth: (id: string): Promise<void> => ipcRenderer.invoke('mcp:clearAuth', id),
+    // Whether OS-level encryption is available (gates OAuth mode in the UI).
+    isEncryptionAvailable: (): Promise<boolean> => ipcRenderer.invoke('mcp:isEncryptionAvailable'),
+    // Subscribes to OAuth flow events; returns an unsubscribe function.
+    onAuthEvent: (callback: (event: AuthEvent) => void): (() => void) => {
+      const listener = (_: unknown, payload: AuthEvent): void => callback(payload)
+      ipcRenderer.on('mcp:authEvent', listener)
+      return () => {
+        ipcRenderer.removeListener('mcp:authEvent', listener)
+      }
+    }
   }
 }
 

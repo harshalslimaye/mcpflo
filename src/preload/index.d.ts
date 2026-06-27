@@ -1,6 +1,7 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type {
   ServerConfig,
+  LoadedServer,
   TaskSupport,
   ConnectResult,
   CachedCapabilities,
@@ -13,7 +14,8 @@ import type {
   ElicitationResult,
   SamplingRequestEvent,
   SamplingClosedEvent,
-  SamplingResult
+  SamplingResult,
+  AuthEvent
 } from '../shared/mcp.types'
 
 declare global {
@@ -21,7 +23,7 @@ declare global {
     electron: ElectronAPI
     api: {
       mcp: {
-        getServers: () => Promise<ServerConfig[]>
+        getServers: () => Promise<LoadedServer[]>
         addServer: (config: ServerConfig) => Promise<void>
         updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
         removeServer: (id: string) => Promise<void>
@@ -49,6 +51,10 @@ declare global {
         onSamplingRequest: (callback: (event: SamplingRequestEvent) => void) => () => void
         onSamplingClosed: (callback: (event: SamplingClosedEvent) => void) => () => void
         respondToSampling: (samplingId: string, result: SamplingResult) => Promise<void>
+        authorizeServer: (config: ServerConfig) => Promise<void>
+        clearAuth: (id: string) => Promise<void>
+        isEncryptionAvailable: () => Promise<boolean>
+        onAuthEvent: (callback: (event: AuthEvent) => void) => () => void
       }
     }
   }

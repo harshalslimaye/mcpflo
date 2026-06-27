@@ -4,6 +4,7 @@ import { ContentArea } from '../components/canvas/ContentArea'
 import { BottomBar } from '../components/layout/BottomBar'
 import { ElicitationHost } from '../components/elicitation/ElicitationHost'
 import { SamplingHost } from '../components/sampling/SamplingHost'
+import { AuthHost } from '../components/auth/AuthHost'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { Toaster } from '../components/ui/Toaster'
 import { useServerStore } from '../stores/serverStore'
@@ -27,6 +28,7 @@ function App(): React.JSX.Element {
         <BottomBar />
         <ElicitationHost />
         <SamplingHost />
+        <AuthHost />
         <Toaster />
       </div>
     </ErrorBoundary>
