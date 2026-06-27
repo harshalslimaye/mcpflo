@@ -145,5 +145,12 @@ vite.config.ts.timestamp-*
 # Playwright MCP
 .playwright-mcp
 
+# Playwright test output
+/test-results/
+/playwright-report/
+
+# Throwaway local-only scripts (e.g. manual OAuth verification server)
+.tmp-*/
+
 # macOS
 .DS_Store
