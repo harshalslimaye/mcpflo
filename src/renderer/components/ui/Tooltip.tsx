@@ -83,7 +83,7 @@ export function Tooltip({
                     ? { top: coords.top, left: coords.left, transform: 'translate(-50%, -100%)' }
                     : { top: coords.top, left: coords.left, transform: 'translateX(-50%)' }
             }
-            className="fixed z-50 px-2 py-1 rounded text-xs text-white bg-[#1a1a1a] dark:bg-[#ececec] dark:text-[#1a1a1a] whitespace-nowrap pointer-events-none shadow-md"
+            className="fixed z-50 rounded-[6px] border border-border bg-bg-elevated px-2 py-1 text-xs whitespace-nowrap text-text-primary shadow-md pointer-events-none"
           >
             {label}
           </div>,
