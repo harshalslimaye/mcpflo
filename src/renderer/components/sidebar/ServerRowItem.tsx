@@ -4,7 +4,6 @@ import {
   RotateCw,
   Trash2,
   Unplug,
-  LogIn,
   LogOut,
   Loader2,
   AlertTriangle
@@ -29,7 +28,6 @@ interface ServerRowItemProps {
   onDisconnect?: () => void
   onRefresh?: () => void
   onDelete?: () => void
-  onAuthorize?: () => void
   onClearAuth?: () => void
 }
 
@@ -54,13 +52,11 @@ export function ServerRowItem({
   onDisconnect,
   onRefresh,
   onDelete,
-  onAuthorize,
   onClearAuth
 }: ServerRowItemProps): React.JSX.Element {
   const Chevron = expanded ? ChevronDown : ChevronRight
   const indent = depth === 0 ? 'pl-2' : 'pl-6'
   const fetching = status === 'connecting'
-  const needsSignIn = auth?.status === 'idle' || auth?.status === 'auth_required'
 
   return (
     <button
@@ -168,34 +164,9 @@ export function ServerRowItem({
         </span>
       )}
 
-      {/* OAuth: a call-to-action when sign-in is needed, a spinner while it runs,
-          and a hover-only sign-out once authenticated. Additive to the status dot. */}
-      {needsSignIn && onAuthorize && (
-        <span
-          role="button"
-          tabIndex={0}
-          aria-label="Sign in"
-          title={
-            auth?.status === 'auth_required' && auth.reason ? `Sign in (${auth.reason})` : 'Sign in'
-          }
-          onClick={(e) => {
-            e.stopPropagation()
-            onAuthorize()
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              e.stopPropagation()
-              onAuthorize()
-            }
-          }}
-          className="shrink-0 flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
-        >
-          <LogIn size={11} />
-          Sign in
-        </span>
-      )}
-
+      {/* OAuth: a spinner while sign-in runs (triggered implicitly by expanding
+          the server), and a hover-only sign-out once authenticated. Additive to
+          the status dot. */}
       {auth?.status === 'authenticating' && (
         <span
           aria-label="Signing in"
