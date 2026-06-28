@@ -55,10 +55,12 @@ interface ServerTreeProps {
   expandedGroups: Set<string>
   // Normalized (trimmed, lowercased) filter query. Empty means no filtering.
   filter: string
+  selected: boolean
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
   selectedPrompt: SelectedPrompt | null
   onToggleServer: () => void
+  onSelectServer: () => void
   onToggleGroup: (group: GroupKey) => void
   onSelectTool: (toolName: string) => void
   onSelectResource: (uri: string) => void
@@ -74,10 +76,12 @@ function ServerTree({
   expanded,
   expandedGroups,
   filter,
+  selected,
   selectedTool,
   selectedResource,
   selectedPrompt,
   onToggleServer,
+  onSelectServer,
   onToggleGroup,
   onSelectTool,
   onSelectResource,
@@ -119,7 +123,9 @@ function ServerTree({
         status={server.status}
         auth={server.auth}
         credentialsUnavailable={server.credentialsUnavailable}
+        selected={selected}
         onToggle={onToggleServer}
+        onSelect={onSelectServer}
         onDisconnect={onDisconnect}
         onRefresh={onRefresh}
         onDelete={onDelete}
@@ -190,6 +196,8 @@ export function SecondarySidebar(): React.JSX.Element {
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
   const disconnectServer = useServerStore((s) => s.disconnectServer)
   const clearAuth = useServerStore((s) => s.clearAuth)
+  const selectedServerId = useServerStore((s) => s.selectedServerId)
+  const selectServer = useServerStore((s) => s.selectServer)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectTool = useServerStore((s) => s.selectTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
@@ -242,6 +250,18 @@ export function SecondarySidebar(): React.JSX.Element {
     // row. A disconnected server has no children to show either way, so there's
     // no harm in retrying on a collapse click too. Cached (green) and errored
     // (red) servers refetch only via the refresh button.
+    const server = servers.find((s) => s.id === id)
+    if (server && server.status === 'disconnected') {
+      fetchCapabilities(id)
+    }
+  }
+
+  // Selects a server for the details view, independent of expand/collapse
+  // (which now lives solely on the chevron). Mirrors toggleServer's lazy
+  // fetch: a never-connected (grey) server retries the connect on selection
+  // too, so its details populate without requiring a separate expand click.
+  function selectServerRow(id: string): void {
+    selectServer(id)
     const server = servers.find((s) => s.id === id)
     if (server && server.status === 'disconnected') {
       fetchCapabilities(id)
@@ -379,10 +399,12 @@ export function SecondarySidebar(): React.JSX.Element {
                   expanded={expandedServers.has(server.id)}
                   expandedGroups={expandedGroups}
                   filter={query}
+                  selected={selectedServerId === server.id}
                   selectedTool={selectedTool}
                   selectedResource={selectedResource}
                   selectedPrompt={selectedPrompt}
                   onToggleServer={() => toggleServer(server.id)}
+                  onSelectServer={() => selectServerRow(server.id)}
                   onToggleGroup={(group) => toggleGroup(server.id, group)}
                   onSelectTool={(toolName) => selectTool(server.id, toolName)}
                   onSelectResource={(uri) => selectResource(server.id, uri)}

@@ -24,7 +24,17 @@ interface ServerRowItemProps {
   // True when the server's stored credentials couldn't be decrypted on this
   // machine — shows a warning badge prompting the user to re-enter them.
   credentialsUnavailable?: boolean
+  // True when this server is the active selection (its details show in the
+  // content area) — drives the accent highlight on the row body.
+  selected?: boolean
+  // Expands/collapses the tree under this row. Lives on its own chevron
+  // button, separate from selecting the row (see onSelect).
   onToggle: () => void
+  // Selects this server so its details show in the content area. Falls back
+  // to onToggle when omitted, so callers that don't care about a separate
+  // server-details view (e.g. tests) keep the old click-anywhere-to-toggle
+  // behavior on the row body.
+  onSelect?: () => void
   onDisconnect?: () => void
   onRefresh?: () => void
   onDelete?: () => void
@@ -48,7 +58,9 @@ export function ServerRowItem({
   status,
   auth,
   credentialsUnavailable = false,
+  selected = false,
   onToggle,
+  onSelect,
   onDisconnect,
   onRefresh,
   onDelete,
@@ -59,30 +71,50 @@ export function ServerRowItem({
   const fetching = status === 'connecting'
 
   return (
-    <button
-      onClick={disabled ? undefined : onToggle}
-      disabled={disabled}
-      className={`group w-full flex items-center gap-1.5 py-1 pr-2 text-left transition-colors rounded-[5px]
+    <div
+      className={`group w-full flex items-center gap-1.5 py-1 pr-2 transition-colors rounded-[5px]
         ${indent}
-        ${
-          disabled
-            ? 'cursor-default text-text-muted opacity-50'
-            : 'text-text-primary hover:bg-bg-elevated cursor-pointer'
-        }
+        ${disabled ? 'opacity-50' : selected ? 'bg-accent-soft' : 'hover:bg-bg-elevated'}
       `}
     >
-      <Chevron
-        size={12}
-        className={`shrink-0 transition-transform ${disabled ? 'opacity-0' : 'text-text-muted'}`}
-      />
-      <span className={`shrink-0 ${depth === 0 ? 'text-text-primary' : 'text-text-muted'}`}>
-        {icon}
-      </span>
-      <span
-        className={`flex-1 truncate ${depth === 0 ? 'text-[13.5px] font-semibold' : 'text-xs'}`}
+      <button
+        type="button"
+        aria-label={expanded ? 'Collapse' : 'Expand'}
+        onClick={disabled ? undefined : onToggle}
+        disabled={disabled}
+        className={`shrink-0 flex items-center justify-center ${disabled ? 'cursor-default' : 'cursor-pointer'}`}
       >
-        {label}
-      </span>
+        <Chevron
+          size={12}
+          className={`transition-transform ${disabled ? 'opacity-0' : 'text-text-muted'}`}
+        />
+      </button>
+
+      <button
+        type="button"
+        onClick={disabled ? undefined : (onSelect ?? onToggle)}
+        disabled={disabled}
+        className={`flex items-center gap-1.5 flex-1 min-w-0 text-left
+          ${
+            disabled
+              ? 'cursor-default text-text-muted'
+              : selected
+                ? 'text-accent cursor-pointer'
+                : 'text-text-primary cursor-pointer'
+          }
+        `}
+      >
+        <span
+          className={`shrink-0 ${selected ? 'text-accent' : depth === 0 ? 'text-text-primary' : 'text-text-muted'}`}
+        >
+          {icon}
+        </span>
+        <span
+          className={`flex-1 truncate ${depth === 0 ? 'text-[13.5px] font-semibold' : 'text-xs'}`}
+        >
+          {label}
+        </span>
+      </button>
 
       {credentialsUnavailable && (
         <span
@@ -208,6 +240,6 @@ export function ServerRowItem({
         />
       )}
       {count !== undefined && <span className="text-xs text-text-muted">{count}</span>}
-    </button>
+    </div>
   )
 }

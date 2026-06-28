@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, within } from '@testing-library/react'
 import { SecondarySidebar } from './SecondarySidebar'
 import { useServerStore } from '../../stores/serverStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -35,6 +35,19 @@ const mockServers: MCPServer[] = [
 const mockFetchCapabilities = vi.fn()
 const mockRefreshCapabilities = vi.fn()
 const mockDisconnectServer = vi.fn()
+
+// The server row's outer wrapper div, scoping queries for that row's chevron
+// and inline controls (refresh/disconnect/delete/status dot).
+function serverRow(name: string): HTMLElement {
+  return screen.getByText(name).closest('div') as HTMLElement
+}
+
+// Clicks the row's chevron — expand/collapse now lives there exclusively;
+// clicking the name itself selects the server instead (see "server
+// selection" describe block below).
+function toggleServer(name: string): void {
+  fireEvent.click(within(serverRow(name)).getByLabelText(/Expand|Collapse/))
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -82,35 +95,35 @@ describe('SecondarySidebar', () => {
 
   it('shows group rows after server is expanded', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     expect(screen.getByText('Tools')).toBeInTheDocument()
     expect(screen.getByText('Resources')).toBeInTheDocument()
     expect(screen.getByText('Prompts')).toBeInTheDocument()
   })
 
-  it('collapses server on second click', () => {
+  it('collapses server on second chevron click', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
+    toggleServer('Memory MCP')
     expect(screen.queryByText('Tools')).not.toBeInTheDocument()
   })
 
   it('shows correct tool count in group row', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     const toolsRow = screen.getByText('Tools').closest('button')
     expect(toolsRow).toHaveTextContent('2')
   })
 
   it('does not show tool items before Tools group is expanded', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     expect(screen.queryByText('create_entities')).not.toBeInTheDocument()
   })
 
   it('shows tool items after Tools group is expanded', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Tools'))
     expect(screen.getByText('create_entities')).toBeInTheDocument()
     expect(screen.getByText('search_nodes')).toBeInTheDocument()
@@ -118,21 +131,21 @@ describe('SecondarySidebar', () => {
 
   it('disables group row when count is 0', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     const promptsBtn = screen.getByText('Prompts').closest('button')
     expect(promptsBtn).toBeDisabled()
   })
 
   it('does not expand disabled group when clicked', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Prompts'))
     expect(screen.queryByRole('listitem')).not.toBeInTheDocument()
   })
 
   it('expands independent servers independently', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     expect(screen.queryByText('Slack MCP')).toBeInTheDocument()
     expect(screen.getAllByText('Tools')).toHaveLength(1)
   })
@@ -215,21 +228,21 @@ describe('SecondarySidebar', () => {
 
   it('fetches capabilities when a never-fetched (grey) server is expanded', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Slack MCP'))
+    toggleServer('Slack MCP')
     expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
   })
 
   it('does not fetch when expanding a cached (green) server', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     expect(mockFetchCapabilities).not.toHaveBeenCalled()
   })
 
   it('does not fetch when collapsing a connected (green) server', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP')) // expand, already connected
+    toggleServer('Memory MCP') // expand, already connected
     mockFetchCapabilities.mockClear()
-    fireEvent.click(screen.getByText('Memory MCP')) // collapse → no fetch
+    toggleServer('Memory MCP') // collapse → no fetch
     expect(mockFetchCapabilities).not.toHaveBeenCalled()
   })
 
@@ -239,24 +252,22 @@ describe('SecondarySidebar', () => {
   // still-disconnected server must retry the connect.
   it('retries the fetch on every click while a server stays disconnected, even when collapsing', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Slack MCP')) // expand → fetch
+    toggleServer('Slack MCP') // expand → fetch
     mockFetchCapabilities.mockClear()
-    fireEvent.click(screen.getByText('Slack MCP')) // collapse, still disconnected → retry
+    toggleServer('Slack MCP') // collapse, still disconnected → retry
     expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
   })
 
   it('calls refreshCapabilities when the refresh control is clicked', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    const refresh = serverBtn?.querySelector('[title="Refresh capabilities"]') as HTMLElement
+    const refresh = within(serverRow('Memory MCP')).getByTitle('Refresh capabilities')
     fireEvent.click(refresh)
     expect(mockRefreshCapabilities).toHaveBeenCalledWith('memory-mcp')
   })
 
   it('refresh control does not toggle the server', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    const refresh = serverBtn?.querySelector('[title="Refresh capabilities"]') as HTMLElement
+    const refresh = within(serverRow('Memory MCP')).getByTitle('Refresh capabilities')
     fireEvent.click(refresh)
     // groups should NOT appear — the click was on refresh, not the row toggle
     expect(screen.queryByText('Tools')).not.toBeInTheDocument()
@@ -264,25 +275,21 @@ describe('SecondarySidebar', () => {
 
   it('shows status dot on server row', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    expect(serverBtn?.querySelector('[title="connected"]')).toBeInTheDocument()
+    expect(within(serverRow('Memory MCP')).getByTitle('connected')).toBeInTheDocument()
   })
 
   it('renders a disconnect control on a connected server but not a disconnected one', () => {
     render(<SecondarySidebar />)
-    const memoryBtn = screen.getByText('Memory MCP').closest('button')
-    const slackBtn = screen.getByText('Slack MCP').closest('button')
-    expect(memoryBtn?.querySelector('[title="Disconnect server"]')).toBeInTheDocument()
-    expect(slackBtn?.querySelector('[title="Disconnect server"]')).not.toBeInTheDocument()
+    expect(within(serverRow('Memory MCP')).queryByTitle('Disconnect server')).toBeInTheDocument()
+    expect(within(serverRow('Slack MCP')).queryByTitle('Disconnect server')).not.toBeInTheDocument()
   })
 
   it('calls disconnectServer and collapses the row when the disconnect control is clicked', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP')) // expand
+    toggleServer('Memory MCP') // expand
     expect(screen.getByText('Tools')).toBeInTheDocument()
 
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    const disconnect = serverBtn?.querySelector('[title="Disconnect server"]') as HTMLElement
+    const disconnect = within(serverRow('Memory MCP')).getByTitle('Disconnect server')
     fireEvent.click(disconnect)
 
     expect(mockDisconnectServer).toHaveBeenCalledWith('memory-mcp')
@@ -292,8 +299,7 @@ describe('SecondarySidebar', () => {
 
   it('disconnect control does not toggle the server when collapsed', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    const disconnect = serverBtn?.querySelector('[title="Disconnect server"]') as HTMLElement
+    const disconnect = within(serverRow('Memory MCP')).getByTitle('Disconnect server')
     fireEvent.click(disconnect)
     // The row was never expanded — disconnecting it shouldn't expand it either.
     expect(screen.queryByText('Tools')).not.toBeInTheDocument()
@@ -309,29 +315,27 @@ describe('SecondarySidebar', () => {
         )
       })
     })
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     expect(mockFetchCapabilities).toHaveBeenCalledWith('memory-mcp')
   })
 
   it('opens the delete confirmation when the delete control is clicked', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
+    const del = within(serverRow('Memory MCP')).getByTitle('Delete server')
     fireEvent.click(del)
     expect(screen.getByText('Delete Server')).toBeInTheDocument()
   })
 
   it('delete control does not toggle the server', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Slack MCP').closest('button')
-    const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
+    const del = within(serverRow('Slack MCP')).getByTitle('Delete server')
     fireEvent.click(del)
     expect(mockFetchCapabilities).not.toHaveBeenCalled()
   })
 
   it('selects a tool in the store when a tool item is clicked', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Tools'))
     fireEvent.click(screen.getByText('create_entities'))
     expect(useServerStore.getState().selectedTool).toEqual({
@@ -342,7 +346,7 @@ describe('SecondarySidebar', () => {
 
   it('collapses an expanded group on second click', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Tools'))
     expect(screen.getByText('create_entities')).toBeInTheDocument()
     fireEvent.click(screen.getByText('Tools'))
@@ -351,8 +355,7 @@ describe('SecondarySidebar', () => {
 
   it('closes the delete confirmation on Cancel', () => {
     render(<SecondarySidebar />)
-    const serverBtn = screen.getByText('Memory MCP').closest('button')
-    const del = serverBtn?.querySelector('[title="Delete server"]') as HTMLElement
+    const del = within(serverRow('Memory MCP')).getByTitle('Delete server')
     fireEvent.click(del)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(screen.queryByText('Delete Server')).not.toBeInTheDocument()
@@ -363,7 +366,7 @@ describe('SecondarySidebar', () => {
       servers: [{ ...mockServers[0], resources: [{ uri: 'memory://graph' }] }]
     })
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Resources'))
     fireEvent.click(screen.getByText('memory://graph'))
     expect(useServerStore.getState().selectedResource).toEqual({
@@ -374,7 +377,7 @@ describe('SecondarySidebar', () => {
 
   it('selects a resource in the store when a resource item is clicked', () => {
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Resources'))
     // The resource is named "Graph" but is identified (and selected) by its uri.
     fireEvent.click(screen.getByText('Graph'))
@@ -389,7 +392,7 @@ describe('SecondarySidebar', () => {
       selectedResource: { serverId: 'memory-mcp', uri: 'memory://graph' }
     })
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Resources'))
     expect(screen.getByText('Graph').closest('button')).toHaveAttribute('aria-current', 'true')
   })
@@ -397,12 +400,55 @@ describe('SecondarySidebar', () => {
   it('marks the selected tool with aria-current', () => {
     useServerStore.setState({ selectedTool: { serverId: 'memory-mcp', toolName: 'search_nodes' } })
     render(<SecondarySidebar />)
-    fireEvent.click(screen.getByText('Memory MCP'))
+    toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Tools'))
     expect(screen.getByText('search_nodes').closest('button')).toHaveAttribute(
       'aria-current',
       'true'
     )
+  })
+
+  describe('server selection', () => {
+    it('selects a server in the store when its name is clicked', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByText('Memory MCP'))
+      expect(useServerStore.getState().selectedServerId).toBe('memory-mcp')
+    })
+
+    it('does not expand the tree when the name is clicked', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByText('Memory MCP'))
+      expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+    })
+
+    it('does not select the server when the chevron is clicked', () => {
+      render(<SecondarySidebar />)
+      toggleServer('Memory MCP')
+      expect(useServerStore.getState().selectedServerId).toBeNull()
+    })
+
+    it('fetches capabilities when a never-fetched (grey) server is selected by name', () => {
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByText('Slack MCP'))
+      expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
+    })
+
+    it('highlights the row body of the selected server', () => {
+      useServerStore.setState({ selectedServerId: 'memory-mcp' })
+      render(<SecondarySidebar />)
+      expect(screen.getByRole('button', { name: 'Memory MCP' })).toHaveClass('text-accent')
+      expect(screen.getByRole('button', { name: 'Slack MCP' })).not.toHaveClass('text-accent')
+    })
+
+    it('clears the selected tool when a server name is clicked', () => {
+      useServerStore.setState({
+        selectedTool: { serverId: 'memory-mcp', toolName: 'search_nodes' }
+      })
+      render(<SecondarySidebar />)
+      fireEvent.click(screen.getByText('Memory MCP'))
+      expect(useServerStore.getState().selectedTool).toBeNull()
+      expect(useServerStore.getState().selectedServerId).toBe('memory-mcp')
+    })
   })
 
   describe('expand/collapse all', () => {

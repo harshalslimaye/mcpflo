@@ -37,23 +37,62 @@ describe('ServerRowItem', () => {
     expect(container.querySelectorAll('span.ml-auto')).toHaveLength(0)
   })
 
-  it('calls onToggle when clicked', () => {
+  it('calls onToggle when the chevron is clicked', () => {
     const onToggle = vi.fn()
     render(<ServerRowItem {...defaultProps} onToggle={onToggle} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByLabelText('Expand'))
     expect(onToggle).toHaveBeenCalledOnce()
   })
 
   it('does not call onToggle when disabled', () => {
     const onToggle = vi.fn()
     render(<ServerRowItem {...defaultProps} disabled onToggle={onToggle} />)
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getByLabelText('Expand'))
     expect(onToggle).not.toHaveBeenCalled()
   })
 
   it('is disabled when disabled prop is true', () => {
     render(<ServerRowItem {...defaultProps} disabled />)
-    expect(screen.getByRole('button')).toBeDisabled()
+    for (const button of screen.getAllByRole('button')) {
+      expect(button).toBeDisabled()
+    }
+  })
+
+  describe('row selection', () => {
+    it('falls back to onToggle when onSelect is omitted (clicking the row body)', () => {
+      const onToggle = vi.fn()
+      render(<ServerRowItem {...defaultProps} onToggle={onToggle} />)
+      fireEvent.click(screen.getByText('Memory MCP'))
+      expect(onToggle).toHaveBeenCalledOnce()
+    })
+
+    it('calls onSelect (and not onToggle) when the row body is clicked', () => {
+      const onToggle = vi.fn()
+      const onSelect = vi.fn()
+      render(<ServerRowItem {...defaultProps} onToggle={onToggle} onSelect={onSelect} />)
+      fireEvent.click(screen.getByText('Memory MCP'))
+      expect(onSelect).toHaveBeenCalledOnce()
+      expect(onToggle).not.toHaveBeenCalled()
+    })
+
+    it('calls onToggle (and not onSelect) when the chevron is clicked', () => {
+      const onToggle = vi.fn()
+      const onSelect = vi.fn()
+      render(<ServerRowItem {...defaultProps} onToggle={onToggle} onSelect={onSelect} />)
+      fireEvent.click(screen.getByLabelText('Expand'))
+      expect(onToggle).toHaveBeenCalledOnce()
+      expect(onSelect).not.toHaveBeenCalled()
+    })
+
+    it('applies an accent highlight to the row body when selected', () => {
+      render(<ServerRowItem {...defaultProps} selected />)
+      expect(screen.getByRole('button', { name: 'Memory MCP' })).toHaveClass('text-accent')
+    })
+
+    it('does not highlight the row body by default', () => {
+      render(<ServerRowItem {...defaultProps} />)
+      expect(screen.getByRole('button', { name: 'Memory MCP' })).not.toHaveClass('text-accent')
+    })
   })
 
   it('applies depth 0 indent class', () => {

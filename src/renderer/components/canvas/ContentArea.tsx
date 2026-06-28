@@ -3,6 +3,7 @@ import { useServerStore } from '../../stores/serverStore'
 import { ToolDetailView } from '../tool/ToolDetailView'
 import { ResourceDetailView } from '../resource/ResourceDetailView'
 import { PromptDetailView } from '../prompt/PromptDetailView'
+import { ServerDetailView } from '../server/ServerDetailView'
 import { GlobalActivityRail } from '../shared/GlobalActivityRail'
 
 function EmptyState({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
@@ -20,6 +21,7 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }): R
 }
 
 export function ContentArea(): React.JSX.Element {
+  const selectedServerId = useServerStore((s) => s.selectedServerId)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
   const selectedPrompt = useServerStore((s) => s.selectedPrompt)
@@ -72,6 +74,14 @@ export function ContentArea(): React.JSX.Element {
           serverName={server.name}
         />
       )
+    }
+  }
+
+  if (selectedServerId) {
+    const server = servers.find((s) => s.id === selectedServerId)
+    if (server) {
+      // Remount per server so local view state (the delete confirmation) resets.
+      return <ServerDetailView key={server.id} server={server} />
     }
   }
 

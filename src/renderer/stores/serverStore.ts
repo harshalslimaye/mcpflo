@@ -290,18 +290,37 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
   },
 
-  selectServer: (id) => set({ selectedServerId: id }),
+  // Server selection and tool/resource/prompt selection are mutually
+  // exclusive with each other — the content area shows exactly one detail
+  // view — so selecting a server clears any selected leaf.
+  selectServer: (id) =>
+    set({ selectedServerId: id, selectedTool: null, selectedResource: null, selectedPrompt: null }),
 
-  // Tool, resource and prompt selection are mutually exclusive — the content
-  // area shows exactly one detail view — so selecting one clears the others.
+  // Tool, resource and prompt selection are mutually exclusive with each
+  // other and with the server selection — selecting one clears the rest.
   selectTool: (serverId, toolName) =>
-    set({ selectedTool: { serverId, toolName }, selectedResource: null, selectedPrompt: null }),
+    set({
+      selectedTool: { serverId, toolName },
+      selectedResource: null,
+      selectedPrompt: null,
+      selectedServerId: null
+    }),
 
   selectResource: (serverId, uri) =>
-    set({ selectedResource: { serverId, uri }, selectedTool: null, selectedPrompt: null }),
+    set({
+      selectedResource: { serverId, uri },
+      selectedTool: null,
+      selectedPrompt: null,
+      selectedServerId: null
+    }),
 
   selectPrompt: (serverId, promptName) =>
-    set({ selectedPrompt: { serverId, promptName }, selectedTool: null, selectedResource: null }),
+    set({
+      selectedPrompt: { serverId, promptName },
+      selectedTool: null,
+      selectedResource: null,
+      selectedServerId: null
+    }),
 
   executeTool: async (serverId, toolName, args) => {
     const server = get().servers.find((s) => s.id === serverId)
