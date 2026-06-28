@@ -66,15 +66,20 @@ export function ContextBudgetCard({ server }: ContextBudgetCardProps): React.JSX
       </div>
 
       <div className="flex h-2 w-full overflow-hidden rounded-full bg-bg-elevated">
-        {CATEGORIES.map(({ key }) => {
-          const fraction = budget[key].fractionOfTotal
-          if (fraction <= 0) return null
+        {CATEGORIES.map(({ key, label }) => {
+          const cat = budget[key]
+          if (cat.fractionOfTotal <= 0) return null
           return (
-            <div
+            <Tooltip
               key={key}
-              className={`h-full bg-accent ${CATEGORY_OPACITY[key]}`}
-              style={{ width: `${fraction * 100}%` }}
-            />
+              side="top"
+              label={`${label} — ${formatTokens(cat.tokens)} tokens (${formatPercent(cat.fractionOfTotal)} of total)`}
+            >
+              <div
+                className={`h-full cursor-pointer bg-accent transition-[filter,box-shadow] hover:brightness-110 hover:shadow-[inset_0_0_0_1.5px_var(--accent-line)] ${CATEGORY_OPACITY[key]}`}
+                style={{ width: `${cat.fractionOfTotal * 100}%` }}
+              />
+            </Tooltip>
           )
         })}
       </div>

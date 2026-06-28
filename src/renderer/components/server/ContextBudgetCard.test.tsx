@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { ContextBudgetCard } from './ContextBudgetCard'
 import { computeContextBudget } from '../../lib/contextBudget'
 import type { MCPServer } from '../../../shared/mcp.types'
@@ -124,6 +124,34 @@ describe('ContextBudgetCard', () => {
     const { container } = render(<ContextBudgetCard server={{ ...base, prompts: [] }} />)
     const bar = container.querySelector('.rounded-full.bg-bg-elevated') as HTMLElement
     expect(bar.children).toHaveLength(2)
+  })
+
+  describe('bar segment tooltip', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('shows the category, tokens, and percent on hover', () => {
+      const { budget } = expected(base)
+      const { container } = render(<ContextBudgetCard server={base} />)
+      const bar = container.querySelector('.rounded-full.bg-bg-elevated') as HTMLElement
+      const toolsSegment = bar.children[0]
+
+      fireEvent.mouseEnter(toolsSegment)
+      act(() => {
+        vi.advanceTimersByTime(400)
+      })
+
+      expect(screen.getByRole('tooltip')).toHaveTextContent(
+        `Tools — ~${budget.tools.tokens.toLocaleString()} tokens (${(
+          budget.tools.fractionOfTotal * 100
+        ).toFixed(0)}% of total)`
+      )
+    })
   })
 
   it('renders the estimation disclaimer', () => {
