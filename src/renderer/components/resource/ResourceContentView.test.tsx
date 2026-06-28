@@ -148,3 +148,25 @@ describe('ResourceContentView', () => {
     expect(screen.queryByText('Reading…')).not.toBeInTheDocument()
   })
 })
+
+describe('ResourceContentView — Tokens tab', () => {
+  it('offers a Tokens tab and renders the response footprint', () => {
+    renderView(record(), 'tokens')
+    expect(screen.getByRole('button', { name: 'Tokens' })).toBeInTheDocument()
+    expect(screen.getByText('Response footprint')).toBeInTheDocument()
+    expect(screen.getByText('Context impact')).toBeInTheDocument()
+  })
+
+  it('shows the size-limit notice instead, for a truncated response', () => {
+    renderView(record({ responseTruncated: true, response: undefined }), 'tokens')
+    expect(screen.getByText(/exceeded the in-memory size limit/i)).toBeInTheDocument()
+    expect(screen.queryByText('Response footprint')).not.toBeInTheDocument()
+  })
+
+  it('shows the transport error instead, when no response arrived', () => {
+    const rec = record({ status: 'error', response: undefined, error: 'connection refused' })
+    renderView(rec, 'tokens')
+    expect(screen.getByText('connection refused')).toBeInTheDocument()
+    expect(screen.queryByText('Response footprint')).not.toBeInTheDocument()
+  })
+})

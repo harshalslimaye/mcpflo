@@ -123,3 +123,24 @@ describe('PromptRequestPanel — prefill', () => {
     expect(screen.getByRole('textbox', { name: 'topic' })).toHaveValue('history')
   })
 })
+
+describe('PromptRequestPanel — Tokens tab', () => {
+  it('offers a Tokens tab alongside Params and Schema', () => {
+    renderPanel(argPrompt)
+    expect(screen.getByRole('button', { name: 'Params' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Schema' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tokens' })).toBeInTheDocument()
+  })
+
+  it('renders the definition footprint, independent of the form state', () => {
+    renderPanel(argPrompt, { activeTab: 'tokens' })
+    expect(screen.getByText('Definition footprint')).toBeInTheDocument()
+    expect(screen.getByText('Context impact')).toBeInTheDocument()
+  })
+
+  it('switches to the Tokens tab when clicked', () => {
+    renderPanel(argPrompt)
+    fireEvent.click(screen.getByRole('button', { name: 'Tokens' }))
+    expect(mockOnTabChange).toHaveBeenCalledWith('tokens')
+  })
+})

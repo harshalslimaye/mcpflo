@@ -5,8 +5,9 @@ import { ResultPreview } from './ContentBlockPreview'
 import { NotificationsTab } from './ToolCallNotifications'
 import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
+import { ResponseFootprintTab } from '../shared/ResponseFootprintTab'
 
-export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications'
+export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications' | 'tokens'
 
 interface ToolCallResultViewProps extends DockChrome {
   // Absent while the call is in flight — the view then renders its executing
@@ -37,7 +38,8 @@ export function ToolCallResultView({
     { key: 'preview', label: 'Preview' },
     { key: 'raw', label: 'Raw' },
     { key: 'pretty', label: 'Pretty' },
-    { key: 'notifications', label: 'Notifications', count: notificationCount }
+    { key: 'notifications', label: 'Notifications', count: notificationCount },
+    { key: 'tokens', label: 'Tokens' }
   ]
 
   return (
@@ -111,6 +113,10 @@ function ResponseBody({
 
   if (tab === 'pretty') {
     return <PrettyJson value={record.response} />
+  }
+
+  if (tab === 'tokens') {
+    return <ResponseFootprintTab response={record.response} />
   }
 
   return (

@@ -4,8 +4,9 @@ import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { ContentBlockPreview } from '../tool/ContentBlockPreview'
 import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
+import { ResponseFootprintTab } from '../shared/ResponseFootprintTab'
 
-export type PromptResultTab = 'preview' | 'raw' | 'pretty'
+export type PromptResultTab = 'preview' | 'raw' | 'pretty' | 'tokens'
 
 interface PromptResultViewProps extends DockChrome {
   // Absent while a get is in flight — the view then renders its busy state.
@@ -41,7 +42,8 @@ export function PromptResultView({
   const tabs: { key: PromptResultTab; label: string }[] = [
     { key: 'preview', label: 'Preview' },
     { key: 'raw', label: 'Raw' },
-    { key: 'pretty', label: 'Pretty' }
+    { key: 'pretty', label: 'Pretty' },
+    { key: 'tokens', label: 'Tokens' }
   ]
 
   return (
@@ -103,6 +105,10 @@ function ResponseBody({
         </pre>
       </div>
     )
+  }
+
+  if (tab === 'tokens') {
+    return <ResponseFootprintTab response={record.response} />
   }
 
   // The GetPromptResult lives inside the JSON-RPC envelope; an error envelope

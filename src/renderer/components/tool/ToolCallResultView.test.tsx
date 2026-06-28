@@ -218,6 +218,26 @@ describe('ToolCallResultView — truncated response', () => {
   })
 })
 
+describe('ToolCallResultView — Tokens tab', () => {
+  it('renders the response footprint for a real response', () => {
+    view(rec({ response: envelope }), 'tokens')
+    expect(screen.getByText('Response footprint')).toBeInTheDocument()
+    expect(screen.getByText('Context impact')).toBeInTheDocument()
+  })
+
+  it('shows the size-limit notice instead, for a truncated response', () => {
+    view(rec({ responseTruncated: true, response: undefined }), 'tokens')
+    expect(screen.getByText(/exceeded the in-memory size limit/i)).toBeInTheDocument()
+    expect(screen.queryByText('Response footprint')).not.toBeInTheDocument()
+  })
+
+  it('shows the transport error instead, when no response arrived', () => {
+    view(rec({ status: 'error', error: 'connection refused' }), 'tokens')
+    expect(screen.getByText('connection refused')).toBeInTheDocument()
+    expect(screen.queryByText('Response footprint')).not.toBeInTheDocument()
+  })
+})
+
 describe('ToolCallResultView — tab switching', () => {
   it('calls onTabChange when a tab is clicked', () => {
     const onTabChange = vi.fn()
