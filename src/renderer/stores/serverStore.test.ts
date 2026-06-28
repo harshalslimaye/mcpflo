@@ -171,6 +171,20 @@ describe('serverStore', () => {
       useServerStore.getState().selectServer(null)
       expect(useServerStore.getState().selectedServerId).toBeNull()
     })
+
+    it('clears a selected tool, resource and prompt (mutually exclusive with the server view)', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      useServerStore.getState().selectServer('github-mcp')
+      expect(useServerStore.getState().selectedTool).toBeNull()
+
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      useServerStore.getState().selectServer('github-mcp')
+      expect(useServerStore.getState().selectedResource).toBeNull()
+
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      useServerStore.getState().selectServer('github-mcp')
+      expect(useServerStore.getState().selectedPrompt).toBeNull()
+    })
   })
 
   describe('selectTool', () => {
@@ -194,6 +208,12 @@ describe('serverStore', () => {
       expect(useServerStore.getState().selectedResource).toBeNull()
       expect(useServerStore.getState().selectedTool?.toolName).toBe('create_issue')
     })
+
+    it('clears a selected server (mutually exclusive with the server view)', () => {
+      useServerStore.getState().selectServer('github-mcp')
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      expect(useServerStore.getState().selectedServerId).toBeNull()
+    })
   })
 
   describe('selectResource', () => {
@@ -210,6 +230,12 @@ describe('serverStore', () => {
       useServerStore.getState().selectResource('github-mcp', 'mem://x')
       expect(useServerStore.getState().selectedTool).toBeNull()
       expect(useServerStore.getState().selectedResource?.uri).toBe('mem://x')
+    })
+
+    it('clears a selected server (mutually exclusive with the server view)', () => {
+      useServerStore.getState().selectServer('github-mcp')
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      expect(useServerStore.getState().selectedServerId).toBeNull()
     })
   })
 
@@ -235,6 +261,12 @@ describe('serverStore', () => {
       useServerStore.getState().selectPrompt('github-mcp', 'summarize')
       useServerStore.getState().selectTool('github-mcp', 'create_issue')
       expect(useServerStore.getState().selectedPrompt).toBeNull()
+    })
+
+    it('clears a selected server (mutually exclusive with the server view)', () => {
+      useServerStore.getState().selectServer('github-mcp')
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      expect(useServerStore.getState().selectedServerId).toBeNull()
     })
   })
 

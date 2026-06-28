@@ -83,6 +83,31 @@ describe('ContentArea — tool detail', () => {
   })
 })
 
+describe('ContentArea — server selected', () => {
+  it('shows a placeholder for the selected server', () => {
+    useServerStore.setState({ servers: [server], selectedServerId: 'memory-mcp' })
+    render(<ContentArea />)
+    expect(screen.getByText('Memory MCP')).toBeInTheDocument()
+    expect(screen.getByText('Server details view coming soon')).toBeInTheDocument()
+  })
+
+  it('falls back to the empty state when the selected server no longer exists', () => {
+    useServerStore.setState({ servers: [server], selectedServerId: 'gone' })
+    render(<ContentArea />)
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument()
+  })
+
+  it('takes priority over the empty state but not over a selected tool', () => {
+    useServerStore.setState({
+      servers: [server],
+      selectedServerId: 'memory-mcp',
+      selectedTool: { serverId: 'memory-mcp', toolName: 'search_nodes' }
+    })
+    render(<ContentArea />)
+    expect(screen.getByRole('button', { name: 'Execute' })).toBeInTheDocument()
+  })
+})
+
 describe('ContentArea — resource detail', () => {
   it('renders the resource detail view for the selected resource', () => {
     useServerStore.setState({

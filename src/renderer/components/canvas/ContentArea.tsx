@@ -20,6 +20,7 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }): R
 }
 
 export function ContentArea(): React.JSX.Element {
+  const selectedServerId = useServerStore((s) => s.selectedServerId)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
   const selectedPrompt = useServerStore((s) => s.selectedPrompt)
@@ -71,6 +72,20 @@ export function ContentArea(): React.JSX.Element {
           serverId={server.id}
           serverName={server.name}
         />
+      )
+    }
+  }
+
+  if (selectedServerId) {
+    const server = servers.find((s) => s.id === selectedServerId)
+    if (server) {
+      // Placeholder until ServerDetailView ships — confirms the selection
+      // plumbing (sidebar click -> store -> content area) works end-to-end.
+      return (
+        <div className="flex-1 h-full bg-bg-primary flex overflow-hidden">
+          <EmptyState title={server.name} subtitle="Server details view coming soon" />
+          <GlobalActivityRail />
+        </div>
       )
     }
   }
