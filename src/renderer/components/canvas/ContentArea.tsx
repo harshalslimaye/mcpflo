@@ -3,6 +3,7 @@ import { useServerStore } from '../../stores/serverStore'
 import { ToolDetailView } from '../tool/ToolDetailView'
 import { ResourceDetailView } from '../resource/ResourceDetailView'
 import { PromptDetailView } from '../prompt/PromptDetailView'
+import { ServerDetailView } from '../server/ServerDetailView'
 import { GlobalActivityRail } from '../shared/GlobalActivityRail'
 
 function EmptyState({ title, subtitle }: { title: string; subtitle: string }): React.JSX.Element {
@@ -79,14 +80,8 @@ export function ContentArea(): React.JSX.Element {
   if (selectedServerId) {
     const server = servers.find((s) => s.id === selectedServerId)
     if (server) {
-      // Placeholder until ServerDetailView ships — confirms the selection
-      // plumbing (sidebar click -> store -> content area) works end-to-end.
-      return (
-        <div className="flex-1 h-full bg-bg-primary flex overflow-hidden">
-          <EmptyState title={server.name} subtitle="Server details view coming soon" />
-          <GlobalActivityRail />
-        </div>
-      )
+      // Remount per server so local view state (the delete confirmation) resets.
+      return <ServerDetailView key={server.id} server={server} />
     }
   }
 

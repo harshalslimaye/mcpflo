@@ -84,11 +84,12 @@ describe('ContentArea — tool detail', () => {
 })
 
 describe('ContentArea — server selected', () => {
-  it('shows a placeholder for the selected server', () => {
+  it('renders the server detail view for the selected server', () => {
     useServerStore.setState({ servers: [server], selectedServerId: 'memory-mcp' })
     render(<ContentArea />)
-    expect(screen.getByText('Memory MCP')).toBeInTheDocument()
-    expect(screen.getByText('Server details view coming soon')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Memory MCP' })).toBeInTheDocument()
+    expect(screen.getByText('Connected')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete server' })).toBeInTheDocument()
   })
 
   it('falls back to the empty state when the selected server no longer exists', () => {
