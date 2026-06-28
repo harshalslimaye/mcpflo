@@ -38,6 +38,20 @@ describe('ServerDetailView', () => {
     expect(screen.getByRole('button', { name: 'Reload capabilities' })).toBeInTheDocument()
   })
 
+  it('omits the context budget card when the server has no capabilities', () => {
+    render(<ServerDetailView server={server()} />)
+    expect(screen.queryByText('Context budget')).not.toBeInTheDocument()
+  })
+
+  it('renders the context budget card when the server has capabilities', () => {
+    render(
+      <ServerDetailView
+        server={server({ tools: [{ name: 'x', inputSchema: { type: 'object' } }] })}
+      />
+    )
+    expect(screen.getByText('Context budget')).toBeInTheDocument()
+  })
+
   it('reloads capabilities for the server', () => {
     render(<ServerDetailView server={server()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Reload capabilities' }))

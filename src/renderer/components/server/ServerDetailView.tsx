@@ -3,6 +3,7 @@ import type { MCPServer } from '../../../shared/mcp.types'
 import { useServerStore } from '../../stores/serverStore'
 import { ServerHeader } from './ServerHeader'
 import { ServerActionBar } from './ServerActionBar'
+import { ContextBudgetCard } from './ContextBudgetCard'
 import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { GlobalActivityRail } from '../shared/GlobalActivityRail'
 
@@ -11,8 +12,8 @@ interface ServerDetailViewProps {
 }
 
 // The content-area view for a selected server. Composes the header, action bar,
-// and (in later phases) the context-budget card and capability sections, with
-// the activity log on the right rail.
+// and context-budget card, plus (in a later phase) the capability sections —
+// with the activity log on the right rail.
 export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.Element {
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
   const disconnectServer = useServerStore((s) => s.disconnectServer)
@@ -31,6 +32,7 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
             onSignOut={() => clearAuth(server.id)}
             onDelete={() => setConfirmingDelete(true)}
           />
+          <ContextBudgetCard server={server} />
         </div>
       </div>
 
