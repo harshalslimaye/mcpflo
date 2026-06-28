@@ -17,6 +17,40 @@ describe('capResponse', () => {
     cyclic.self = cyclic
     expect(capResponse(cyclic)).toEqual({ response: cyclic, truncated: false })
   })
+
+  it('bypasses the budget for an oversized ui:// resource-read result', () => {
+    const response = {
+      result: {
+        contents: [{ uri: 'ui://github-mcp-server/issue-write', text: 'x'.repeat(RESPONSE_BUDGET) }]
+      }
+    }
+    expect(capResponse(response)).toEqual({ response, truncated: false })
+  })
+
+  it('bypasses the budget for an oversized mcp-app resource block in a tool result', () => {
+    const response = {
+      result: {
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'https://example.com/widget',
+              mimeType: 'text/html;profile=mcp-app',
+              text: 'x'.repeat(RESPONSE_BUDGET)
+            }
+          }
+        ]
+      }
+    }
+    expect(capResponse(response)).toEqual({ response, truncated: false })
+  })
+
+  it('still caps an oversized plain JSON resource-read result', () => {
+    const response = {
+      result: { contents: [{ uri: 'file:///big.json', text: 'x'.repeat(RESPONSE_BUDGET) }] }
+    }
+    expect(capResponse(response)).toEqual({ response: undefined, truncated: true })
+  })
 })
 
 describe('pushCapped', () => {
