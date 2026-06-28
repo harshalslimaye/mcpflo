@@ -26,7 +26,7 @@ test.describe('server management', () => {
   })
 
   test('deletes the seeded server', async ({ page }) => {
-    const row = page.locator('button', { hasText: 'Everything' }).first()
+    const row = page.getByRole('group', { name: 'Everything' })
     await expect(row).toBeVisible()
 
     await row.getByRole('button', { name: 'Delete server' }).click()
