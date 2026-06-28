@@ -225,12 +225,24 @@ describe('SecondarySidebar', () => {
     expect(mockFetchCapabilities).not.toHaveBeenCalled()
   })
 
-  it('does not fetch when collapsing a server', () => {
+  it('does not fetch when collapsing a connected (green) server', () => {
+    render(<SecondarySidebar />)
+    fireEvent.click(screen.getByText('Memory MCP')) // expand, already connected
+    mockFetchCapabilities.mockClear()
+    fireEvent.click(screen.getByText('Memory MCP')) // collapse → no fetch
+    expect(mockFetchCapabilities).not.toHaveBeenCalled()
+  })
+
+  // The mock store doesn't flip status to 'connected' on fetch, so the server
+  // stays disconnected here — mirroring a failed/declined OAuth attempt. There's
+  // no separate "Sign in" control, so every click (expand or collapse) on a
+  // still-disconnected server must retry the connect.
+  it('retries the fetch on every click while a server stays disconnected, even when collapsing', () => {
     render(<SecondarySidebar />)
     fireEvent.click(screen.getByText('Slack MCP')) // expand → fetch
     mockFetchCapabilities.mockClear()
-    fireEvent.click(screen.getByText('Slack MCP')) // collapse → no fetch
-    expect(mockFetchCapabilities).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('Slack MCP')) // collapse, still disconnected → retry
+    expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
   })
 
   it('calls refreshCapabilities when the refresh control is clicked', () => {

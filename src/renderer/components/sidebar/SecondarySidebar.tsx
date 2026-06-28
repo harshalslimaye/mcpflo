@@ -66,7 +66,6 @@ interface ServerTreeProps {
   onDisconnect: () => void
   onRefresh: () => void
   onDelete: () => void
-  onAuthorize: () => void
   onClearAuth: () => void
 }
 
@@ -86,7 +85,6 @@ function ServerTree({
   onDisconnect,
   onRefresh,
   onDelete,
-  onAuthorize,
   onClearAuth
 }: ServerTreeProps): React.JSX.Element | null {
   const filtering = filter.length > 0
@@ -125,7 +123,6 @@ function ServerTree({
         onDisconnect={onDisconnect}
         onRefresh={onRefresh}
         onDelete={onDelete}
-        onAuthorize={onAuthorize}
         onClearAuth={onClearAuth}
       />
 
@@ -192,7 +189,6 @@ export function SecondarySidebar(): React.JSX.Element {
   const fetchCapabilities = useServerStore((s) => s.fetchCapabilities)
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
   const disconnectServer = useServerStore((s) => s.disconnectServer)
-  const authorizeServer = useServerStore((s) => s.authorizeServer)
   const clearAuth = useServerStore((s) => s.clearAuth)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectTool = useServerStore((s) => s.selectTool)
@@ -235,19 +231,20 @@ export function SecondarySidebar(): React.JSX.Element {
   }, [toggleSidebar])
 
   function toggleServer(id: string): void {
-    const willExpand = !expandedServers.has(id)
     setExpandedServers((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
-    // Lazy fetch: auto-fetch only a never-fetched server (grey) on expand.
-    // Cached (green) and errored (red) servers refetch only via the refresh button.
-    if (willExpand) {
-      const server = servers.find((s) => s.id === id)
-      if (server && server.status === 'disconnected') {
-        fetchCapabilities(id)
-      }
+    // Lazy fetch: any click on a never-connected server (grey) retries the
+    // connect — including the OAuth handshake, which has no separate "Sign in"
+    // affordance — regardless of whether the click expands or collapses the
+    // row. A disconnected server has no children to show either way, so there's
+    // no harm in retrying on a collapse click too. Cached (green) and errored
+    // (red) servers refetch only via the refresh button.
+    const server = servers.find((s) => s.id === id)
+    if (server && server.status === 'disconnected') {
+      fetchCapabilities(id)
     }
   }
 
@@ -393,7 +390,6 @@ export function SecondarySidebar(): React.JSX.Element {
                   onDisconnect={() => handleDisconnect(server.id)}
                   onRefresh={() => refreshCapabilities(server.id)}
                   onDelete={() => setPendingDelete(server)}
-                  onAuthorize={() => authorizeServer(server.id)}
                   onClearAuth={() => clearAuth(server.id)}
                 />
               ))}
