@@ -4,6 +4,7 @@ import { useServerStore } from '../../stores/serverStore'
 import { ServerHeader } from './ServerHeader'
 import { ServerActionBar } from './ServerActionBar'
 import { ContextBudgetCard } from './ContextBudgetCard'
+import { CapabilitySections } from './CapabilitySections'
 import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { GlobalActivityRail } from '../shared/GlobalActivityRail'
 
@@ -11,9 +12,9 @@ interface ServerDetailViewProps {
   server: MCPServer
 }
 
-// The content-area view for a selected server. Composes the header, action bar,
-// and context-budget card, plus (in a later phase) the capability sections —
-// with the activity log on the right rail.
+// The content-area view for a selected server: header, action bar,
+// context-budget card, and the Tools/Resources/Prompts sections, with the
+// activity log on the right rail.
 export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.Element {
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
   const disconnectServer = useServerStore((s) => s.disconnectServer)
@@ -33,6 +34,7 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
             onDelete={() => setConfirmingDelete(true)}
           />
           <ContextBudgetCard server={server} />
+          <CapabilitySections server={server} />
         </div>
       </div>
 

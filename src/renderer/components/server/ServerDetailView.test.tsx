@@ -52,6 +52,16 @@ describe('ServerDetailView', () => {
     expect(screen.getByText('Context budget')).toBeInTheDocument()
   })
 
+  it('renders the capability sections when the server has capabilities', () => {
+    render(
+      <ServerDetailView
+        server={server({ tools: [{ name: 'x', inputSchema: { type: 'object' } }] })}
+      />
+    )
+    expect(screen.getByRole('button', { name: /Tools/ })).toBeInTheDocument()
+    expect(screen.getByText('x')).toBeInTheDocument()
+  })
+
   it('reloads capabilities for the server', () => {
     render(<ServerDetailView server={server()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Reload capabilities' }))
