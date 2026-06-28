@@ -37,11 +37,17 @@ export { expect } from '@playwright/test'
 // server, then drills into one capability group (Tools / Resources / Prompts).
 // This collapses that shared setup, including the wait for the group to
 // populate (it starts disabled until the lazy-fetched capabilities arrive).
+//
+// The server row's chevron (expand/collapse) and name (select, opens the
+// server details view) are separate buttons — clicking the row by name alone
+// no longer expands it, so this scopes to the row's group and clicks its
+// chevron specifically.
 export async function openEverythingGroup(
   page: Page,
   group: 'Tools' | 'Resources' | 'Prompts'
 ): Promise<void> {
-  await page.locator('button', { hasText: 'Everything' }).click()
+  const row = page.getByRole('group', { name: 'Everything' })
+  await row.getByRole('button', { name: /Expand|Collapse/ }).click()
   const groupButton = page.getByRole('button', { name: new RegExp(`^${group}`) })
   await expect(groupButton).toBeEnabled({ timeout: 30_000 })
   await groupButton.click()

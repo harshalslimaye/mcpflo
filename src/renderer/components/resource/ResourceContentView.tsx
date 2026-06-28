@@ -4,8 +4,9 @@ import type { ResourceContent, ResourceReadResult } from '../../../shared/mcp.ty
 import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
+import { ResponseFootprintTab } from '../shared/ResponseFootprintTab'
 
-export type ResourceResultTab = 'preview' | 'raw' | 'pretty'
+export type ResourceResultTab = 'preview' | 'raw' | 'pretty' | 'tokens'
 
 interface ResourceContentViewProps extends DockChrome {
   // Absent while a read is in flight — the view then renders its reading state.
@@ -132,7 +133,8 @@ export function ResourceContentView({
   const tabs: { key: ResourceResultTab; label: string }[] = [
     { key: 'preview', label: 'Preview' },
     { key: 'raw', label: 'Raw' },
-    { key: 'pretty', label: 'Pretty' }
+    { key: 'pretty', label: 'Pretty' },
+    { key: 'tokens', label: 'Tokens' }
   ]
 
   return (
@@ -197,6 +199,10 @@ function ResponseBody({
         </pre>
       </div>
     )
+  }
+
+  if (tab === 'tokens') {
+    return <ResponseFootprintTab response={record.response} />
   }
 
   // The ReadResourceResult lives inside the JSON-RPC envelope; an error envelope

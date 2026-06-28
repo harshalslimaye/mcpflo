@@ -72,6 +72,8 @@ export function ServerRowItem({
 
   return (
     <div
+      role="group"
+      aria-label={label}
       className={`group w-full flex items-center gap-1.5 py-1 pr-2 transition-colors rounded-[5px]
         ${indent}
         ${disabled ? 'opacity-50' : selected ? 'bg-accent-soft' : 'hover:bg-bg-elevated'}

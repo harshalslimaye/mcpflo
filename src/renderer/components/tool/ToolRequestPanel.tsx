@@ -4,13 +4,15 @@ import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
 import { RequestPanel } from '../shared/RequestPanel'
+import { TokenFootprintView } from '../shared/TokenFootprintView'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
 import { buildUiSchema } from './rjsf/layout'
 import { requiredSummary } from './rjsf/formStatus'
+import { estimateToolDefinitionPayload } from '../../lib/contextBudget'
 
-export type RequestTab = 'params' | 'schema'
+export type RequestTab = 'params' | 'schema' | 'tokens'
 type Mode = 'form' | 'json'
 
 interface ToolRequestPanelProps {
@@ -31,7 +33,8 @@ interface ToolRequestPanelProps {
 
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'params', label: 'Params' },
-  { key: 'schema', label: 'Schema' }
+  { key: 'schema', label: 'Schema' },
+  { key: 'tokens', label: 'Tokens' }
 ]
 
 function parseJsonObject(
@@ -62,6 +65,9 @@ export function ToolRequestPanel({
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
   // Drives multi-line (textarea) detection; the layout grid lives in the templates.
   const uiSchema = useMemo(() => buildUiSchema(schema), [schema])
+  // The tool's own definition cost — static, independent of any call having
+  // been made, unlike the Response panel's per-call Tokens tab.
+  const definitionEstimate = useMemo(() => estimateToolDefinitionPayload(tool), [tool])
 
   // Seed the form with schema-declared defaults so our validity check matches
   // what RJSF renders. Required booleans are seeded to `false`: a toggle always
@@ -192,6 +198,14 @@ export function ToolRequestPanel({
     >
       {activeTab === 'schema' ? (
         <SchemaTab schema={tool.inputSchema} />
+      ) : activeTab === 'tokens' ? (
+        <TokenFootprintView
+          title="Definition footprint"
+          subjectNoun="definition"
+          tokens={definitionEstimate.tokens}
+          characters={definitionEstimate.characters}
+          rawBytes={definitionEstimate.rawBytes}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           {switchError && <p className="text-xs text-red-400">{switchError}</p>}

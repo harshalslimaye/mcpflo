@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ResourceRequestPanel } from './ResourceRequestPanel'
+import { estimateResourceTokens } from '../../lib/contextBudget'
 import type { Resource } from '../../../shared/mcp.types'
 
 const resource: Resource = { uri: 'demo://readme', name: 'README' }
@@ -26,5 +27,11 @@ describe('ResourceRequestPanel', () => {
     expect(button).toBeDisabled()
     expect(button).toHaveTextContent('Reading…')
     expect(screen.queryByText('Read', { selector: 'button' })).not.toBeInTheDocument()
+  })
+
+  it('shows the resource definition own token cost next to the URI', () => {
+    render(<ResourceRequestPanel resource={resource} reading={false} onRead={vi.fn()} />)
+    const tokens = estimateResourceTokens(resource)
+    expect(screen.getByText(`~${tokens.toLocaleString()} tokens to define`)).toBeInTheDocument()
   })
 })

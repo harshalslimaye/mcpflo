@@ -378,3 +378,29 @@ describe('ToolRequestPanel — complex schema (now form-editable)', () => {
     expect(mockOnExecute).toHaveBeenCalledWith({ message: 'hi' })
   })
 })
+
+describe('ToolRequestPanel — Tokens tab', () => {
+  it('offers a Tokens tab alongside Params and Schema', () => {
+    renderPanel(primitiveTool)
+    expect(screen.getByRole('button', { name: 'Params' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Schema' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tokens' })).toBeInTheDocument()
+  })
+
+  it('renders the definition footprint, independent of the form state', () => {
+    renderPanel(primitiveTool, { activeTab: 'tokens' })
+    expect(screen.getByText('Definition footprint')).toBeInTheDocument()
+    expect(screen.getByText('Context impact')).toBeInTheDocument()
+  })
+
+  it('does not show the Raw JSON toggle on the Tokens tab', () => {
+    renderPanel(primitiveTool, { activeTab: 'tokens' })
+    expect(screen.queryByLabelText('Edit as raw JSON')).not.toBeInTheDocument()
+  })
+
+  it('switches to the Tokens tab when clicked', () => {
+    renderPanel(primitiveTool)
+    fireEvent.click(screen.getByRole('button', { name: 'Tokens' }))
+    expect(mockOnTabChange).toHaveBeenCalledWith('tokens')
+  })
+})
