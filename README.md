@@ -46,12 +46,13 @@ Everything below is implemented and working today.
   connect to a remote one over Streamable HTTP. HTTP connections support custom
   request headers (e.g. an `Authorization: Bearer …` token) for token-authed
   servers.
-- **OAuth 2.1 for Streamable HTTP.** Sign in to OAuth-protected servers with the
-  authorization-code + PKCE flow: MCPFlo opens your system browser, captures the
-  redirect on a loopback listener (RFC 8252), and reconnects. Clients register
-  automatically via Dynamic Client Registration, with a manual Client ID fallback
-  when a server doesn't support it. Tokens are encrypted at rest using the OS
-  keychain (`safeStorage`), and static custom headers still work alongside OAuth.
+- **OAuth 2.1 for Streamable HTTP.** OAuth-protected servers are signed in to
+  automatically the first time you expand them, using the authorization-code +
+  PKCE flow: MCPFlo opens your system browser, captures the redirect on a
+  loopback listener (RFC 8252), and reconnects. Clients register automatically
+  via Dynamic Client Registration, with a manual Client ID fallback when a
+  server doesn't support it. Tokens are encrypted at rest using the OS keychain
+  (`safeStorage`), and static custom headers still work alongside OAuth.
 - **Browse capabilities.** View every tool, resource, and prompt across all
   connected servers in a grouped tree.
 - **Unified filter.** A single search box (⌘K) filters tools, resources, and
@@ -147,6 +148,12 @@ To add your own:
      `-y @modelcontextprotocol/server-memory`), plus any environment variables.
    - **Streamable HTTP** — provide the URL, plus any request headers
      (e.g. `Authorization=Bearer …`).
+   - Environment variables and headers live in collapsible sections so the form
+     stays short until you need them.
+   - An **Advanced** section exposes an optional connection timeout.
+   - Prefer pasting a config? Switch to **JSON import** and paste an
+     `mcpServers` block (single or multiple entries) instead of filling out the
+     form by hand.
 3. Click **Add Server**.
 4. Expand the server row — MCPFlo connects and discovers all tools, resources,
    and prompts automatically.
@@ -183,6 +190,7 @@ immediately on the next launch before a fresh fetch runs.
 npm run dev         # run the app in development
 npm test            # run the test suite once
 npm run test:watch  # run tests in watch mode
+npm run e2e         # build and run the Playwright e2e suite
 npm run typecheck   # type-check main and renderer
 npm run lint        # lint with ESLint
 npm run format      # format with Prettier
