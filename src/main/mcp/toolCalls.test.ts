@@ -96,7 +96,7 @@ describe('toolCalls', () => {
       const onNotification = vi.fn()
       const onElicitation = vi.fn()
       const onSampling = vi.fn()
-      let captured: Session['active']
+      let captured: Session['active'] = null
       session.client.callTool.mockImplementation(async () => {
         captured = session.active
         return { content: [] }
