@@ -99,6 +99,7 @@ const oauthSecretOnly: ServerConfig = {
 describe('store', () => {
   let store: typeof import('./store').store
   let getServers: typeof import('./store').getServers
+  let getServerById: typeof import('./store').getServerById
   let addServer: typeof import('./store').addServer
   let updateServer: typeof import('./store').updateServer
   let removeServer: typeof import('./store').removeServer
@@ -109,6 +110,7 @@ describe('store', () => {
     const mod = await import('./store')
     store = mod.store
     getServers = mod.getServers
+    getServerById = mod.getServerById
     addServer = mod.addServer
     updateServer = mod.updateServer
     removeServer = mod.removeServer
@@ -118,6 +120,17 @@ describe('store', () => {
   describe('getServers', () => {
     it('returns empty array on fresh store', () => {
       expect(getServers()).toEqual([])
+    })
+  })
+
+  describe('getServerById', () => {
+    it('returns the full decrypted config including secrets', () => {
+      addServer(oauthWithSecret)
+      expect(getServerById('oauth-secret').transport).toEqual(oauthWithSecret.transport)
+    })
+
+    it('throws when the id is unknown', () => {
+      expect(() => getServerById('nope')).toThrow('not found')
     })
   })
 
@@ -141,14 +154,65 @@ describe('store', () => {
   })
 
   describe('secret encryption at rest', () => {
-    it('round-trips stdio env secrets through getServers', () => {
+    it('round-trips stdio env secrets through getServerById', () => {
       addServer(stdioWithSecret)
-      expect(getServers()[0].transport).toEqual(stdioWithSecret.transport)
+      expect(getServerById('stdio-secret').transport).toEqual(stdioWithSecret.transport)
     })
 
-    it('round-trips http header secrets through getServers', () => {
+    it('round-trips http header secrets through getServerById', () => {
       addServer(httpWithSecret)
-      expect(getServers()[0].transport).toEqual(httpWithSecret.transport)
+      expect(getServerById('http-secret').transport).toEqual(httpWithSecret.transport)
+    })
+
+    it('returns a redacted server from addServer (no secret for the optimistic merge)', () => {
+      const added = addServer(httpWithSecret)
+      expect(added.transport).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp'
+      })
+      // …while the secret is still persisted and readable in full.
+      expect(getServerById('http-secret').transport).toEqual(httpWithSecret.transport)
+    })
+
+    it('returns a redacted server from updateServer (no freshly-entered secret leaks back)', () => {
+      addServer(httpWithSecret)
+      const updated = updateServer('http-secret', {
+        transport: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+          headers: { Authorization: 'Bearer tok_rotated' }
+        }
+      })
+      expect(updated.transport).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp'
+      })
+      expect(getServerById('http-secret').transport).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer tok_rotated' }
+      })
+    })
+
+    it('redacts secret transport values from getServers (renderer never sees them)', () => {
+      addServer(stdioWithSecret)
+      addServer(httpWithSecret)
+      addServer(oauthWithSecret)
+      const byId = Object.fromEntries(getServers().map((s) => [s.id, s.transport]))
+      // stdio env stripped, command/args kept.
+      expect(byId['stdio-secret']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'srv'] })
+      // http headers stripped, url kept.
+      expect(byId['http-secret']).toEqual({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp'
+      })
+      // OAuth client secret stripped; clientId/scope/url/auth kept.
+      expect(byId['oauth-secret']).toEqual({
+        type: 'streamable-http',
+        url: 'https://oauth.example.com/mcp',
+        auth: 'oauth',
+        oauth: { clientId: 'public-client-id', scope: 'read:tools' }
+      })
     })
 
     it('never persists the secret value in cleartext', () => {
@@ -175,7 +239,7 @@ describe('store', () => {
           env: { GITHUB_TOKEN: 'ghp_rotated' }
         }
       })
-      expect(getServers()[0].transport).toEqual({
+      expect(getServerById('stdio-secret').transport).toEqual({
         type: 'stdio',
         command: 'npx',
         env: { GITHUB_TOKEN: 'ghp_rotated' }
@@ -183,18 +247,39 @@ describe('store', () => {
       expect(JSON.stringify(store.get('servers'))).not.toContain('ghp_rotated')
     })
 
-    it('drops the secret blob when a patch removes the secret', () => {
+    it('preserves the secret when a patch omits it (renderer cannot re-supply redacted secrets)', () => {
       addServer(stdioWithSecret)
+      // A transport edit that re-enters no env (e.g. command-only change) comes
+      // from the redacted renderer, which never held the env — so it must survive.
       updateServer('stdio-secret', {
-        transport: { type: 'stdio', command: 'npx' }
+        transport: { type: 'stdio', command: 'node' }
       })
-      expect(store.get('servers')[0].secrets).toBeUndefined()
-      expect(getServers()[0].transport).toEqual({ type: 'stdio', command: 'npx' })
+      expect(store.get('servers')[0].secrets).toBeDefined()
+      expect(getServerById('stdio-secret').transport).toEqual({
+        type: 'stdio',
+        command: 'node',
+        env: { GITHUB_TOKEN: 'ghp_supersecret' }
+      })
+    })
+
+    it('preserves an OAuth client secret when a DCR-recovery patch adds only a clientId', () => {
+      addServer(oauthWithSecret)
+      // DcrRecoveryModal sends back the (redacted) transport plus a new clientId;
+      // the existing clientSecret and any headers must not be wiped.
+      updateServer('oauth-secret', {
+        transport: {
+          type: 'streamable-http',
+          url: 'https://oauth.example.com/mcp',
+          auth: 'oauth',
+          oauth: { clientId: 'public-client-id', scope: 'read:tools' }
+        }
+      })
+      expect(getServerById('oauth-secret').transport).toEqual(oauthWithSecret.transport)
     })
 
     it('round-trips the OAuth client secret while keeping clientId/scope cleartext', () => {
       addServer(oauthWithSecret)
-      expect(getServers()[0].transport).toEqual(oauthWithSecret.transport)
+      expect(getServerById('oauth-secret').transport).toEqual(oauthWithSecret.transport)
 
       const stored = store.get('servers')[0]
       const oauth = (stored.transport as { oauth?: Record<string, unknown> }).oauth
@@ -207,8 +292,8 @@ describe('store', () => {
       addServer(oauthSecretOnly)
       const stored = store.get('servers')[0]
       expect((stored.transport as { oauth?: unknown }).oauth).toBeUndefined()
-      // …but it's restored intact on read.
-      expect(getServers()[0].transport).toEqual(oauthSecretOnly.transport)
+      // …but it's restored intact on a full read.
+      expect(getServerById('oauth-secret-only').transport).toEqual(oauthSecretOnly.transport)
       expect(JSON.stringify(store.get('servers'))).not.toContain('oauth_lonely_secret')
     })
 
@@ -221,7 +306,7 @@ describe('store', () => {
           headers: { Authorization: 'Bearer tok_rotated' }
         }
       })
-      expect(getServers()[0].transport).toEqual({
+      expect(getServerById('http-secret').transport).toEqual({
         type: 'streamable-http',
         url: 'https://mcp.example.com/mcp',
         headers: { Authorization: 'Bearer tok_rotated' }
@@ -253,10 +338,11 @@ describe('store', () => {
 
       const loaded = getServers()
       expect(loaded).toHaveLength(2)
-      // The unrelated server still loads with its secret intact.
+      // The unrelated server still loads, and its secret is intact (read in full
+      // via getServerById; getServers redacts it for the renderer).
       const good = loaded.find((s) => s.id === 'stdio-secret')
-      expect(good?.transport).toEqual(stdioWithSecret.transport)
       expect(good?.credentialsUnavailable).toBeFalsy()
+      expect(getServerById('stdio-secret').transport).toEqual(stdioWithSecret.transport)
     })
 
     it('flags the undecryptable server with credentialsUnavailable and keeps its public config', () => {
@@ -305,11 +391,10 @@ describe('store', () => {
       expect(stored?.secrets).toBeDefined()
       expect(stored?.secrets).not.toBe(CORRUPT_BLOB)
       // …and it round-trips back out decrypted, clearing the unavailable flag.
-      const loaded = getServers().find((s) => s.id === 'broken')
-      expect(loaded?.credentialsUnavailable).toBeFalsy()
-      expect((loaded?.transport as { headers?: Record<string, string> }).headers).toEqual({
-        Authorization: 'Bearer fresh'
-      })
+      expect(getServers().find((s) => s.id === 'broken')?.credentialsUnavailable).toBeFalsy()
+      expect(
+        (getServerById('broken').transport as { headers?: Record<string, string> }).headers
+      ).toEqual({ Authorization: 'Bearer fresh' })
     })
 
     it('never persists the credentialsUnavailable flag back to disk', () => {

@@ -346,7 +346,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     let record: ToolCallRecord | null = null
     try {
       const taskSupport = server.tools.find((t) => t.name === toolName)?.execution?.taskSupport
-      const outcome = await window.api.mcp.callTool(server, toolName, args, callId, taskSupport)
+      const outcome = await window.api.mcp.callTool(serverId, toolName, args, callId, taskSupport)
       if (outcome.authRequired) {
         get().handleAuthEvent({ type: 'auth_required', serverId })
       } else {
@@ -411,7 +411,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     // Null on an auth-required outcome — see executeTool: no phantom error record.
     let record: ResourceReadRecord | null = null
     try {
-      const outcome = await window.api.mcp.readResource(server, uri)
+      const outcome = await window.api.mcp.readResource(serverId, uri)
       if (outcome.authRequired) {
         get().handleAuthEvent({ type: 'auth_required', serverId })
       } else {
@@ -468,7 +468,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     // Null on an auth-required outcome — see executeTool: no phantom error record.
     let record: PromptGetRecord | null = null
     try {
-      const outcome = await window.api.mcp.getPrompt(server, promptName, args)
+      const outcome = await window.api.mcp.getPrompt(serverId, promptName, args)
       if (outcome.authRequired) {
         get().handleAuthEvent({ type: 'auth_required', serverId })
       } else {
@@ -578,26 +578,35 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   },
 
   addServer: async (config) => {
+    // Merge the redacted server the main process hands back — never the raw
+    // `config` the user just typed — so a freshly-entered secret (env, headers,
+    // OAuth clientSecret) never lands in renderer state. The secret exists only
+    // transiently in the Add form's local input while being entered.
+    let loaded: LoadedServer
     try {
-      await window.api.mcp.addServer(config)
+      loaded = await window.api.mcp.addServer(config)
     } catch (err) {
       // Toast for the user, then re-throw so the modal stays open instead of
       // silently dismissing as if the add succeeded.
       reportError(err)
       throw err
     }
-    set((state) => ({ servers: [...state.servers, toRuntime(config)] }))
+    set((state) => ({ servers: [...state.servers, toRuntime(loaded)] }))
   },
 
   updateServer: async (id, patch) => {
+    // As in addServer: merge the redacted server returned by main, not the raw
+    // patch, so an edit that carries a secret (e.g. DCR recovery) doesn't leave
+    // the plaintext value in renderer state.
+    let loaded: LoadedServer
     try {
-      await window.api.mcp.updateServer(id, patch)
+      loaded = await window.api.mcp.updateServer(id, patch)
     } catch (err) {
       reportError(err)
       throw err
     }
     set((state) => ({
-      servers: state.servers.map((s) => (s.id === id ? { ...s, ...patch } : s))
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...loaded } : s))
     }))
   },
 
@@ -662,7 +671,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     })
 
     try {
-      const result = await window.api.mcp.fetchCapabilities(server)
+      const result = await window.api.mcp.fetchCapabilities(id)
       // Sign-in needed (token expired/rejected, or DCR unsupported with no Client
       // ID): the auth event already moved `auth` to auth_required — and, for DCR,
       // opened the recovery modal. Drop back to a neutral disconnected state
@@ -749,7 +758,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     // 'pending' auth event would set the same state once the 401 lands.
     get().handleAuthEvent({ type: 'pending', serverId: id })
     try {
-      await window.api.mcp.authorizeServer(server)
+      await window.api.mcp.authorizeServer(id)
     } catch (err) {
       reportError(err)
       // The flow rejected; if no 'error' event arrived to move us off
