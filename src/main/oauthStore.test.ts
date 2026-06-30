@@ -28,7 +28,8 @@ import {
   saveRedirectPort,
   clearClientInformation,
   clearOAuthTokens,
-  clearOAuthState
+  clearOAuthState,
+  hasOAuthTokens
 } from './oauthStore'
 
 const tokens: OAuthTokens = {
@@ -86,6 +87,20 @@ describe('oauthStore', () => {
     expect((await readOAuthState('srv-1'))?.code_verifier).toBe('verifier-789')
     const raw = await fs.readFile(oauthPath('srv-1'), 'utf-8')
     expect(raw).not.toContain('verifier-789')
+  })
+
+  it('hasOAuthTokens reflects whether issued tokens are stored', async () => {
+    expect(await hasOAuthTokens('srv-1')).toBe(false)
+    await saveTokens('srv-1', tokens)
+    expect(await hasOAuthTokens('srv-1')).toBe(true)
+    // After sign-out the tokens are gone even though client_information remains.
+    await clearOAuthTokens('srv-1')
+    expect(await hasOAuthTokens('srv-1')).toBe(false)
+  })
+
+  it('hasOAuthTokens is false when only client_information is stored', async () => {
+    await saveClientInformation('srv-1', clientInfo)
+    expect(await hasOAuthTokens('srv-1')).toBe(false)
   })
 
   it('stores redirect_port in cleartext', async () => {

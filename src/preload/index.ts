@@ -29,6 +29,7 @@ const api = {
     removeServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:removeServer', id),
     getCachedCapabilities: (): Promise<Record<string, CachedCapabilities>> =>
       ipcRenderer.invoke('mcp:getCachedCapabilities'),
+    getAuthedServerIds: (): Promise<string[]> => ipcRenderer.invoke('mcp:getAuthedServerIds'),
     fetchCapabilities: (id: string): Promise<ConnectResult> =>
       ipcRenderer.invoke('mcp:fetchCapabilities', id),
     cancelCapabilities: (id: string): Promise<void> =>

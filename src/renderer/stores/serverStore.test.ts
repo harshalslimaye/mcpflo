@@ -27,6 +27,7 @@ const mockApi = {
       vi.fn<(id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<LoadedServer>>(),
     removeServer: vi.fn<(id: string) => Promise<void>>(),
     getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
+    getAuthedServerIds: vi.fn<() => Promise<string[]>>(),
     fetchCapabilities: vi.fn(),
     cancelCapabilities: vi.fn<(id: string) => Promise<void>>(),
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
@@ -58,6 +59,7 @@ describe('serverStore', () => {
     )
     mockApi.mcp.removeServer.mockResolvedValue(undefined)
     mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
+    mockApi.mcp.getAuthedServerIds.mockResolvedValue([])
     mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
     mockApi.mcp.cancelCapabilities.mockResolvedValue(undefined)
     mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
@@ -1107,6 +1109,13 @@ describe('serverStore', () => {
       expect(authOf('slack-mcp')).toBeUndefined()
     })
 
+    it('restores authenticated status for an oauth server that holds tokens', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
+      mockApi.mcp.getAuthedServerIds.mockResolvedValue(['oauth-mcp'])
+      await useServerStore.getState().hydrate()
+      expect(authOf('oauth-mcp')).toEqual({ status: 'authenticated' })
+    })
+
     describe('handleAuthEvent', () => {
       beforeEach(async () => {
         mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
@@ -1173,6 +1182,50 @@ describe('serverStore', () => {
       it('swallows a sign-out failure', async () => {
         mockApi.mcp.clearAuth.mockRejectedValue(new Error('boom'))
         await expect(useServerStore.getState().clearAuth('oauth-mcp')).resolves.toBeUndefined()
+      })
+
+      it('resets the server to a disconnected, capability-free state', async () => {
+        // Seed a green, fully-fetched oauth server (as after a successful fetch).
+        mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
+        mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+          'oauth-mcp': {
+            tools: [{ name: 'echo', inputSchema: { type: 'object' } }],
+            resources: [{ uri: 'file://x', name: 'x' }],
+            prompts: [{ name: 'greet' }],
+            fetchedAt: 1000
+          }
+        })
+        await useServerStore.getState().hydrate()
+        expect(useServerStore.getState().servers[0].status).toBe('connected')
+
+        await useServerStore.getState().clearAuth('oauth-mcp')
+
+        const server = useServerStore.getState().servers[0]
+        expect(server.status).toBe('disconnected')
+        expect(server.tools).toEqual([])
+        expect(server.resources).toEqual([])
+        expect(server.prompts).toEqual([])
+        expect(server.fetchedAt).toBeUndefined()
+      })
+
+      it('still resets local state when the bridge call fails', async () => {
+        mockApi.mcp.getServers.mockResolvedValue([oauthConfig])
+        mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+          'oauth-mcp': {
+            tools: [{ name: 'echo', inputSchema: { type: 'object' } }],
+            resources: [],
+            prompts: [],
+            fetchedAt: 1000
+          }
+        })
+        await useServerStore.getState().hydrate()
+        mockApi.mcp.clearAuth.mockRejectedValue(new Error('boom'))
+
+        await useServerStore.getState().clearAuth('oauth-mcp')
+
+        const server = useServerStore.getState().servers[0]
+        expect(server.status).toBe('disconnected')
+        expect(server.tools).toEqual([])
       })
     })
 

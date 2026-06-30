@@ -9,7 +9,7 @@ import {
   authorizeServer,
   onAuthEvent
 } from './mcpClient'
-import { clearOAuthTokens } from './oauthStore'
+import { clearOAuthTokens, hasOAuthTokens } from './oauthStore'
 import { isSecretStorageAvailable } from './secrets'
 import {
   createPending as createPendingElicitation,
@@ -71,6 +71,17 @@ export function registerIpcHandlers(): void {
   // Capabilities cache
   ipcMain.handle('mcp:getCachedCapabilities', () => readAllCapabilities())
 
+  // Ids of OAuth servers that currently hold tokens — lets hydrate restore the
+  // "signed in" status across a restart (otherwise reset to idle). Only the ids
+  // cross the boundary; the tokens stay in main.
+  ipcMain.handle('mcp:getAuthedServerIds', async () => {
+    const oauth = getServers().filter(
+      (s) => s.transport.type === 'streamable-http' && s.transport.auth === 'oauth'
+    )
+    const flags = await Promise.all(oauth.map((s) => hasOAuthTokens(s.id)))
+    return oauth.filter((_, i) => flags[i]).map((s) => s.id)
+  })
+
   ipcMain.handle('mcp:fetchCapabilities', async (_event, id: string) => {
     const config = getServerById(id)
     // Abort any prior in-flight fetch for this id before starting a new one, then
@@ -109,12 +120,14 @@ export function registerIpcHandlers(): void {
   // out-of-band over `mcp:authEvent`, so this resolves once the flow settles.
   ipcMain.handle('mcp:authorizeServer', (_event, id: string) => authorizeServer(getServerById(id)))
 
-  // Sign out: tear down the live session first, then drop the tokens (preserving
-  // client_information so re-auth doesn't re-register), then reset the renderer's
-  // auth field to idle.
+  // Sign out: tear down the live session first, drop the tokens (preserving
+  // client_information so re-auth doesn't re-register), clear the cached
+  // capabilities (so the row doesn't resurrect green on the next hydrate), then
+  // reset the renderer's auth field to idle.
   ipcMain.handle('mcp:clearAuth', async (_event, id: string) => {
     await disconnectServer(id)
     await clearOAuthTokens(id)
+    await clearCapabilities(id)
     broadcastAuthEvent({ type: 'idle', serverId: id })
   })
 

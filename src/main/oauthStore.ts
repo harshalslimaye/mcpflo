@@ -138,6 +138,15 @@ export async function readOAuthState(id: string): Promise<OAuthState | null> {
   }
 }
 
+// Whether a server currently holds issued OAuth tokens — the truth behind
+// "signed in". Used at hydrate to restore the renderer's auth status (which
+// otherwise resets to idle on restart) without ever shipping the token itself
+// across the IPC boundary; only this boolean crosses.
+export async function hasOAuthTokens(id: string): Promise<boolean> {
+  const state = await readOAuthState(id)
+  return state?.tokens?.access_token !== undefined
+}
+
 // Each saver is a read-modify-write of the whole file. OAuth flows are
 // serialized per server (one transaction at a time), so there's no concurrent
 // read-modify-write race to guard against here.
