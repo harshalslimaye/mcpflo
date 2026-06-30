@@ -130,12 +130,34 @@ describe('session', () => {
         oauthConfig,
         expect.anything(),
         expect.any(Function),
-        expect.anything()
+        expect.anything(),
+        undefined
       )
       // The session must hold the transport authorizeAndConnect actually
       // connected, not the one buildOAuthTransport's factory would produce —
       // this is the fix for the OAuth retry "already started" bug.
       expect(session.transport).toBe('authorized-transport')
+    })
+
+    it('threads an abort signal into the plain connect', async () => {
+      const signal = new AbortController().signal
+      await mod.getSession(stdioConfig, signal)
+      expect(h.client.connect).toHaveBeenCalledWith('plain-transport', {
+        timeout: undefined,
+        signal
+      })
+    })
+
+    it('threads an abort signal into authorizeAndConnect for an OAuth config', async () => {
+      const signal = new AbortController().signal
+      await mod.getSession(oauthConfig, signal)
+      expect(h.authorizeAndConnect).toHaveBeenCalledWith(
+        oauthConfig,
+        expect.anything(),
+        expect.any(Function),
+        expect.anything(),
+        signal
+      )
     })
 
     it('wires the session with the connected client and transport', async () => {

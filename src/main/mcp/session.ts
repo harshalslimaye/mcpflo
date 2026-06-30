@@ -20,11 +20,14 @@ async function resolveSession(entry: Promise<Session> | undefined): Promise<Sess
 
 // Returns the warm session for a server, spawning and wiring one on first use.
 // Subsequent calls reuse the same process until it dies or is disconnected.
-export function getSession(config: ServerConfig): Promise<Session> {
+// `signal` (when supplied on a fresh connect) lets the caller abort the in-flight
+// connection — the capability-fetch cancel button drives it. A warm cached
+// session is returned regardless: there's nothing in-flight left to abort.
+export function getSession(config: ServerConfig, signal?: AbortSignal): Promise<Session> {
   const existing = sessions.get(config.id)
   if (existing) return existing
 
-  const pending = createSession(config)
+  const pending = createSession(config, signal)
   sessions.set(config.id, pending)
   // A failed connection must not stay cached, or every later call would reuse
   // the rejected promise instead of retrying the spawn.
@@ -34,7 +37,7 @@ export function getSession(config: ServerConfig): Promise<Session> {
   return pending
 }
 
-async function createSession(config: ServerConfig): Promise<Session> {
+async function createSession(config: ServerConfig, signal?: AbortSignal): Promise<Session> {
   const client = new Client(
     { name: 'mcpflo', version: '1.0.0' },
     {
@@ -65,10 +68,16 @@ async function createSession(config: ServerConfig): Promise<Session> {
   let transport: Transport
   if (t.type === 'streamable-http' && t.auth === 'oauth') {
     const built = await buildOAuthTransport(config)
-    transport = await authorizeAndConnect(config, client, built.makeTransport, built.loopback)
+    transport = await authorizeAndConnect(
+      config,
+      client,
+      built.makeTransport,
+      built.loopback,
+      signal
+    )
   } else {
     transport = createTransport(config)
-    await client.connect(transport, { timeout: config.overrides?.timeoutMs })
+    await client.connect(transport, { timeout: config.overrides?.timeoutMs, signal })
   }
 
   const session: Session = { client, transport, active: null, queue: Promise.resolve() }

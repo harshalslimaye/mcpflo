@@ -18,12 +18,14 @@ const server = (over: Partial<MCPServer> = {}): MCPServer => ({ ...base, ...over
 function renderBar(over: Partial<MCPServer> = {}): {
   onDisconnect: ReturnType<typeof vi.fn>
   onReload: ReturnType<typeof vi.fn>
+  onCancel: ReturnType<typeof vi.fn>
   onSignOut: ReturnType<typeof vi.fn>
   onDelete: ReturnType<typeof vi.fn>
 } {
   const handlers = {
     onDisconnect: vi.fn(),
     onReload: vi.fn(),
+    onCancel: vi.fn(),
     onSignOut: vi.fn(),
     onDelete: vi.fn()
   }
@@ -46,15 +48,27 @@ describe('ServerActionBar', () => {
   })
 
   describe('Reload capabilities', () => {
-    it('is always shown and calls onReload', () => {
+    it('is shown when not fetching and calls onReload', () => {
       const { onReload } = renderBar({ status: 'connected' })
       fireEvent.click(screen.getByRole('button', { name: 'Reload capabilities' }))
       expect(onReload).toHaveBeenCalledOnce()
     })
 
-    it('is disabled while connecting', () => {
+    it('stays shown but disabled while connecting, alongside a Cancel button', () => {
       renderBar({ status: 'connecting' })
       expect(screen.getByRole('button', { name: 'Reload capabilities' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    })
+
+    it('Cancel calls onCancel', () => {
+      const { onCancel } = renderBar({ status: 'connecting' })
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(onCancel).toHaveBeenCalledOnce()
+    })
+
+    it('does not show Cancel when not fetching', () => {
+      renderBar({ status: 'connected' })
+      expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
     })
   })
 
