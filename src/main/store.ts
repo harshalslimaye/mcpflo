@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { chmodSync } from 'node:fs'
 import Store from 'electron-store'
-import type { ServerConfig, LoadedServer } from '../shared/mcp.types'
+import type { ServerConfig, LoadedServer, TransportConfig } from '../shared/mcp.types'
 import { encryptSecret, decryptSecret } from './secrets'
 
 // What we actually persist for a server: the public config with its secret
@@ -140,19 +140,82 @@ export function seedDefaultServers(): void {
   store.set('seeded', true)
 }
 
-export function getServers(): LoadedServer[] {
-  return store.get('servers').map(fromStored)
+// Strips the secret transport values (stdio `env`, http `headers`, OAuth
+// `clientSecret`) from a decrypted config, keeping the non-secret fields the UI
+// needs (url, command, args, OAuth clientId/scope). getServers hands this
+// redacted view to the renderer so plaintext secrets never enter the renderer
+// process: operations reference a server by id and the main process re-resolves
+// the full config via getServerById at the point of use. credentialsUnavailable
+// servers carry no decrypted secret to begin with, so this is a no-op for them.
+function redactSecrets(server: LoadedServer): LoadedServer {
+  const transport = { ...server.transport }
+  if (transport.type === 'stdio') {
+    if (transport.env !== undefined) delete (transport as { env?: unknown }).env
+  } else {
+    if (transport.headers !== undefined) delete (transport as { headers?: unknown }).headers
+    if (transport.oauth?.clientSecret !== undefined) {
+      const oauth = { ...transport.oauth }
+      delete oauth.clientSecret
+      if (Object.keys(oauth).length > 0) transport.oauth = oauth
+      else delete (transport as { oauth?: unknown }).oauth
+    }
+  }
+  return { ...server, transport }
 }
 
-export function addServer(config: ServerConfig): void {
+// The renderer-facing server list: every config with its secret transport
+// values stripped (see redactSecrets). The renderer selects/operates on servers
+// by id; it never holds a plaintext credential.
+export function getServers(): LoadedServer[] {
+  return store.get('servers').map(fromStored).map(redactSecrets)
+}
+
+// The full decrypted config for one server, secrets included. Main-process only
+// — the IPC operation handlers resolve a server from this at the moment of use,
+// so the secret is read in main and never shipped to the renderer. Throws on an
+// unknown id (the renderer only ever operates on persisted servers).
+export function getServerById(id: string): LoadedServer {
+  const stored = store.get('servers').find((s) => s.id === id)
+  if (!stored) throw new Error(`Server "${id}" not found`)
+  return fromStored(stored)
+}
+
+// Returns the redacted view of the newly-added server so the renderer's
+// optimistic state update never retains the plaintext secret the user just
+// entered — matching what getServers would hand back on the next load.
+export function addServer(config: ServerConfig): LoadedServer {
   const servers = store.get('servers')
   if (servers.some((s) => s.id === config.id)) {
     throw new Error(`Server with id "${config.id}" already exists`)
   }
   persist([...servers, toStored(config)])
+  return redactSecrets(config)
 }
 
-export function updateServer(id: string, patch: Partial<Omit<ServerConfig, 'id'>>): void {
+// Re-injects secret transport values the incoming patch omitted but the stored
+// config still holds, keyed by matching transport type. The renderer only ever
+// sees the redacted config (see redactSecrets), so a transport patch coming back
+// from the UI cannot carry a secret it was never given — without this, an edit
+// that doesn't re-enter a credential (DCR recovery adding a clientId, a future
+// URL change) would silently wipe a header, env var, or client secret the user
+// never re-typed. A patch that DOES supply a fresh value for a field overrides,
+// as expected. Mutates `next`.
+function preserveOmittedSecrets(next: TransportConfig, current: TransportConfig): void {
+  if (next.type !== current.type) return
+  if (next.type === 'stdio' && current.type === 'stdio') {
+    if (next.env === undefined && current.env !== undefined) next.env = current.env
+  } else if (next.type === 'streamable-http' && current.type === 'streamable-http') {
+    if (next.headers === undefined && current.headers !== undefined) next.headers = current.headers
+    const currentSecret = current.oauth?.clientSecret
+    if (currentSecret !== undefined && next.oauth?.clientSecret === undefined) {
+      next.oauth = { ...next.oauth, clientSecret: currentSecret }
+    }
+  }
+}
+
+// Returns the redacted view of the updated server (see addServer) so the
+// renderer's optimistic merge never retains a freshly-entered secret.
+export function updateServer(id: string, patch: Partial<Omit<ServerConfig, 'id'>>): LoadedServer {
   const servers = store.get('servers')
   const index = servers.findIndex((s) => s.id === id)
   if (index === -1) throw new Error(`Server "${id}" not found`)
@@ -160,6 +223,10 @@ export function updateServer(id: string, patch: Partial<Omit<ServerConfig, 'id'>
   // Drop the read-time credentialsUnavailable flag so it never round-trips to disk.
   const { credentialsUnavailable, ...current } = fromStored(servers[index])
   const merged = { ...current, ...patch } as ServerConfig
+  // A transport patch replaces the transport wholesale, but the redacted renderer
+  // can't have sent the secrets back — restore the ones it omitted from the
+  // (decrypted) current transport so they survive a non-credential edit.
+  if (patch.transport) preserveOmittedSecrets(merged.transport, current.transport)
   const restored = toStored(merged)
   // If the original secret couldn't be decrypted, we can't faithfully re-encrypt
   // it. Preserve the original blob unless this patch actually supplied a fresh
@@ -172,6 +239,7 @@ export function updateServer(id: string, patch: Partial<Omit<ServerConfig, 'id'>
     restored.secrets = servers[index].secrets
   }
   persist(servers.map((s, i) => (i === index ? restored : s)))
+  return redactSecrets(merged)
 }
 
 export function removeServer(id: string): void {

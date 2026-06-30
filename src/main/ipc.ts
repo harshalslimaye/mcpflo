@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron'
-import { getServers, addServer, updateServer, removeServer } from './store'
+import { getServers, getServerById, addServer, updateServer, removeServer } from './store'
 import {
   fetchCapabilities,
   disconnectServer,
@@ -66,7 +66,8 @@ export function registerIpcHandlers(): void {
   // Capabilities cache
   ipcMain.handle('mcp:getCachedCapabilities', () => readAllCapabilities())
 
-  ipcMain.handle('mcp:fetchCapabilities', async (_event, config: ServerConfig) => {
+  ipcMain.handle('mcp:fetchCapabilities', async (_event, id: string) => {
+    const config = getServerById(id)
     const result = await fetchCapabilities(config)
     // Don't cache the empty placeholder returned when sign-in is needed — the
     // real listing is written once auth completes and capabilities are fetched.
@@ -84,7 +85,7 @@ export function registerIpcHandlers(): void {
 
   // OAuth: kick off (or re-run) the authorization flow. Progress is reported
   // out-of-band over `mcp:authEvent`, so this resolves once the flow settles.
-  ipcMain.handle('mcp:authorizeServer', (_event, config: ServerConfig) => authorizeServer(config))
+  ipcMain.handle('mcp:authorizeServer', (_event, id: string) => authorizeServer(getServerById(id)))
 
   // Sign out: tear down the live session first, then drop the tokens (preserving
   // client_information so re-auth doesn't re-register), then reset the renderer's
@@ -104,12 +105,13 @@ export function registerIpcHandlers(): void {
     'mcp:callTool',
     async (
       event,
-      config: ServerConfig,
+      id: string,
       toolName: string,
       args: Record<string, unknown>,
       callId?: string,
       taskSupport?: TaskSupport
     ) => {
+      const config = getServerById(id)
       const outcome = await callTool(
         config,
         toolName,
@@ -211,16 +213,16 @@ export function registerIpcHandlers(): void {
 
   // Resource read. A single request → response with no mid-call side channels,
   // so unlike mcp:callTool there's no callId / notification plumbing.
-  ipcMain.handle('mcp:readResource', (_event, config: ServerConfig, uri: string) =>
-    readResource(config, uri)
+  ipcMain.handle('mcp:readResource', (_event, id: string, uri: string) =>
+    readResource(getServerById(id), uri)
   )
 
   // Prompt get. Like resource read, a single request → response with no side
   // channels — but it carries arguments (prompts take named string inputs).
   ipcMain.handle(
     'mcp:getPrompt',
-    (_event, config: ServerConfig, name: string, args: Record<string, string>) =>
-      getPrompt(config, name, args)
+    (_event, id: string, name: string, args: Record<string, string>) =>
+      getPrompt(getServerById(id), name, args)
   )
 
   ipcMain.handle(

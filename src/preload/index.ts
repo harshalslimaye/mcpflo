@@ -22,32 +22,33 @@ import type {
 const api = {
   mcp: {
     getServers: (): Promise<LoadedServer[]> => ipcRenderer.invoke('mcp:getServers'),
-    addServer: (config: ServerConfig): Promise<void> => ipcRenderer.invoke('mcp:addServer', config),
-    updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>): Promise<void> =>
+    addServer: (config: ServerConfig): Promise<LoadedServer> =>
+      ipcRenderer.invoke('mcp:addServer', config),
+    updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>): Promise<LoadedServer> =>
       ipcRenderer.invoke('mcp:updateServer', id, patch),
     removeServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:removeServer', id),
     getCachedCapabilities: (): Promise<Record<string, CachedCapabilities>> =>
       ipcRenderer.invoke('mcp:getCachedCapabilities'),
-    fetchCapabilities: (config: ServerConfig): Promise<ConnectResult> =>
-      ipcRenderer.invoke('mcp:fetchCapabilities', config),
+    fetchCapabilities: (id: string): Promise<ConnectResult> =>
+      ipcRenderer.invoke('mcp:fetchCapabilities', id),
     clearCapabilities: (id: string): Promise<void> =>
       ipcRenderer.invoke('mcp:clearCapabilities', id),
     disconnectServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnectServer', id),
     callTool: (
-      config: ServerConfig,
+      id: string,
       toolName: string,
       args: Record<string, unknown>,
       callId?: string,
       taskSupport?: TaskSupport
     ): Promise<ToolCallOutcome> =>
-      ipcRenderer.invoke('mcp:callTool', config, toolName, args, callId, taskSupport),
-    readResource: (config: ServerConfig, uri: string): Promise<ResourceReadOutcome> =>
-      ipcRenderer.invoke('mcp:readResource', config, uri),
+      ipcRenderer.invoke('mcp:callTool', id, toolName, args, callId, taskSupport),
+    readResource: (id: string, uri: string): Promise<ResourceReadOutcome> =>
+      ipcRenderer.invoke('mcp:readResource', id, uri),
     getPrompt: (
-      config: ServerConfig,
+      id: string,
       name: string,
       args: Record<string, string>
-    ): Promise<PromptGetOutcome> => ipcRenderer.invoke('mcp:getPrompt', config, name, args),
+    ): Promise<PromptGetOutcome> => ipcRenderer.invoke('mcp:getPrompt', id, name, args),
     // Subscribes to mid-call notifications; returns an unsubscribe function.
     onToolNotification: (callback: (event: ToolCallNotificationEvent) => void): (() => void) => {
       const listener = (_: unknown, payload: ToolCallNotificationEvent): void => callback(payload)
@@ -95,8 +96,7 @@ const api = {
     respondToSampling: (samplingId: string, result: SamplingResult): Promise<void> =>
       ipcRenderer.invoke('mcp:respondToSampling', samplingId, result),
     // OAuth: trigger / re-trigger the authorization flow for a server.
-    authorizeServer: (config: ServerConfig): Promise<void> =>
-      ipcRenderer.invoke('mcp:authorizeServer', config),
+    authorizeServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:authorizeServer', id),
     // OAuth: sign out — disconnect, clear tokens, reset auth state.
     clearAuth: (id: string): Promise<void> => ipcRenderer.invoke('mcp:clearAuth', id),
     // Whether OS-level encryption is available (gates OAuth mode in the UI).

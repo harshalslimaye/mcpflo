@@ -24,23 +24,26 @@ declare global {
     api: {
       mcp: {
         getServers: () => Promise<LoadedServer[]>
-        addServer: (config: ServerConfig) => Promise<void>
-        updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
+        addServer: (config: ServerConfig) => Promise<LoadedServer>
+        updateServer: (
+          id: string,
+          patch: Partial<Omit<ServerConfig, 'id'>>
+        ) => Promise<LoadedServer>
         removeServer: (id: string) => Promise<void>
         getCachedCapabilities: () => Promise<Record<string, CachedCapabilities>>
-        fetchCapabilities: (config: ServerConfig) => Promise<ConnectResult>
+        fetchCapabilities: (id: string) => Promise<ConnectResult>
         clearCapabilities: (id: string) => Promise<void>
         disconnectServer: (id: string) => Promise<void>
         callTool: (
-          config: ServerConfig,
+          id: string,
           toolName: string,
           args: Record<string, unknown>,
           callId?: string,
           taskSupport?: TaskSupport
         ) => Promise<ToolCallOutcome>
-        readResource: (config: ServerConfig, uri: string) => Promise<ResourceReadOutcome>
+        readResource: (id: string, uri: string) => Promise<ResourceReadOutcome>
         getPrompt: (
-          config: ServerConfig,
+          id: string,
           name: string,
           args: Record<string, string>
         ) => Promise<PromptGetOutcome>
@@ -51,7 +54,7 @@ declare global {
         onSamplingRequest: (callback: (event: SamplingRequestEvent) => void) => () => void
         onSamplingClosed: (callback: (event: SamplingClosedEvent) => void) => () => void
         respondToSampling: (samplingId: string, result: SamplingResult) => Promise<void>
-        authorizeServer: (config: ServerConfig) => Promise<void>
+        authorizeServer: (id: string) => Promise<void>
         clearAuth: (id: string) => Promise<void>
         isEncryptionAvailable: () => Promise<boolean>
         onAuthEvent: (callback: (event: AuthEvent) => void) => () => void
