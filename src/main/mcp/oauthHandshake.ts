@@ -106,13 +106,14 @@ export async function authorizeAndConnect(
   config: ServerConfig,
   client: Client,
   makeTransport: () => StreamableHTTPClientTransport,
-  loopback: LoopbackListener
+  loopback: LoopbackListener,
+  signal?: AbortSignal
 ): Promise<StreamableHTTPClientTransport> {
   const serverId = config.id
   const timeout = config.overrides?.timeoutMs
   const transport = makeTransport()
   try {
-    await client.connect(transport, { timeout })
+    await client.connect(transport, { timeout, signal })
     loopback.close()
     emitAuth({ type: 'success', serverId })
     return transport
@@ -134,21 +135,64 @@ export async function authorizeAndConnect(
   emitAuth({ type: 'pending', serverId })
   let code: string
   try {
-    ;({ code } = await loopback.result)
+    // Race the (possibly long) human consent wait against an explicit cancel:
+    // loopback.close() alone leaves its result pending, so abort must reject the
+    // wait itself. The capability-fetch cancel button is the caller of `signal`.
+    ;({ code } = await waitForCallback(loopback, signal))
   } catch (err) {
+    loopback.close()
     emitAuth({ type: 'error', serverId, reason: err instanceof Error ? err.message : String(err) })
     throw err
   }
   const retryTransport = makeTransport()
   await retryTransport.finishAuth(code)
   try {
-    await client.connect(retryTransport, { timeout })
+    await client.connect(retryTransport, { timeout, signal })
   } catch (err) {
     emitAuth({ type: 'error', serverId, reason: 'Auth failed after code exchange' })
     throw err
   }
   emitAuth({ type: 'success', serverId })
   return retryTransport
+}
+
+// Awaits the loopback redirect, but rejects early if the caller aborts (the
+// cancel button). The listener's own close() doesn't settle its result promise,
+// so without this an abort would leave the wait hanging until CALLBACK_TIMEOUT_MS.
+// On abort we close the listener and reject with the signal's reason.
+function waitForCallback(
+  loopback: LoopbackListener,
+  signal?: AbortSignal
+): Promise<{ code: string }> {
+  if (!signal) return loopback.result
+  if (signal.aborted) {
+    loopback.close()
+    return Promise.reject(signalReason(signal))
+  }
+  return new Promise<{ code: string }>((resolve, reject) => {
+    const onAbort = (): void => {
+      loopback.close()
+      reject(signalReason(signal))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    loopback.result.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(err)
+      }
+    )
+  })
+}
+
+// AbortSignal.reason is `any`; normalize to an Error for the auth event/log.
+function signalReason(signal: AbortSignal): Error {
+  const reason = signal.reason
+  if (reason instanceof Error) return reason
+  return new Error(typeof reason === 'string' ? reason : 'Authorization cancelled')
 }
 
 // Connectivity errno codes (offline, DNS, refused, TLS handshake) raised by

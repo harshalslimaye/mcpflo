@@ -65,6 +65,17 @@ describe('mcpClient', () => {
       })
     })
 
+    it('forwards the abort signal to getSession and every capability listing', async () => {
+      const session = makeFakeSession()
+      h.getSession.mockResolvedValue(session)
+      const signal = new AbortController().signal
+      await mod.connectServer(config, signal)
+      expect(h.getSession).toHaveBeenCalledWith(config, signal)
+      expect(session.client.listTools).toHaveBeenCalledWith(undefined, { signal })
+      expect(session.client.listResources).toHaveBeenCalledWith(undefined, { signal })
+      expect(session.client.listPrompts).toHaveBeenCalledWith(undefined, { signal })
+    })
+
     it('preserves the execution.taskSupport hint on tools', async () => {
       const session = makeFakeSession()
       ;(session.client.listTools as ReturnType<typeof vi.fn>).mockResolvedValue({

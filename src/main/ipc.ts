@@ -36,6 +36,11 @@ import type {
 } from '../shared/mcp.types'
 
 export function registerIpcHandlers(): void {
+  // In-flight capability fetches, keyed by server id, so a later
+  // mcp:cancelCapabilities can abort the connect/listing that's still running.
+  // One entry per server: a fetch replaces any prior controller for that id.
+  const fetchAborters = new Map<string, AbortController>()
+
   // Fan OAuth flow events out to every live renderer (single-window today, but
   // resilient to multi-window), guarded against destroyed senders — the same
   // lifecycle guard the callTool side channels use.
@@ -68,11 +73,28 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('mcp:fetchCapabilities', async (_event, id: string) => {
     const config = getServerById(id)
-    const result = await fetchCapabilities(config)
-    // Don't cache the empty placeholder returned when sign-in is needed — the
-    // real listing is written once auth completes and capabilities are fetched.
-    if (!result.authRequired) await writeCapabilities(config.id, result)
-    return result
+    // Abort any prior in-flight fetch for this id before starting a new one, then
+    // register this fetch's controller so mcp:cancelCapabilities can reach it.
+    fetchAborters.get(id)?.abort()
+    const aborter = new AbortController()
+    fetchAborters.set(id, aborter)
+    try {
+      const result = await fetchCapabilities(config, aborter.signal)
+      // Don't cache the empty placeholder returned when sign-in is needed — the
+      // real listing is written once auth completes and capabilities are fetched.
+      if (!result.authRequired) await writeCapabilities(config.id, result)
+      return result
+    } finally {
+      // Only clear our own entry — a newer fetch may have replaced it.
+      if (fetchAborters.get(id) === aborter) fetchAborters.delete(id)
+    }
+  })
+
+  // Cancel an in-flight capability fetch (the renderer's Cancel button). Aborting
+  // rejects the connect/listing; the SDK closes the partial client and the
+  // OAuth loopback is torn down, so no process or listener is left dangling.
+  ipcMain.handle('mcp:cancelCapabilities', (_event, id: string) => {
+    fetchAborters.get(id)?.abort(new Error('Capability fetch cancelled'))
   })
 
   ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => clearCapabilities(id))

@@ -32,6 +32,7 @@ declare global {
         removeServer: (id: string) => Promise<void>
         getCachedCapabilities: () => Promise<Record<string, CachedCapabilities>>
         fetchCapabilities: (id: string) => Promise<ConnectResult>
+        cancelCapabilities: (id: string) => Promise<void>
         clearCapabilities: (id: string) => Promise<void>
         disconnectServer: (id: string) => Promise<void>
         callTool: (

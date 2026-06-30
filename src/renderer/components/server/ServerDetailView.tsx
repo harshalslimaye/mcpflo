@@ -17,6 +17,7 @@ interface ServerDetailViewProps {
 // activity log on the right rail.
 export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.Element {
   const refreshCapabilities = useServerStore((s) => s.refreshCapabilities)
+  const cancelFetch = useServerStore((s) => s.cancelFetch)
   const disconnectServer = useServerStore((s) => s.disconnectServer)
   const clearAuth = useServerStore((s) => s.clearAuth)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -30,6 +31,7 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
             server={server}
             onDisconnect={() => disconnectServer(server.id)}
             onReload={() => refreshCapabilities(server.id)}
+            onCancel={() => cancelFetch(server.id)}
             onSignOut={() => clearAuth(server.id)}
             onDelete={() => setConfirmingDelete(true)}
           />

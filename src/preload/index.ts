@@ -31,6 +31,8 @@ const api = {
       ipcRenderer.invoke('mcp:getCachedCapabilities'),
     fetchCapabilities: (id: string): Promise<ConnectResult> =>
       ipcRenderer.invoke('mcp:fetchCapabilities', id),
+    cancelCapabilities: (id: string): Promise<void> =>
+      ipcRenderer.invoke('mcp:cancelCapabilities', id),
     clearCapabilities: (id: string): Promise<void> =>
       ipcRenderer.invoke('mcp:clearCapabilities', id),
     disconnectServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:disconnectServer', id),

@@ -1,10 +1,11 @@
-import { Unplug, RotateCw, LogOut, Trash2 } from 'lucide-react'
+import { Unplug, RotateCw, LogOut, Trash2, X } from 'lucide-react'
 import type { MCPServer } from '../../../shared/mcp.types'
 
 interface ServerActionBarProps {
   server: MCPServer
   onDisconnect: () => void
   onReload: () => void
+  onCancel: () => void
   onSignOut: () => void
   onDelete: () => void
 }
@@ -45,6 +46,7 @@ export function ServerActionBar({
   server,
   onDisconnect,
   onReload,
+  onCancel,
   onSignOut,
   onDelete
 }: ServerActionBarProps): React.JSX.Element {
@@ -65,6 +67,9 @@ export function ServerActionBar({
         onClick={onReload}
         disabled={fetching}
       />
+
+      {/* Only shown while a fetch is in flight, to cancel it. */}
+      {fetching && <ActionButton icon={<X size={13} />} label="Cancel" onClick={onCancel} />}
 
       {canSignOut && (
         <ActionButton icon={<LogOut size={13} />} label="Sign out" onClick={onSignOut} />

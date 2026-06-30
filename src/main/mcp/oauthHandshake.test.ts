@@ -82,11 +82,17 @@ describe('oauthHandshake', () => {
 
   // Runs buildOAuthTransport + authorizeAndConnect back to back, the way
   // session.ts's createSession does, against a bare fake Client.
-  function connect(config: ServerConfig = oauthConfig): Promise<unknown> {
+  function connect(config: ServerConfig = oauthConfig, signal?: AbortSignal): Promise<unknown> {
     return mod
       .buildOAuthTransport(config)
       .then(({ makeTransport, loopback }) =>
-        mod.authorizeAndConnect(config, fakeClient as unknown as Client, makeTransport, loopback)
+        mod.authorizeAndConnect(
+          config,
+          fakeClient as unknown as Client,
+          makeTransport,
+          loopback,
+          signal
+        )
       )
   }
 
@@ -251,6 +257,26 @@ describe('oauthHandshake', () => {
       expect(events).toEqual([
         { type: 'pending', serverId: 'srv-oauth' },
         { type: 'error', serverId: 'srv-oauth', reason: 'Auth failed after code exchange' }
+      ])
+    })
+
+    it('aborts the loopback wait when the signal fires (cancel)', async () => {
+      fakeClient.connect.mockRejectedValueOnce(unauthorized()).mockResolvedValue(undefined)
+      // A callback that never lands, so only the abort can settle the wait.
+      const pending = new Promise<{ code: string }>(() => {})
+      h.loopback.result = pending
+      const controller = new AbortController()
+      const events = captureAuthEvents()
+
+      const flow = connect(oauthConfig, controller.signal)
+      controller.abort(new Error('Capability fetch cancelled'))
+
+      await expect(flow).rejects.toThrow('cancelled')
+      expect(lastTransport().finishAuth).not.toHaveBeenCalled()
+      expect(h.loopback.close).toHaveBeenCalled()
+      expect(events).toEqual([
+        { type: 'pending', serverId: 'srv-oauth' },
+        { type: 'error', serverId: 'srv-oauth', reason: 'Capability fetch cancelled' }
       ])
     })
 

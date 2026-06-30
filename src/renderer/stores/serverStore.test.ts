@@ -28,6 +28,7 @@ const mockApi = {
     removeServer: vi.fn<(id: string) => Promise<void>>(),
     getCachedCapabilities: vi.fn<() => Promise<Record<string, CachedCapabilities>>>(),
     fetchCapabilities: vi.fn(),
+    cancelCapabilities: vi.fn<(id: string) => Promise<void>>(),
     clearCapabilities: vi.fn<(id: string) => Promise<void>>(),
     disconnectServer: vi.fn<(id: string) => Promise<void>>(),
     callTool: vi.fn(),
@@ -58,6 +59,7 @@ describe('serverStore', () => {
     mockApi.mcp.removeServer.mockResolvedValue(undefined)
     mockApi.mcp.getCachedCapabilities.mockResolvedValue({})
     mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
+    mockApi.mcp.cancelCapabilities.mockResolvedValue(undefined)
     mockApi.mcp.clearCapabilities.mockResolvedValue(undefined)
     mockApi.mcp.disconnectServer.mockResolvedValue(undefined)
     mockApi.mcp.callTool.mockResolvedValue({
@@ -991,6 +993,46 @@ describe('serverStore', () => {
         status: 'error',
         detail: 'Connection refused'
       })
+    })
+  })
+
+  describe('cancelFetch', () => {
+    it('returns the row to a neutral state and aborts in the main process', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().cancelFetch('github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('disconnected')
+      expect(server?.error).toBeUndefined()
+      expect(mockApi.mcp.cancelCapabilities).toHaveBeenCalledWith('github-mcp')
+    })
+
+    it('discards the outcome of a fetch that was cancelled mid-flight', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      let resolveFetch: (r: {
+        tools: { name: string; inputSchema: { type: 'object' } }[]
+        resources: never[]
+        prompts: never[]
+      }) => void = () => {}
+      mockApi.mcp.fetchCapabilities.mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        })
+      )
+
+      const fetchPromise = useServerStore.getState().fetchCapabilities('github-mcp')
+      // Cancel while the fetch is still in flight.
+      await useServerStore.getState().cancelFetch('github-mcp')
+      // The fetch resolves late with real capabilities — must be discarded.
+      resolveFetch({
+        tools: [{ name: 'list_issues', inputSchema: { type: 'object' } }],
+        resources: [],
+        prompts: []
+      })
+      await fetchPromise
+
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.status).toBe('disconnected')
+      expect(server?.tools).toEqual([])
     })
   })
 

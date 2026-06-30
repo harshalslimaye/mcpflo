@@ -29,13 +29,19 @@ export interface ConnectResult {
   authRequired?: boolean
 }
 
-export async function connectServer(config: ServerConfig): Promise<ConnectResult> {
-  const { client } = await getSession(config)
+export async function connectServer(
+  config: ServerConfig,
+  signal?: AbortSignal
+): Promise<ConnectResult> {
+  const { client } = await getSession(config, signal)
 
+  // Forward the abort signal into each listing too, so a cancel during the
+  // capability fetch (not just the connect) interrupts the in-flight requests.
+  const opts = { signal }
   const [toolsResult, resourcesResult, promptsResult] = await Promise.all([
-    client.listTools().catch(() => ({ tools: [] })),
-    client.listResources().catch(() => ({ resources: [] })),
-    client.listPrompts().catch(() => ({ prompts: [] }))
+    client.listTools(undefined, opts).catch(() => ({ tools: [] })),
+    client.listResources(undefined, opts).catch(() => ({ resources: [] })),
+    client.listPrompts(undefined, opts).catch(() => ({ prompts: [] }))
   ])
 
   return {
@@ -132,9 +138,12 @@ export async function getPrompt(
 
 // Fetches a snapshot of a server's capabilities, warming the connection so the
 // first tool call on it is instant.
-export async function fetchCapabilities(config: ServerConfig): Promise<ConnectResult> {
+export async function fetchCapabilities(
+  config: ServerConfig,
+  signal?: AbortSignal
+): Promise<ConnectResult> {
   try {
-    return await connectServer(config)
+    return await connectServer(config, signal)
   } catch (err) {
     // Auth-required conditions aren't capability failures — the auth event has
     // already fired (UnauthorizedError below also drops the dead session; the DCR

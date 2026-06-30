@@ -206,6 +206,8 @@ interface ServerStore {
   updateServer: (id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => Promise<void>
   removeServer: (id: string) => Promise<void>
   fetchCapabilities: (id: string) => Promise<void>
+  // Cancels an in-flight capability fetch, returning the row to a neutral state.
+  cancelFetch: (id: string) => Promise<void>
   refreshCapabilities: (id: string) => Promise<void>
   disconnectServer: (id: string) => Promise<void>
   // OAuth: start (or re-run) the sign-in flow for a server.
@@ -670,8 +672,14 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       at
     })
 
+    // A cancel (or disconnect) moves the row off 'connecting' while we await; if
+    // that happened, the user abandoned this fetch — discard its outcome rather
+    // than overwrite the neutral state they asked for.
+    const cancelled = (): boolean => get().servers.find((s) => s.id === id)?.status !== 'connecting'
+
     try {
       const result = await window.api.mcp.fetchCapabilities(id)
+      if (cancelled()) return
       // Sign-in needed (token expired/rejected, or DCR unsupported with no Client
       // ID): the auth event already moved `auth` to auth_required — and, for DCR,
       // opened the recovery modal. Drop back to a neutral disconnected state
@@ -702,6 +710,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         ]
       }))
     } catch (err) {
+      if (cancelled()) return
       const message = err instanceof Error ? err.message : String(err)
       set((state) => ({
         servers: state.servers.map((s) =>
@@ -709,6 +718,22 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         ),
         protocolEvents: [proto('connect', 'error', message, startedAt), ...state.protocolEvents]
       }))
+    }
+  },
+
+  // Cancels an in-flight fetch: optimistically return the row to a neutral
+  // disconnected state (so the awaiting fetchCapabilities discards its outcome),
+  // then tell the main process to abort the connect/listing it's blocked on.
+  cancelFetch: async (id) => {
+    set((state) => ({
+      servers: state.servers.map((s) =>
+        s.id === id ? { ...s, status: 'disconnected', error: undefined } : s
+      )
+    }))
+    try {
+      await window.api.mcp.cancelCapabilities(id)
+    } catch (err) {
+      reportError(err)
     }
   },
 
