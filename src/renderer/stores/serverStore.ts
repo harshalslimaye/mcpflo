@@ -219,10 +219,12 @@ interface ServerStore {
   handleAuthEvent: (event: AuthEvent) => void
 }
 
-function toRuntime(config: LoadedServer, cached?: CachedCapabilities): MCPServer {
-  // OAuth servers begin idle (not signed in); auth events promote them as the
-  // flow progresses (and on restart, a silent token-based reconnect emits
-  // success). Non-OAuth servers carry no auth field at all.
+function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = false): MCPServer {
+  // OAuth servers carry an auth field; non-OAuth servers carry none at all. On
+  // restart we restore "authenticated" when main reports tokens on disk (see
+  // getAuthedServerIds) — otherwise the row would reset to idle and hide its
+  // Sign out affordance until a manual reload re-ran the handshake. With no
+  // tokens it begins idle, and auth events promote it as a sign-in flow runs.
   const isOAuth = config.transport.type === 'streamable-http' && config.transport.auth === 'oauth'
   return {
     ...config,
@@ -232,7 +234,9 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities): MCPServer
     resources: cached?.resources ?? [],
     prompts: cached?.prompts ?? [],
     fetchedAt: cached?.fetchedAt,
-    ...(isOAuth ? { auth: { status: 'idle' as const } } : {})
+    ...(isOAuth
+      ? { auth: { status: authed ? ('authenticated' as const) : ('idle' as const) } }
+      : {})
   }
 }
 
@@ -253,10 +257,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const [configs, cache] = await Promise.all([
+      const [configs, cache, authedIds] = await Promise.all([
         window.api.mcp.getServers(),
-        window.api.mcp.getCachedCapabilities()
+        window.api.mcp.getCachedCapabilities(),
+        window.api.mcp.getAuthedServerIds()
       ])
+      const authed = new Set(authedIds)
       // Replay each cached server's capability listing into the activity log so
       // the "All" tab isn't empty on a cached startup. These are badged `cache`
       // (and stamped at the cache's own fetch time, so their age is honest) —
@@ -284,7 +290,10 @@ export const useServerStore = create<ServerStore>((set, get) => ({
           list('list-prompts', `${cached.prompts.length} prompts`)
         ]
       })
-      set({ servers: configs.map((c) => toRuntime(c, cache[c.id])), protocolEvents: cachedEvents })
+      set({
+        servers: configs.map((c) => toRuntime(c, cache[c.id], authed.has(c.id))),
+        protocolEvents: cachedEvents
+      })
     } catch (err) {
       // A startup read failure would otherwise leave the app blank with no
       // explanation; surface it instead.
@@ -794,12 +803,30 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   clearAuth: async (id) => {
     try {
-      // Main disconnects the session, clears tokens, then pushes an 'idle' auth
-      // event which resets the field.
+      // Main disconnects the session, clears tokens, clears cached capabilities,
+      // then pushes an 'idle' auth event which resets the auth field. Since the
+      // live session is genuinely torn down, mirror disconnectServer's local
+      // reset here too — otherwise the row would keep rendering green with its
+      // (now unreachable) tools/resources/prompts still listed.
       await window.api.mcp.clearAuth(id)
     } catch (err) {
       reportError(err)
     }
+    set((state) => ({
+      servers: state.servers.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              status: 'disconnected',
+              error: undefined,
+              tools: [],
+              resources: [],
+              prompts: [],
+              fetchedAt: undefined
+            }
+          : s
+      )
+    }))
   },
 
   handleAuthEvent: (event) => {
