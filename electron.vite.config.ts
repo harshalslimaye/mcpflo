@@ -5,7 +5,15 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {},
-  preload: {},
+  preload: {
+    // Sandboxed preload scripts (webPreferences.sandbox: true) can only
+    // require() Electron/Node builtins, not arbitrary node_modules, so
+    // @electron-toolkit/preload must be bundled in rather than left as an
+    // external require like electron-vite's default externalizeDeps does.
+    build: {
+      externalizeDeps: false
+    }
+  },
   renderer: {
     resolve: {
       alias: {
