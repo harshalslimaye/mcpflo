@@ -1,9 +1,12 @@
 {
   "name": "@mcpflo/server-everything",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Deterministic MCP test-fixture server for MCPFlo",
   "mcpName": "io.github.harshalslimaye/mcpflo-server-everything",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/harshalslimaye/mcpflo.git",
@@ -12,13 +15,13 @@
   "type": "commonjs",
   "main": "./dist/index.js",
   "bin": {
-    "mcpflo-server-everything": "./dist/index.js"
+    "mcpflo-server-everything": "dist/index.js"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('docs','dist/docs',{recursive:true})\"",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('docs','dist/docs',{recursive:true})\" && chmod +x dist/index.js",
     "start": "node dist/index.js",
     "test": "vitest run"
   },
