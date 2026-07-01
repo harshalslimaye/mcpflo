@@ -1,6 +1,9 @@
 {
   "name": "mcpflo",
   "version": "0.0.6",
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "A visual testing tool for MCP (Model Context Protocol) servers — connect, browse capabilities, and test tool chains without writing code.",
   "main": "./out/main/index.js",
   "author": {
@@ -72,7 +75,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^22.19.1",
+    "@types/node": "^22.20.0",
     "@types/react": "~19.2.16",
     "@types/react-dom": "~19.2.3",
     "@vitejs/plugin-react": "~5.2.0",
