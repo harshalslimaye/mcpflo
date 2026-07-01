@@ -1,5 +1,4 @@
 import http from 'http'
-import { shell } from 'electron'
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js'
 import type {
   OAuthClientMetadata,
@@ -8,6 +7,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js'
 import type { OAuthConfig } from '../shared/mcp.types'
 import { readOAuthState, saveTokens, saveClientInformation, saveCodeVerifier } from './oauthStore'
+import { openExternalSafely } from './openExternal'
 
 // How long the loopback listener waits for the browser redirect before giving
 // up. Exported so tests can drive it with fake timers.
@@ -179,7 +179,7 @@ export function createOAuthProvider(
     },
 
     redirectToAuthorization(authorizationUrl: URL): void {
-      void shell.openExternal(authorizationUrl.toString())
+      openExternalSafely(authorizationUrl.toString())
     }
   }
 }

@@ -1,8 +1,9 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { fixPath } from './fixPath'
 import { seedDefaultServers } from './store'
 import { disconnectAll } from './mcpClient'
+import { openExternalSafely } from './openExternal'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -35,7 +36,7 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalSafely(details.url)
     return { action: 'deny' }
   })
 
@@ -48,7 +49,7 @@ function createWindow(): void {
   const denyNavigation = (event: Electron.Event, url: string): void => {
     if (isAppOrigin(url)) return
     event.preventDefault()
-    shell.openExternal(url)
+    openExternalSafely(url)
   }
   mainWindow.webContents.on('will-navigate', denyNavigation)
   mainWindow.webContents.on('will-redirect', denyNavigation)
