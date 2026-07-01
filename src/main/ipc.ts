@@ -11,6 +11,7 @@ import {
 } from './mcpClient'
 import { clearOAuthTokens, hasOAuthTokens } from './oauthStore'
 import { isSecretStorageAvailable } from './secrets'
+import { assertValidServerId } from './serverId'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -59,10 +60,14 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'mcp:updateServer',
-    (_event, id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => updateServer(id, patch)
+    (_event, id: string, patch: Partial<Omit<ServerConfig, 'id'>>) => {
+      assertValidServerId(id)
+      return updateServer(id, patch)
+    }
   )
 
   ipcMain.handle('mcp:removeServer', async (_event, id: string) => {
+    assertValidServerId(id)
     await disconnectServer(id)
     removeServer(id)
     await removeServerDir(id)
@@ -83,6 +88,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('mcp:fetchCapabilities', async (_event, id: string) => {
+    assertValidServerId(id)
     const config = getServerById(id)
     // Abort any prior in-flight fetch for this id before starting a new one, then
     // register this fetch's controller so mcp:cancelCapabilities can reach it.
@@ -105,12 +111,19 @@ export function registerIpcHandlers(): void {
   // rejects the connect/listing; the SDK closes the partial client and the
   // OAuth loopback is torn down, so no process or listener is left dangling.
   ipcMain.handle('mcp:cancelCapabilities', (_event, id: string) => {
+    assertValidServerId(id)
     fetchAborters.get(id)?.abort(new Error('Capability fetch cancelled'))
   })
 
-  ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => clearCapabilities(id))
+  ipcMain.handle('mcp:clearCapabilities', (_event, id: string) => {
+    assertValidServerId(id)
+    return clearCapabilities(id)
+  })
 
-  ipcMain.handle('mcp:disconnectServer', (_event, id: string) => disconnectServer(id))
+  ipcMain.handle('mcp:disconnectServer', (_event, id: string) => {
+    assertValidServerId(id)
+    return disconnectServer(id)
+  })
 
   // Whether OS-level encryption is available — gates OAuth mode in the UI, since
   // OAuth tokens must be encryptable at rest (no in-memory fallback).
@@ -118,13 +131,17 @@ export function registerIpcHandlers(): void {
 
   // OAuth: kick off (or re-run) the authorization flow. Progress is reported
   // out-of-band over `mcp:authEvent`, so this resolves once the flow settles.
-  ipcMain.handle('mcp:authorizeServer', (_event, id: string) => authorizeServer(getServerById(id)))
+  ipcMain.handle('mcp:authorizeServer', (_event, id: string) => {
+    assertValidServerId(id)
+    return authorizeServer(getServerById(id))
+  })
 
   // Sign out: tear down the live session first, drop the tokens (preserving
   // client_information so re-auth doesn't re-register), clear the cached
   // capabilities (so the row doesn't resurrect green on the next hydrate), then
   // reset the renderer's auth field to idle.
   ipcMain.handle('mcp:clearAuth', async (_event, id: string) => {
+    assertValidServerId(id)
     await disconnectServer(id)
     await clearOAuthTokens(id)
     await clearCapabilities(id)
@@ -146,6 +163,7 @@ export function registerIpcHandlers(): void {
       callId?: string,
       taskSupport?: TaskSupport
     ) => {
+      assertValidServerId(id)
       const config = getServerById(id)
       const outcome = await callTool(
         config,
@@ -248,16 +266,19 @@ export function registerIpcHandlers(): void {
 
   // Resource read. A single request → response with no mid-call side channels,
   // so unlike mcp:callTool there's no callId / notification plumbing.
-  ipcMain.handle('mcp:readResource', (_event, id: string, uri: string) =>
-    readResource(getServerById(id), uri)
-  )
+  ipcMain.handle('mcp:readResource', (_event, id: string, uri: string) => {
+    assertValidServerId(id)
+    return readResource(getServerById(id), uri)
+  })
 
   // Prompt get. Like resource read, a single request → response with no side
   // channels — but it carries arguments (prompts take named string inputs).
   ipcMain.handle(
     'mcp:getPrompt',
-    (_event, id: string, name: string, args: Record<string, string>) =>
-      getPrompt(getServerById(id), name, args)
+    (_event, id: string, name: string, args: Record<string, string>) => {
+      assertValidServerId(id)
+      return getPrompt(getServerById(id), name, args)
+    }
   )
 
   ipcMain.handle(
