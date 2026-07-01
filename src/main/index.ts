@@ -7,6 +7,15 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
+// True if the URL is the app's own renderer (packaged file:// build or the
+// electron-vite dev server), as opposed to some other origin.
+function isAppOrigin(url: string): boolean {
+  const isDevServer =
+    is.dev && !!process.env['ELECTRON_RENDERER_URL'] && url.startsWith(process.env['ELECTRON_RENDERER_URL'])
+  const isAppFile = url.startsWith('file://') && url.includes(join('out', 'renderer', 'index.html'))
+  return isDevServer || isAppFile
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -29,6 +38,20 @@ function createWindow(): void {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
+
+  // Top-level navigation guard: the preload bridge (window.api) is attached
+  // to whatever page is loaded in this window, so if the main frame ever
+  // navigated to a remote origin (e.g. triggered by attacker-controlled MCP
+  // content), that origin would inherit the privileged bridge. Only allow
+  // navigation within the app's own renderer; send everything else to the
+  // system browser instead, mirroring setWindowOpenHandler above.
+  const denyNavigation = (event: Electron.Event, url: string): void => {
+    if (isAppOrigin(url)) return
+    event.preventDefault()
+    shell.openExternal(url)
+  }
+  mainWindow.webContents.on('will-navigate', denyNavigation)
+  mainWindow.webContents.on('will-redirect', denyNavigation)
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
