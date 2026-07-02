@@ -64,16 +64,27 @@ export function startLoopbackListener(expectedState: string, port = 0): Promise<
         res.end(page(message))
       }
 
-      const error = url.searchParams.get('error')
+      // The state check must come first and, on mismatch, must not settle (or
+      // tear down) the flow. Anything on the machine can hit this port — a
+      // port scanner, a browser prefetch, or a no-cors fetch() fired by an
+      // unrelated page the user has open — and a mismatched request proves
+      // nothing about whether it's the real redirect. Reply 400 to just that
+      // request and keep listening for the one that actually carries the
+      // state this attempt generated, up to the timeout. (RFC 6749 4.1.2.1
+      // requires the state to be echoed back on an error redirect too, so a
+      // compliant server's genuine "access denied" redirect isn't affected.)
       const state = url.searchParams.get('state')
+      if (state !== expectedState) {
+        reply(400, 'Invalid authorization state. You can close this tab.')
+        return
+      }
+
+      const error = url.searchParams.get('error')
       const code = url.searchParams.get('code')
 
       if (error) {
         reply(400, 'Authorization failed. You can close this tab.')
         rejectResult(new Error(`Authorization error: ${error}`))
-      } else if (state !== expectedState) {
-        reply(400, 'Invalid authorization state. You can close this tab.')
-        rejectResult(new Error('OAuth state mismatch'))
       } else if (!code) {
         reply(400, 'Missing authorization code. You can close this tab.')
         rejectResult(new Error('Missing authorization code'))
