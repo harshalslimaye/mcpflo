@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import {
+  ServerError,
+  InvalidClientMetadataError
+} from '@modelcontextprotocol/sdk/server/auth/errors.js'
 import type { ServerConfig, AuthEvent } from '../../shared/mcp.types'
 
 interface MockTransport {
@@ -360,13 +364,77 @@ describe('oauthHandshake', () => {
   })
 
   describe('DCR failure heuristic', () => {
-    it('reports dcr_required when registration was the only path to credentials', async () => {
-      fakeClient.connect.mockRejectedValue(new Error('Incompatible auth server'))
+    it('reports dcr_required when the auth server has no registration_endpoint', async () => {
+      // The SDK's own registerClient() throws this exact message when the
+      // discovered auth server metadata has no registration_endpoint at all.
+      fakeClient.connect.mockRejectedValue(
+        new Error('Incompatible auth server: does not support dynamic client registration')
+      )
       const events = captureAuthEvents()
 
       await expect(connect()).rejects.toThrow('Dynamic client registration is not supported')
       expect(h.loopback.close).toHaveBeenCalled()
       expect(events).toEqual([{ type: 'dcr_required', serverId: 'srv-oauth' }])
+    })
+
+    it('reports dcr_required when the registration POST itself is rejected', async () => {
+      // The SDK parses a non-2xx registration response into an OAuthError
+      // subclass (here InvalidClientMetadataError, RFC 7591's dedicated error
+      // for a rejected DCR request) — this must be recognized just as
+      // positively as the "no registration_endpoint" message above.
+      fakeClient.connect.mockRejectedValue(
+        new InvalidClientMetadataError('redirect_uris is required')
+      )
+      const events = captureAuthEvents()
+
+      await expect(connect()).rejects.toThrow('Dynamic client registration is not supported')
+      expect(events).toEqual([{ type: 'dcr_required', serverId: 'srv-oauth' }])
+    })
+
+    it('reports dcr_required for an unparseable registration error response (ServerError fallback)', async () => {
+      // The SDK falls back to a plain ServerError even when the registration
+      // endpoint's error body isn't well-formed OAuth JSON — still an
+      // OAuthError, still a genuine registration failure.
+      fakeClient.connect.mockRejectedValue(
+        new ServerError('HTTP 500: Invalid OAuth error response')
+      )
+      const events = captureAuthEvents()
+
+      await expect(connect()).rejects.toThrow('Dynamic client registration is not supported')
+      expect(events).toEqual([{ type: 'dcr_required', serverId: 'srv-oauth' }])
+    })
+
+    it('does not mistake an ordinary connect failure (e.g. a wrong URL) for a DCR failure', async () => {
+      // A 404 from a typo'd server URL never reaches registration at all —
+      // this is the false-positive the old "anything unexplained is a DCR
+      // failure" heuristic used to misdiagnose as "needs a Client ID".
+      fakeClient.connect.mockRejectedValue(new Error('Error POSTing to endpoint: 404 Not Found'))
+      const events = captureAuthEvents()
+
+      await expect(connect()).rejects.toThrow('Error POSTing to endpoint: 404 Not Found')
+      expect(events).toEqual([
+        {
+          type: 'error',
+          serverId: 'srv-oauth',
+          reason: 'Error POSTing to endpoint: 404 Not Found'
+        }
+      ])
+    })
+
+    it('does not mistake a server error unrelated to registration for a DCR failure', async () => {
+      fakeClient.connect.mockRejectedValue(
+        new Error('Failed to open SSE stream: Internal Server Error')
+      )
+      const events = captureAuthEvents()
+
+      await expect(connect()).rejects.toThrow('Failed to open SSE stream')
+      expect(events).toEqual([
+        {
+          type: 'error',
+          serverId: 'srv-oauth',
+          reason: 'Failed to open SSE stream: Internal Server Error'
+        }
+      ])
     })
 
     it('treats a network error on first connect as retryable, not a DCR failure', async () => {
@@ -401,11 +469,16 @@ describe('oauthHandshake', () => {
           oauth: { clientId: 'cid' }
         }
       }
-      fakeClient.connect.mockRejectedValue(new Error('network down'))
+      // Even a genuine registration-shaped error must not open the recovery
+      // modal when a clientId is already configured — DCR isn't the only
+      // route to credentials in that case.
+      fakeClient.connect.mockRejectedValue(new ServerError('registration failed'))
       const events = captureAuthEvents()
 
-      await expect(connect(withClientId)).rejects.toThrow('network down')
-      expect(events).toEqual([{ type: 'error', serverId: 'srv-oauth', reason: 'network down' }])
+      await expect(connect(withClientId)).rejects.toThrow('registration failed')
+      expect(events).toEqual([
+        { type: 'error', serverId: 'srv-oauth', reason: 'registration failed' }
+      ])
     })
   })
 
