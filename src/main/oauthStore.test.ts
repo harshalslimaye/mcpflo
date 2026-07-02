@@ -28,7 +28,8 @@ import {
   clearClientInformation,
   clearOAuthTokens,
   clearOAuthState,
-  hasValidOAuthTokens
+  hasValidOAuthTokens,
+  readAuthDetails
 } from './oauthStore'
 
 const tokens: OAuthTokens = {
@@ -169,6 +170,100 @@ describe('oauthStore', () => {
 
       vi.advanceTimersByTime(1000 * 60 * 60 * 24 * 365)
       expect(await hasValidOAuthTokens('srv-1')).toBe(true)
+    })
+  })
+
+  describe('readAuthDetails', () => {
+    it('returns null when no tokens are held', async () => {
+      expect(await readAuthDetails('srv-1')).toBeNull()
+      await saveClientInformation('srv-1', clientInfo)
+      expect(await readAuthDetails('srv-1')).toBeNull()
+    })
+
+    it('derives the summary from a DCR-registered session', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(1_000_000)
+        await saveClientInformation('srv-1', clientInfo)
+        await saveRedirectPort('srv-1', 51234)
+        await saveTokens('srv-1', { ...tokens, scope: 'read:tools', id_token: 'idtok' })
+
+        expect(await readAuthDetails('srv-1')).toEqual({
+          clientId: 'client-123',
+          registration: 'dcr',
+          // clientInfo carries a client_secret, so the DCR result is confidential.
+          clientType: 'confidential',
+          scope: 'read:tools',
+          tokenType: 'Bearer',
+          issuedAt: 1_000_000,
+          expiresAt: 1_000_000 + 3600 * 1000,
+          hasRefreshToken: true,
+          hasIdToken: true,
+          redirectUri: 'http://127.0.0.1:51234/callback'
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('prefers a manual client id over the DCR result and labels it manual', async () => {
+      await saveClientInformation('srv-1', clientInfo)
+      await saveTokens('srv-1', tokens)
+
+      const details = await readAuthDetails('srv-1', 'manual-cid')
+      expect(details?.clientId).toBe('manual-cid')
+      expect(details?.registration).toBe('manual')
+    })
+
+    it('reports a null expiresAt when the server sent no expires_in', async () => {
+      await saveTokens('srv-1', { access_token: 'access-abc', token_type: 'Bearer' })
+
+      const details = await readAuthDetails('srv-1')
+      expect(details?.expiresAt).toBeNull()
+      expect(details?.hasRefreshToken).toBe(false)
+      expect(details?.scope).toBeUndefined()
+    })
+
+    it('reports no redirectUri when no loopback port was ever persisted', async () => {
+      await saveTokens('srv-1', tokens)
+      expect((await readAuthDetails('srv-1'))?.redirectUri).toBeUndefined()
+    })
+
+    it('reports hasIdToken false when the token response carried no id_token', async () => {
+      await saveTokens('srv-1', tokens)
+      expect((await readAuthDetails('srv-1'))?.hasIdToken).toBe(false)
+    })
+
+    describe('clientType', () => {
+      it('is public when neither a manual nor a DCR client secret is configured', async () => {
+        await saveClientInformation('srv-1', { client_id: 'client-123' })
+        await saveTokens('srv-1', tokens)
+        expect((await readAuthDetails('srv-1'))?.clientType).toBe('public')
+      })
+
+      it('is confidential when the manual config carries a client secret', async () => {
+        // No DCR client_information saved at all — the manual flag alone
+        // must be enough to mark this confidential.
+        await saveTokens('srv-1', tokens)
+        const details = await readAuthDetails('srv-1', 'manual-cid', true)
+        expect(details?.clientType).toBe('confidential')
+      })
+
+      it('is confidential when the DCR result carries a client secret', async () => {
+        await saveClientInformation('srv-1', clientInfo) // has client_secret
+        await saveTokens('srv-1', tokens)
+        expect((await readAuthDetails('srv-1'))?.clientType).toBe('confidential')
+      })
+    })
+
+    it('never includes token or secret material', async () => {
+      await saveClientInformation('srv-1', clientInfo)
+      await saveTokens('srv-1', tokens)
+
+      const serialized = JSON.stringify(await readAuthDetails('srv-1'))
+      expect(serialized).not.toContain('access-abc')
+      expect(serialized).not.toContain('refresh-xyz')
+      expect(serialized).not.toContain('secret-456')
     })
   })
 

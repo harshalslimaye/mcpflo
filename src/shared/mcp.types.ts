@@ -60,6 +60,36 @@ export type AuthEvent =
   // auth_required with no user-facing reason text.
   | { type: 'dcr_required'; serverId: string }
 
+// Redacted summary of a server's OAuth session, for the auth details panel.
+// Derived facts only — the tokens themselves never cross the IPC boundary
+// (same rule as getAuthedServerIds: booleans and metadata cross, secrets stay
+// in main). Null from mcp:getAuthDetails = not an OAuth server, or no tokens.
+export interface AuthDetails {
+  // The OAuth client identity in use — the manually configured Client ID, or
+  // the one the auth server issued via Dynamic Client Registration.
+  clientId?: string
+  // Where that identity came from.
+  registration: 'manual' | 'dcr'
+  // Whether a client secret is configured for this identity (manually, or
+  // issued by the auth server during DCR) — never the secret itself.
+  clientType: 'public' | 'confidential'
+  // Scopes granted on the access token (space-separated), when the server
+  // reported them in the token response.
+  scope?: string
+  tokenType?: string
+  // ms epoch when the tokens were last issued (initial exchange or refresh).
+  issuedAt?: number
+  // ms epoch when the access token expires, or null when the server reported
+  // no lifetime / nothing to anchor it to (treated as non-expiring).
+  expiresAt: number | null
+  hasRefreshToken: boolean
+  // Whether an OpenID Connect id_token was returned alongside the access token.
+  hasIdToken: boolean
+  // The loopback callback URL registered for this session's redirect_uri —
+  // useful for debugging a DCR redirect-URI mismatch against the auth server.
+  redirectUri?: string
+}
+
 // MCP capability types — mirrors @modelcontextprotocol/sdk schema shapes
 export interface ToolInputSchema {
   type: 'object'

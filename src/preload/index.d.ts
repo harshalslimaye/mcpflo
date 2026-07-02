@@ -15,7 +15,8 @@ import type {
   SamplingRequestEvent,
   SamplingClosedEvent,
   SamplingResult,
-  AuthEvent
+  AuthEvent,
+  AuthDetails
 } from '../shared/mcp.types'
 
 declare global {
@@ -58,6 +59,7 @@ declare global {
         respondToSampling: (samplingId: string, result: SamplingResult) => Promise<void>
         authorizeServer: (id: string) => Promise<void>
         clearAuth: (id: string) => Promise<void>
+        getAuthDetails: (id: string) => Promise<AuthDetails | null>
         isEncryptionAvailable: () => Promise<boolean>
         onAuthEvent: (callback: (event: AuthEvent) => void) => () => void
       }

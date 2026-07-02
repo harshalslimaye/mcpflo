@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js'
+import type { AuthDetails } from '../shared/mcp.types'
 import { encryptSecret, decryptSecret, isSecretStorageAvailable } from './secrets'
 
 // Per-server OAuth state lives in <userData>/servers/<id>/oauth.json, alongside
@@ -164,6 +165,44 @@ export async function hasValidOAuthTokens(id: string): Promise<boolean> {
   if (tokens?.access_token === undefined) return false
   if (tokens.expires_in === undefined || state?.tokens_issued_at === undefined) return true
   return state.tokens_issued_at + tokens.expires_in * 1000 > Date.now()
+}
+
+// Builds the redacted session summary the auth details panel renders — every
+// field is derived metadata; the token strings themselves never leave this
+// module. `manualClientId`/`manualHasClientSecret` are the config-level
+// identity (when the user set one), which is the identity actually in use —
+// it takes precedence over a DCR result exactly the way the provider's
+// clientInformation() does. Null when no tokens are held (the panel only
+// shows for a signed-in server).
+export async function readAuthDetails(
+  id: string,
+  manualClientId?: string,
+  manualHasClientSecret = false
+): Promise<AuthDetails | null> {
+  const state = await readOAuthState(id)
+  const tokens = state?.tokens
+  if (tokens?.access_token === undefined) return null
+  const issuedAt = state?.tokens_issued_at
+  const clientId = manualClientId ?? state?.client_information?.client_id
+  const hasClientSecret =
+    manualHasClientSecret || state?.client_information?.client_secret !== undefined
+  return {
+    ...(clientId !== undefined && { clientId }),
+    registration: manualClientId ? 'manual' : 'dcr',
+    clientType: hasClientSecret ? 'confidential' : 'public',
+    ...(tokens.scope !== undefined && { scope: tokens.scope }),
+    tokenType: tokens.token_type,
+    ...(issuedAt !== undefined && { issuedAt }),
+    expiresAt:
+      tokens.expires_in !== undefined && issuedAt !== undefined
+        ? issuedAt + tokens.expires_in * 1000
+        : null,
+    hasRefreshToken: tokens.refresh_token !== undefined,
+    hasIdToken: tokens.id_token !== undefined,
+    ...(state?.redirect_port !== undefined && {
+      redirectUri: `http://127.0.0.1:${state.redirect_port}/callback`
+    })
+  }
 }
 
 // Each saver is a read-modify-write of the whole file. OAuth flows are

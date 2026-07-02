@@ -9,7 +9,7 @@ import {
   authorizeServer,
   onAuthEvent
 } from './mcpClient'
-import { clearOAuthTokens, hasValidOAuthTokens } from './oauthStore'
+import { clearOAuthTokens, hasValidOAuthTokens, readAuthDetails } from './oauthStore'
 import { isSecretStorageAvailable } from './secrets'
 import { assertValidServerId } from './serverId'
 import {
@@ -86,6 +86,17 @@ export function registerIpcHandlers(): void {
     )
     const flags = await Promise.all(oauth.map((s) => hasValidOAuthTokens(s.id)))
     return oauth.filter((_, i) => flags[i]).map((s) => s.id)
+  })
+
+  // Redacted OAuth session summary for the auth details panel — derived facts
+  // only (client id, scopes, expiry); the tokens themselves never leave main.
+  // Null for non-OAuth servers or when no tokens are held.
+  ipcMain.handle('mcp:getAuthDetails', (_event, id: string) => {
+    assertValidServerId(id)
+    const config = getServerById(id)
+    const t = config.transport
+    if (t.type !== 'streamable-http' || t.auth !== 'oauth') return null
+    return readAuthDetails(id, t.oauth?.clientId, t.oauth?.clientSecret !== undefined)
   })
 
   ipcMain.handle('mcp:fetchCapabilities', async (_event, id: string) => {

@@ -16,7 +16,8 @@ import type {
   SamplingRequestEvent,
   SamplingClosedEvent,
   SamplingResult,
-  AuthEvent
+  AuthEvent,
+  AuthDetails
 } from '../shared/mcp.types'
 
 const api = {
@@ -102,6 +103,9 @@ const api = {
     authorizeServer: (id: string): Promise<void> => ipcRenderer.invoke('mcp:authorizeServer', id),
     // OAuth: sign out — disconnect, clear tokens, reset auth state.
     clearAuth: (id: string): Promise<void> => ipcRenderer.invoke('mcp:clearAuth', id),
+    // OAuth: redacted session summary (client id, scopes, expiry — never tokens).
+    getAuthDetails: (id: string): Promise<AuthDetails | null> =>
+      ipcRenderer.invoke('mcp:getAuthDetails', id),
     // Whether OS-level encryption is available (gates OAuth mode in the UI).
     isEncryptionAvailable: (): Promise<boolean> => ipcRenderer.invoke('mcp:isEncryptionAvailable'),
     // Subscribes to OAuth flow events; returns an unsubscribe function.

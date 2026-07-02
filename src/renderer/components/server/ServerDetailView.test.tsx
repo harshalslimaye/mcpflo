@@ -21,8 +21,14 @@ const mockRefresh = vi.fn()
 const mockDisconnect = vi.fn()
 const mockClearAuth = vi.fn()
 
+// AuthDetailsCard fetches its summary over the preload bridge when the server
+// is authenticated; resolve null so the card stays hidden in these tests.
+const mockGetAuthDetails = vi.fn()
+;(globalThis as Record<string, unknown>).api = { mcp: { getAuthDetails: mockGetAuthDetails } }
+
 beforeEach(() => {
   vi.clearAllMocks()
+  mockGetAuthDetails.mockResolvedValue(null)
   useServerStore.setState({
     servers: [base],
     refreshCapabilities: mockRefresh,
