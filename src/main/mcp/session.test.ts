@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   clientCtor: vi.fn(),
   clientInstances: [] as FakeClientInstance[],
   createTransport: vi.fn(),
+  pinRequestedProtocolVersion: vi.fn(),
   buildOAuthTransport: vi.fn(),
   authorizeAndConnect: vi.fn(),
   emitAuth: vi.fn(),
@@ -37,6 +38,10 @@ vi.mock('@modelcontextprotocol/sdk/experimental/tasks', () => ({
 }))
 
 vi.mock('./transportFactory', () => ({ createTransport: h.createTransport }))
+
+vi.mock('./protocolVersion', () => ({
+  pinRequestedProtocolVersion: h.pinRequestedProtocolVersion
+}))
 
 vi.mock('./oauthHandshake', () => ({
   buildOAuthTransport: h.buildOAuthTransport,
@@ -120,6 +125,21 @@ describe('session', () => {
     it('passes overrides.timeoutMs as the connect timeout', async () => {
       await mod.getSession({ ...stdioConfig, overrides: { timeoutMs: 5000 } })
       expect(h.client.connect).toHaveBeenCalledWith('plain-transport', { timeout: 5000 })
+    })
+
+    it('pins the requested protocol version when overrides.protocolVersion is set', async () => {
+      await mod.getSession({ ...stdioConfig, overrides: { protocolVersion: '2025-03-26' } })
+      expect(h.pinRequestedProtocolVersion).toHaveBeenCalledWith(lastClientInstance(), '2025-03-26')
+    })
+
+    it('pins the requested protocol version before the OAuth handshake too', async () => {
+      await mod.getSession({ ...oauthConfig, overrides: { protocolVersion: '2024-11-05' } })
+      expect(h.pinRequestedProtocolVersion).toHaveBeenCalledWith(lastClientInstance(), '2024-11-05')
+    })
+
+    it('does not pin a protocol version when the override is absent', async () => {
+      await mod.getSession(stdioConfig)
+      expect(h.pinRequestedProtocolVersion).not.toHaveBeenCalled()
     })
 
     it('routes an OAuth config through buildOAuthTransport + authorizeAndConnect', async () => {

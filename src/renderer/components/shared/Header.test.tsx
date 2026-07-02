@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Header } from './Header'
 
 describe('Header', () => {
@@ -42,5 +43,26 @@ describe('Header', () => {
     const { container } = render(<Header title="x" chips={[{ icon: null, label: 'srv' }]} />)
     // Only the title row div should be present, not a separate badges row.
     expect(container.querySelectorAll('.flex-wrap')).toHaveLength(1)
+  })
+
+  it('renders a short description in full with no Read more toggle', () => {
+    render(<Header title="x" description="does a thing" />)
+    expect(screen.getByText('does a thing')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /read more/i })).not.toBeInTheDocument()
+  })
+
+  it('truncates a long description behind a Read more toggle that expands and collapses', async () => {
+    const user = userEvent.setup()
+    const long = 'a'.repeat(300)
+    render(<Header title="x" description={long} />)
+
+    expect(screen.getByText(`${'a'.repeat(240)}…`)).toBeInTheDocument()
+    expect(screen.queryByText(long)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /read more/i }))
+    expect(screen.getByText(long)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /read less/i }))
+    expect(screen.getByText(`${'a'.repeat(240)}…`)).toBeInTheDocument()
   })
 })

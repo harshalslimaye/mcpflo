@@ -339,6 +339,11 @@ export interface ServerOverrides {
   // Timeout (ms) for the initial connect handshake. Omitted means the MCP SDK's
   // own default (60s) applies.
   timeoutMs?: number
+  // Protocol revision to request in the initialize handshake (see
+  // shared/protocolVersions.ts). Omitted means the SDK's latest. Per MCP
+  // version negotiation the server may still answer with a different revision —
+  // this pins what we ask for, not the outcome.
+  protocolVersion?: string
 }
 
 // The persistable subset — stored on disk, no runtime state

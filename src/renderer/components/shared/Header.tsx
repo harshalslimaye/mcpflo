@@ -1,3 +1,9 @@
+import { useState } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
+
+// Descriptions longer than this are collapsed behind a "Read more" toggle.
+const DESCRIPTION_TRUNCATE_LENGTH = 240
+
 // A meta chip in the title row (the server name, a resource's mime type…). All
 // share one bordered pill style — only the icon and label differ.
 export interface MetaChip {
@@ -27,6 +33,13 @@ export function Header({
   description,
   badges = []
 }: HeaderProps): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const isTruncatable = !!description && description.length > DESCRIPTION_TRUNCATE_LENGTH
+  const shownDescription =
+    isTruncatable && !expanded
+      ? `${description!.slice(0, DESCRIPTION_TRUNCATE_LENGTH).trimEnd()}…`
+      : description
+
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex items-center gap-3 flex-wrap">
@@ -45,7 +58,19 @@ export function Header({
       </div>
 
       {description && (
-        <p className="text-text-muted text-[13.5px] leading-[1.55] max-w-[72ch]">{description}</p>
+        <p className="text-text-muted text-[13.5px] leading-[1.55]">
+          {shownDescription}
+          {isTruncatable && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="ml-1.5 inline-flex items-center gap-0.5 align-baseline text-[12.5px] font-medium text-accent transition-colors hover:text-accent-hover"
+            >
+              {expanded ? 'Read less' : 'Read more'}
+              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+          )}
+        </p>
       )}
 
       {badges.length > 0 && (
