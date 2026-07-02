@@ -1,10 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { promises as fs } from 'fs'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js'
-import { vi } from 'vitest'
 
 // Mock electron once with both the app path (used by oauthStore) and a
 // reversible safeStorage stand-in (used transitively via secrets.ts). The
@@ -29,7 +28,7 @@ import {
   clearClientInformation,
   clearOAuthTokens,
   clearOAuthState,
-  hasOAuthTokens
+  hasValidOAuthTokens
 } from './oauthStore'
 
 const tokens: OAuthTokens = {
@@ -89,18 +88,88 @@ describe('oauthStore', () => {
     expect(raw).not.toContain('verifier-789')
   })
 
-  it('hasOAuthTokens reflects whether issued tokens are stored', async () => {
-    expect(await hasOAuthTokens('srv-1')).toBe(false)
+  it('hasValidOAuthTokens reflects whether issued tokens are stored', async () => {
+    expect(await hasValidOAuthTokens('srv-1')).toBe(false)
     await saveTokens('srv-1', tokens)
-    expect(await hasOAuthTokens('srv-1')).toBe(true)
+    expect(await hasValidOAuthTokens('srv-1')).toBe(true)
     // After sign-out the tokens are gone even though client_information remains.
     await clearOAuthTokens('srv-1')
-    expect(await hasOAuthTokens('srv-1')).toBe(false)
+    expect(await hasValidOAuthTokens('srv-1')).toBe(false)
   })
 
-  it('hasOAuthTokens is false when only client_information is stored', async () => {
+  it('hasValidOAuthTokens is false when only client_information is stored', async () => {
     await saveClientInformation('srv-1', clientInfo)
-    expect(await hasOAuthTokens('srv-1')).toBe(false)
+    expect(await hasValidOAuthTokens('srv-1')).toBe(false)
+  })
+
+  it('saveTokens stamps tokens_issued_at in cleartext', async () => {
+    const before = Date.now()
+    await saveTokens('srv-1', tokens)
+    const after = Date.now()
+
+    const read = await readOAuthState('srv-1')
+    expect(read?.tokens_issued_at).toBeGreaterThanOrEqual(before)
+    expect(read?.tokens_issued_at).toBeLessThanOrEqual(after)
+
+    const raw = await fs.readFile(oauthPath('srv-1'), 'utf-8')
+    expect(raw).toContain(String(read?.tokens_issued_at))
+  })
+
+  describe('hasValidOAuthTokens expiry', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('is true while a token with expires_in is still within its lifetime', async () => {
+      vi.setSystemTime(1_000_000)
+      await saveTokens('srv-1', tokens) // expires_in: 3600 (seconds)
+
+      vi.setSystemTime(1_000_000 + 3600 * 1000 - 1)
+      expect(await hasValidOAuthTokens('srv-1')).toBe(true)
+    })
+
+    it('is false once a token with expires_in has passed its lifetime', async () => {
+      vi.setSystemTime(1_000_000)
+      await saveTokens('srv-1', tokens) // expires_in: 3600 (seconds)
+
+      vi.setSystemTime(1_000_000 + 3600 * 1000 + 1)
+      expect(await hasValidOAuthTokens('srv-1')).toBe(false)
+    })
+
+    it('re-stamps tokens_issued_at on every save, giving a refresh a fresh window', async () => {
+      vi.setSystemTime(1_000_000)
+      await saveTokens('srv-1', tokens)
+      vi.setSystemTime(1_000_000 + 3600 * 1000 + 1)
+      expect(await hasValidOAuthTokens('srv-1')).toBe(false)
+
+      // A refresh calls saveTokens again — the new expiry window starts now.
+      await saveTokens('srv-1', tokens)
+      expect(await hasValidOAuthTokens('srv-1')).toBe(true)
+    })
+
+    it('treats a token with no expires_in as non-expiring', async () => {
+      const noExpiry: OAuthTokens = { access_token: 'access-abc', token_type: 'Bearer' }
+      await saveTokens('srv-1', noExpiry)
+
+      vi.advanceTimersByTime(1000 * 60 * 60 * 24 * 365)
+      expect(await hasValidOAuthTokens('srv-1')).toBe(true)
+    })
+
+    it('treats a state saved before tokens_issued_at existed as non-expiring', async () => {
+      // Simulates state written before this field existed — no anchor to check
+      // expiry against, so presence alone stands in, same as the old behavior.
+      await saveTokens('srv-1', tokens)
+      const raw = JSON.parse(await fs.readFile(oauthPath('srv-1'), 'utf-8'))
+      delete raw.tokens_issued_at
+      await fs.writeFile(oauthPath('srv-1'), JSON.stringify(raw), 'utf-8')
+
+      vi.advanceTimersByTime(1000 * 60 * 60 * 24 * 365)
+      expect(await hasValidOAuthTokens('srv-1')).toBe(true)
+    })
   })
 
   it('stores redirect_port in cleartext', async () => {
