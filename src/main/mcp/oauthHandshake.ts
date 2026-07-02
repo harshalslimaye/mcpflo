@@ -165,7 +165,17 @@ export async function authorizeAndConnect(
   // request on the resulting session should try.
   disableAutoRedirect(provider)
   const retryTransport = makeTransport()
-  await retryTransport.finishAuth(code)
+  try {
+    // The token exchange itself (invalid_grant, token endpoint down, …) is a
+    // distinct failure from the connect below — report it under its own
+    // message rather than letting it propagate uncaught, which would leave
+    // the row stuck on the 'pending' state emitted above with no 'error' or
+    // 'auth_required' event to move it off.
+    await retryTransport.finishAuth(code)
+  } catch (err) {
+    emitAuth({ type: 'error', serverId, reason: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
   try {
     await client.connect(retryTransport, { timeout, signal })
   } catch (err) {

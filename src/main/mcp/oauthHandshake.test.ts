@@ -18,14 +18,19 @@ const h = vi.hoisted(() => ({
   clearClientInformation: vi.fn(),
   isSecretStorageAvailable: vi.fn(() => true),
   // A controllable loopback handle: tests set `result` and inspect `close`.
-  loopback: { port: 0, result: Promise.resolve({ code: 'CODE' }), close: vi.fn() }
+  loopback: { port: 0, result: Promise.resolve({ code: 'CODE' }), close: vi.fn() },
+  // Set by a test to make the next-created transport's finishAuth (the token
+  // exchange) reject, instead of racing to grab the instance after the fact.
+  finishAuthError: null as Error | null
 }))
 
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: class {
     url: URL
     opts: Record<string, unknown> | undefined
-    finishAuth = vi.fn()
+    finishAuth = vi.fn(() =>
+      h.finishAuthError ? Promise.reject(h.finishAuthError) : Promise.resolve(undefined)
+    )
     constructor(url: URL, opts?: Record<string, unknown>) {
       this.url = url
       this.opts = opts
@@ -122,6 +127,7 @@ describe('oauthHandshake', () => {
     h.loopback.result = Promise.resolve({ code: 'CODE' })
     h.loopback.close = vi.fn()
     h.startLoopbackListener.mockResolvedValue(h.loopback)
+    h.finishAuthError = null
     // Fresh authEmitter and UnauthorizedError identity per test.
     vi.resetModules()
     mod = await import('./oauthHandshake')
@@ -292,6 +298,25 @@ describe('oauthHandshake', () => {
       // The callback itself was received fine — only the post-finishAuth
       // connect failed — so the (now-dead) loopback must still be disarmed.
       expect(h.disableAutoRedirect).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports an error and skips connect when finishAuth (the token exchange) rejects', async () => {
+      // A failure exchanging the code for tokens — e.g. invalid_grant, or the
+      // token endpoint erroring — must not propagate uncaught: previously
+      // nothing reported it, so the row stayed stuck on the 'pending' state
+      // emitted above with no 'error' or 'auth_required' event to move it off.
+      fakeClient.connect.mockRejectedValueOnce(unauthorized())
+      h.finishAuthError = new Error('invalid_grant')
+      const events = captureAuthEvents()
+
+      await expect(connect()).rejects.toThrow('invalid_grant')
+      expect(events).toEqual([
+        { type: 'pending', serverId: 'srv-oauth' },
+        { type: 'error', serverId: 'srv-oauth', reason: 'invalid_grant' }
+      ])
+      // The failed exchange means there's nothing to connect with — the
+      // second client.connect() call must never happen.
+      expect(fakeClient.connect).toHaveBeenCalledTimes(1)
     })
 
     it('aborts the loopback wait when the signal fires (cancel)', async () => {
