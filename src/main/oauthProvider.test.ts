@@ -55,11 +55,37 @@ describe('startLoopbackListener', () => {
     await expect(lb.result).resolves.toEqual({ code: 'auth-code' })
   })
 
-  it('rejects on a state mismatch', async () => {
+  it('ignores a mismatched-state request instead of settling or tearing down the flow', async () => {
+    // A stray request — a port scan, a browser prefetch, a no-cors fetch()
+    // fired by an unrelated page — must not be able to kill someone else's
+    // in-flight sign-in just by hitting this port. It gets its own 400, but
+    // the flow itself keeps waiting.
     lb = await startLoopbackListener('expected')
-    const rejection = expect(lb.result).rejects.toThrow('state mismatch')
-    await fetch(callback(lb.port, { code: 'auth-code', state: 'forged' }))
-    await rejection
+    const settled = vi.fn()
+    lb.result.then(settled, settled)
+
+    const res = await fetch(callback(lb.port, { code: 'auth-code', state: 'forged' }))
+    expect(res.status).toBe(400)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
+
+    // The real redirect, whenever it arrives, still completes the flow.
+    const real = await fetch(callback(lb.port, { code: 'auth-code', state: 'expected' }))
+    expect(real.status).toBe(200)
+    await expect(lb.result).resolves.toEqual({ code: 'auth-code' })
+  })
+
+  it('ignores an error param carrying a mismatched state', async () => {
+    // The state check must run before the error check — an `error=` param
+    // proves nothing on its own if it doesn't also carry the right state.
+    lb = await startLoopbackListener('expected')
+    const settled = vi.fn()
+    lb.result.then(settled, settled)
+
+    const res = await fetch(callback(lb.port, { error: 'access_denied', state: 'forged' }))
+    expect(res.status).toBe(400)
+    await Promise.resolve()
+    expect(settled).not.toHaveBeenCalled()
   })
 
   it('rejects when the callback carries an error param', async () => {
