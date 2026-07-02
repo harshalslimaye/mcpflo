@@ -4,6 +4,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { ServerConfig } from '../../shared/mcp.types'
 import type { Session } from './types'
 import { createTransport } from './transportFactory'
+import { pinRequestedProtocolVersion } from './protocolVersion'
 import { buildOAuthTransport, authorizeAndConnect, emitAuth } from './oauthHandshake'
 import { wireSession } from './sessionWiring'
 
@@ -60,6 +61,13 @@ async function createSession(config: ServerConfig, signal?: AbortSignal): Promis
       taskStore: new InMemoryTaskStore()
     }
   )
+
+  // The SDK always asks the server for its latest protocol revision; an
+  // override pins the requested revision instead (see protocolVersion.ts).
+  // Applied before connecting so both connect paths below send it.
+  if (config.overrides?.protocolVersion) {
+    pinRequestedProtocolVersion(client, config.overrides.protocolVersion)
+  }
 
   // OAuth-mode streamable-http routes through the auth-aware handshake; every
   // other transport connects directly. createTransport stays synchronous — only

@@ -11,6 +11,10 @@ import {
   duplicateKeyMessage
 } from '../../lib/transportValidation'
 import { TREE_THEME } from '../shared/json/jsonViewTheme'
+import {
+  MCP_PROTOCOL_VERSIONS,
+  LATEST_MCP_PROTOCOL_VERSION
+} from '../../../shared/protocolVersions'
 import type { ServerConfig, ServerOverrides, TransportConfig } from '../../../shared/mcp.types'
 
 type TransportType = TransportConfig['type']
@@ -37,6 +41,8 @@ interface FormState {
   oauthScope: string
   // advanced
   timeoutMs: string
+  // '' = track the SDK's latest revision; a version string pins the request.
+  protocolVersion: string
 }
 
 const defaults: FormState = {
@@ -51,7 +57,8 @@ const defaults: FormState = {
   oauthClientId: '',
   oauthClientSecret: '',
   oauthScope: '',
-  timeoutMs: ''
+  timeoutMs: '',
+  protocolVersion: ''
 }
 
 // True when a custom header named "Authorization" is present (case-insensitive).
@@ -116,9 +123,12 @@ function buildTransport(form: FormState): TransportConfig {
  *  every override is left at its default (so the field is omitted entirely
  *  rather than persisted as an empty object). */
 function buildOverrides(form: FormState): ServerOverrides | undefined {
-  const trimmed = form.timeoutMs.trim()
-  if (!trimmed) return undefined
-  return { timeoutMs: Number(trimmed) }
+  const timeoutMs = form.timeoutMs.trim()
+  const overrides: ServerOverrides = {
+    ...(timeoutMs && { timeoutMs: Number(timeoutMs) }),
+    ...(form.protocolVersion && { protocolVersion: form.protocolVersion })
+  }
+  return Object.keys(overrides).length > 0 ? overrides : undefined
 }
 
 function validate(form: FormState): Partial<Record<keyof FormState, string>> {
@@ -511,8 +521,22 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
               <CollapsibleSection
                 label="Advanced"
                 hint="Optional"
-                count={form.timeoutMs.trim() ? 1 : 0}
+                count={(form.timeoutMs.trim() ? 1 : 0) + (form.protocolVersion ? 1 : 0)}
               >
+                <Field label="Protocol version" hint="Requested at connect">
+                  <Select
+                    value={form.protocolVersion}
+                    onChange={(v) => set('protocolVersion', v)}
+                    aria-label="Protocol version"
+                  >
+                    <option value="">Latest ({LATEST_MCP_PROTOCOL_VERSION})</option>
+                    {MCP_PROTOCOL_VERSIONS.map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
                 <Field label="Connection timeout" hint="ms" error={errors.timeoutMs}>
                   <Input
                     type="number"
@@ -641,6 +665,31 @@ function Input({
       placeholder={placeholder}
       className="w-full px-3 py-1.5 rounded border border-border bg-bg-elevated text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
     />
+  )
+}
+
+// A native select styled to match Input — for small fixed choice lists like the
+// protocol version.
+function Select({
+  value,
+  onChange,
+  children,
+  'aria-label': ariaLabel
+}: {
+  value: string
+  onChange: (v: string) => void
+  children: React.ReactNode
+  'aria-label': string
+}): React.JSX.Element {
+  return (
+    <select
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-1.5 rounded border border-border bg-bg-elevated text-text-primary text-sm focus:outline-none focus:border-accent transition-colors cursor-pointer"
+    >
+      {children}
+    </select>
   )
 }
 

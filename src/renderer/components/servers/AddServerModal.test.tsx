@@ -449,6 +449,62 @@ describe('AddServerModal', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
       expect(screen.getByRole('button', { name: 'Advanced' })).toHaveTextContent('1')
     })
+
+    it('offers a protocol version select defaulting to Latest', () => {
+      renderModal()
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+      const select = screen.getByRole('combobox', { name: 'Protocol version' })
+      expect(select).toHaveValue('')
+      expect(screen.getByRole('option', { name: /^Latest/ })).toBeInTheDocument()
+    })
+
+    it('includes overrides.protocolVersion when a version is pinned', async () => {
+      renderModal()
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'My Server' }
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), {
+        target: { value: 'node' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+      fireEvent.change(screen.getByRole('combobox', { name: 'Protocol version' }), {
+        target: { value: '2025-03-26' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+      expect(mockAddServer.mock.calls[0][0].overrides).toEqual({ protocolVersion: '2025-03-26' })
+    })
+
+    it('omits protocolVersion from overrides when Latest is kept', async () => {
+      renderModal()
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'My Server' }
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Command' }), {
+        target: { value: 'node' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Connection timeout' }), {
+        target: { value: '5000' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+      // Latest means "track the SDK", so nothing is persisted for it.
+      expect(mockAddServer.mock.calls[0][0].overrides).toEqual({ timeoutMs: 5000 })
+    })
+
+    it('counts a pinned protocol version in the collapsed badge', () => {
+      renderModal()
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+      fireEvent.change(screen.getByRole('combobox', { name: 'Protocol version' }), {
+        target: { value: '2025-03-26' }
+      })
+      fireEvent.change(screen.getByRole('spinbutton', { name: 'Connection timeout' }), {
+        target: { value: '5000' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
+      expect(screen.getByRole('button', { name: 'Advanced' })).toHaveTextContent('2')
+    })
   })
 
   describe('Paste JSON config', () => {
