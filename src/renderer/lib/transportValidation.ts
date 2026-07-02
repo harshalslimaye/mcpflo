@@ -7,11 +7,12 @@
 // renderer call sites keep importing from one place.
 import {
   credentialOverHttp,
+  oauthTokenOverHttp,
   isLoopbackHost,
   isSensitiveHeaderKey
 } from '../../shared/transportSafety'
 
-export { credentialOverHttp, isLoopbackHost, isSensitiveHeaderKey }
+export { credentialOverHttp, oauthTokenOverHttp, isLoopbackHost, isSensitiveHeaderKey }
 
 // Only real HTTP(S) endpoints make sense for a streamable-http transport.
 const ALLOWED_SCHEMES = new Set(['http:', 'https:'])

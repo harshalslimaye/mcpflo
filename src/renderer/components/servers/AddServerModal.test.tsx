@@ -714,5 +714,36 @@ describe('AddServerModal', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
       expect(mockAddServer).not.toHaveBeenCalled()
     })
+
+    it('blocks OAuth over plain http to a non-loopback host, even with no headers set', async () => {
+      // The bearer token is attached by the SDK itself once signed in — it never
+      // shows up as a static header — so this must be flagged on URL/auth alone.
+      renderModal()
+      selectHttp()
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'OAuth MCP' }
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+        target: { value: 'http://oauth.example.com/mcp' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      expect(await screen.findByText(/cleartext over http/i)).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      expect(mockAddServer).not.toHaveBeenCalled()
+    })
+
+    it('allows OAuth over http to localhost', async () => {
+      renderModal()
+      selectHttp()
+      fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+        target: { value: 'Local OAuth MCP' }
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'URL' }), {
+        target: { value: 'http://localhost:3000/mcp' }
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'OAuth' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Add Server' }))
+      await waitFor(() => expect(mockAddServer).toHaveBeenCalledOnce())
+    })
   })
 })

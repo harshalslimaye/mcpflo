@@ -155,6 +155,26 @@ describe('oauthHandshake', () => {
       expect(h.startLoopbackListener).not.toHaveBeenCalled()
     })
 
+    it('refuses plain http to a non-loopback host even with no static headers configured', async () => {
+      // The bearer token is attached by the SDK itself at request time — it
+      // never shows up in `t.headers` — so this must be caught independent of
+      // whatever static headers are (or aren't) set.
+      const insecure: ServerConfig = {
+        ...oauthConfig,
+        transport: { type: 'streamable-http', url: 'http://mcp.example.com/mcp', auth: 'oauth' }
+      }
+      await expect(mod.buildOAuthTransport(insecure)).rejects.toThrow('cleartext over http')
+      expect(h.startLoopbackListener).not.toHaveBeenCalled()
+    })
+
+    it('allows plain http to a loopback host', async () => {
+      const local: ServerConfig = {
+        ...oauthConfig,
+        transport: { type: 'streamable-http', url: 'http://127.0.0.1:9000/mcp', auth: 'oauth' }
+      }
+      await expect(mod.buildOAuthTransport(local)).resolves.toBeDefined()
+    })
+
     describe('redirect port persistence', () => {
       it('persists a freshly bound ephemeral port', async () => {
         await connect()

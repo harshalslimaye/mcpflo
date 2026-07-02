@@ -29,3 +29,14 @@ export function credentialOverHttp(url: URL, headerKeys: string[]): string | und
   if (!offending) return undefined
   return `"${offending.trim()}" would be sent in cleartext over http — use https, or remove the header.`
 }
+
+// OAuth's counterpart to credentialOverHttp: once signed in, the SDK attaches
+// `Authorization: Bearer <token>` to every request itself (see
+// oauthHandshake.ts), so there's never a static header for credentialOverHttp
+// to see. A server configured for OAuth over plain http to a non-loopback host
+// would leak that bearer token in cleartext regardless of what static headers
+// (if any) are set — so this checks the URL alone.
+export function oauthTokenOverHttp(url: URL): string | undefined {
+  if (url.protocol !== 'http:' || isLoopbackHost(url.hostname)) return undefined
+  return 'OAuth would send the bearer token in cleartext over http — use https, or a loopback host.'
+}
