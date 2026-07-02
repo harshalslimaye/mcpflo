@@ -9,7 +9,7 @@ import {
   authorizeServer,
   onAuthEvent
 } from './mcpClient'
-import { clearOAuthTokens, hasOAuthTokens } from './oauthStore'
+import { clearOAuthTokens, hasValidOAuthTokens } from './oauthStore'
 import { isSecretStorageAvailable } from './secrets'
 import { assertValidServerId } from './serverId'
 import {
@@ -76,14 +76,15 @@ export function registerIpcHandlers(): void {
   // Capabilities cache
   ipcMain.handle('mcp:getCachedCapabilities', () => readAllCapabilities())
 
-  // Ids of OAuth servers that currently hold tokens — lets hydrate restore the
-  // "signed in" status across a restart (otherwise reset to idle). Only the ids
+  // Ids of OAuth servers that currently hold valid (unexpired) tokens — lets
+  // hydrate restore the "signed in" status across a restart (otherwise reset to
+  // idle) without showing green for a token that's already dead. Only the ids
   // cross the boundary; the tokens stay in main.
   ipcMain.handle('mcp:getAuthedServerIds', async () => {
     const oauth = getServers().filter(
       (s) => s.transport.type === 'streamable-http' && s.transport.auth === 'oauth'
     )
-    const flags = await Promise.all(oauth.map((s) => hasOAuthTokens(s.id)))
+    const flags = await Promise.all(oauth.map((s) => hasValidOAuthTokens(s.id)))
     return oauth.filter((_, i) => flags[i]).map((s) => s.id)
   })
 

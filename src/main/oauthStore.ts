@@ -18,6 +18,12 @@ import { encryptSecret, decryptSecret, isSecretStorageAvailable } from './secret
 // The decrypted shape callers work with.
 export interface OAuthState {
   tokens?: OAuthTokens
+  // When `tokens` was last written (Date.now(), ms) — the anchor `tokens.expires_in`
+  // (a relative lifetime in seconds) is measured from. Without this there's no way
+  // to tell whether a saved token has actually expired, only that one was once
+  // issued. Non-secret; re-stamped on every saveTokens call (initial exchange and
+  // refresh alike).
+  tokens_issued_at?: number
   client_information?: OAuthClientInformation
   code_verifier?: string
   // Loopback redirect port, persisted so the DCR-registered redirect_uri stays
@@ -54,6 +60,7 @@ function oauthFile(id: string): string {
 // ciphertext rather than plaintext.
 interface StoredOAuthState {
   tokens?: Record<string, unknown>
+  tokens_issued_at?: number
   client_information?: Record<string, unknown>
   code_verifier?: string
   redirect_port?: number
@@ -78,6 +85,7 @@ function encode(state: OAuthState): StoredOAuthState {
       })
     }
   }
+  if (state.tokens_issued_at !== undefined) out.tokens_issued_at = state.tokens_issued_at
   if (state.code_verifier !== undefined) out.code_verifier = encryptSecret(state.code_verifier)
   if (state.redirect_port !== undefined) out.redirect_port = state.redirect_port
   return out
@@ -102,6 +110,7 @@ function decode(stored: StoredOAuthState): OAuthState {
       })
     } as OAuthClientInformation
   }
+  if (stored.tokens_issued_at !== undefined) out.tokens_issued_at = stored.tokens_issued_at
   if (stored.code_verifier !== undefined) out.code_verifier = decryptSecret(stored.code_verifier)
   if (stored.redirect_port !== undefined) out.redirect_port = stored.redirect_port
   return out
@@ -138,13 +147,23 @@ export async function readOAuthState(id: string): Promise<OAuthState | null> {
   }
 }
 
-// Whether a server currently holds issued OAuth tokens — the truth behind
-// "signed in". Used at hydrate to restore the renderer's auth status (which
-// otherwise resets to idle on restart) without ever shipping the token itself
-// across the IPC boundary; only this boolean crosses.
-export async function hasOAuthTokens(id: string): Promise<boolean> {
+// Whether a server currently holds issued OAuth tokens that haven't expired —
+// the truth behind "signed in". Used at hydrate to restore the renderer's auth
+// status (which otherwise resets to idle on restart) without ever shipping the
+// token itself across the IPC boundary; only this boolean crosses.
+//
+// `expires_in` (seconds) is only a *relative* lifetime — without tokens_issued_at
+// as an anchor there'd be no way to tell an hour-old token from a ten-second-old
+// one, so presence alone would have to stand in for validity. A server that
+// omits expires_in (or a state saved before this field existed) is treated as
+// non-expiring: there's nothing to check it against, and the operation-path
+// 401 handling still catches a truly dead token on first real use either way.
+export async function hasValidOAuthTokens(id: string): Promise<boolean> {
   const state = await readOAuthState(id)
-  return state?.tokens?.access_token !== undefined
+  const tokens = state?.tokens
+  if (tokens?.access_token === undefined) return false
+  if (tokens.expires_in === undefined || state?.tokens_issued_at === undefined) return true
+  return state.tokens_issued_at + tokens.expires_in * 1000 > Date.now()
 }
 
 // Each saver is a read-modify-write of the whole file. OAuth flows are
@@ -152,7 +171,9 @@ export async function hasOAuthTokens(id: string): Promise<boolean> {
 // read-modify-write race to guard against here.
 export async function saveTokens(id: string, tokens: OAuthTokens): Promise<void> {
   const state = (await readOAuthState(id)) ?? {}
-  await writeOAuthState(id, { ...state, tokens })
+  // Re-stamped on every call — a refresh gets a fresh expiry window exactly
+  // like an initial exchange does, since both go through this same saver.
+  await writeOAuthState(id, { ...state, tokens, tokens_issued_at: Date.now() })
 }
 
 export async function saveClientInformation(
