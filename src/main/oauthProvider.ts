@@ -183,3 +183,17 @@ export function createOAuthProvider(
     }
   }
 }
+
+// Once a provider's loopback listener has served its one redirect (or was
+// closed after a token-valid connect), its `redirectUrl` points nowhere —
+// nothing is listening on that port anymore. But the SDK doesn't know that:
+// a later request on the same session (e.g. a mid-session refresh-token
+// failure) would still call `redirectToAuthorization` on this same provider,
+// silently popping the user's browser open to an address that can never
+// complete. authorizeAndConnect calls this the moment the loopback is known
+// dead, so that path instead surfaces as `UnauthorizedError` → auth_required,
+// and only the user's explicit "Sign in" click (which binds a fresh loopback)
+// ever opens a browser tab from then on.
+export function disableAutoRedirect(provider: OAuthClientProvider): void {
+  provider.redirectToAuthorization = (): void => {}
+}

@@ -81,6 +81,7 @@ async function createSession(config: ServerConfig, signal?: AbortSignal): Promis
       client,
       built.makeTransport,
       built.loopback,
+      built.provider,
       signal
     )
   } else {

@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   transports: [] as MockTransport[],
   startLoopbackListener: vi.fn(),
   createOAuthProvider: vi.fn(() => ({})),
+  disableAutoRedirect: vi.fn(),
   readOAuthState: vi.fn(),
   saveRedirectPort: vi.fn(),
   clearClientInformation: vi.fn(),
@@ -62,7 +63,8 @@ vi.mock('../oauthStore', () => ({
 
 vi.mock('../oauthProvider', () => ({
   startLoopbackListener: h.startLoopbackListener,
-  createOAuthProvider: h.createOAuthProvider
+  createOAuthProvider: h.createOAuthProvider,
+  disableAutoRedirect: h.disableAutoRedirect
 }))
 
 const oauthConfig: ServerConfig = {
@@ -85,12 +87,13 @@ describe('oauthHandshake', () => {
   function connect(config: ServerConfig = oauthConfig, signal?: AbortSignal): Promise<unknown> {
     return mod
       .buildOAuthTransport(config)
-      .then(({ makeTransport, loopback }) =>
+      .then(({ makeTransport, loopback, provider }) =>
         mod.authorizeAndConnect(
           config,
           fakeClient as unknown as Client,
           makeTransport,
           loopback,
+          provider,
           signal
         )
       )
@@ -234,6 +237,10 @@ describe('oauthHandshake', () => {
       expect(h.loopback.close).toHaveBeenCalledTimes(1)
       expect(lastTransport().finishAuth).not.toHaveBeenCalled()
       expect(events).toEqual([{ type: 'success', serverId: 'srv-oauth' }])
+      // The loopback is dead the moment it's closed, even on this no-browser
+      // path — a later mid-session refresh failure must not try to redirect
+      // through it (see disableAutoRedirect).
+      expect(h.disableAutoRedirect).toHaveBeenCalledTimes(1)
     })
 
     it('runs the 401 → browser → finishAuth → retry flow', async () => {
@@ -248,6 +255,10 @@ describe('oauthHandshake', () => {
         { type: 'pending', serverId: 'srv-oauth' },
         { type: 'success', serverId: 'srv-oauth' }
       ])
+      // The loopback served (and self-closed after) the one callback it was
+      // going to get — nothing on this session should be able to trigger
+      // another redirect through it.
+      expect(h.disableAutoRedirect).toHaveBeenCalledTimes(1)
     })
 
     it('retries on a fresh transport instead of reusing the one the failed connect killed', async () => {
@@ -278,6 +289,9 @@ describe('oauthHandshake', () => {
         { type: 'pending', serverId: 'srv-oauth' },
         { type: 'error', serverId: 'srv-oauth', reason: 'Auth failed after code exchange' }
       ])
+      // The callback itself was received fine — only the post-finishAuth
+      // connect failed — so the (now-dead) loopback must still be disarmed.
+      expect(h.disableAutoRedirect).toHaveBeenCalledTimes(1)
     })
 
     it('aborts the loopback wait when the signal fires (cancel)', async () => {
@@ -298,6 +312,9 @@ describe('oauthHandshake', () => {
         { type: 'pending', serverId: 'srv-oauth' },
         { type: 'error', serverId: 'srv-oauth', reason: 'Capability fetch cancelled' }
       ])
+      // No callback was ever received, so there's nothing to disarm — the
+      // provider is discarded along with this failed attempt.
+      expect(h.disableAutoRedirect).not.toHaveBeenCalled()
     })
 
     it('reports an error and skips finishAuth when the callback never resolves', async () => {
@@ -313,6 +330,7 @@ describe('oauthHandshake', () => {
         { type: 'pending', serverId: 'srv-oauth' },
         { type: 'error', serverId: 'srv-oauth', reason: 'Authorization timed out' }
       ])
+      expect(h.disableAutoRedirect).not.toHaveBeenCalled()
     })
   })
 
