@@ -257,15 +257,12 @@ export function SecondarySidebar(): React.JSX.Element {
   }
 
   // Selects a server for the details view, independent of expand/collapse
-  // (which now lives solely on the chevron). Mirrors toggleServer's lazy
-  // fetch: a never-connected (grey) server retries the connect on selection
-  // too, so its details populate without requiring a separate expand click.
+  // (which now lives solely on the chevron). Deliberately does NOT fetch —
+  // selecting a server (e.g. to view a cached capability, or just to look at
+  // its config) must never force a connect attempt on its own; that stays an
+  // explicit action via the chevron, Reload, or the detail view's own affordances.
   function selectServerRow(id: string): void {
     selectServer(id)
-    const server = servers.find((s) => s.id === id)
-    if (server && server.status === 'disconnected') {
-      fetchCapabilities(id)
-    }
   }
 
   // Disconnect always forces the row shut, regardless of current expand state,

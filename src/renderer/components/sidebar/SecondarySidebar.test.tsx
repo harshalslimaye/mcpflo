@@ -427,10 +427,13 @@ describe('SecondarySidebar', () => {
       expect(useServerStore.getState().selectedServerId).toBeNull()
     })
 
-    it('fetches capabilities when a never-fetched (grey) server is selected by name', () => {
+    it('does not fetch capabilities when a never-fetched (grey) server is selected by name', () => {
+      // Selecting a server (to view it in the detail pane) must never force a
+      // connect attempt on its own — only the chevron, Reload, or the detail
+      // view's own affordances do that.
       render(<SecondarySidebar />)
       fireEvent.click(screen.getByText('Slack MCP'))
-      expect(mockFetchCapabilities).toHaveBeenCalledWith('slack-mcp')
+      expect(mockFetchCapabilities).not.toHaveBeenCalled()
     })
 
     it('highlights the row body of the selected server', () => {
