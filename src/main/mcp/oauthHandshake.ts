@@ -4,6 +4,7 @@ import {
   UnauthorizedError,
   type OAuthClientProvider
 } from '@modelcontextprotocol/sdk/client/auth.js'
+import { OAuthError } from '@modelcontextprotocol/sdk/server/auth/errors.js'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import type { ServerConfig, AuthEvent } from '../../shared/mcp.types'
@@ -225,49 +226,40 @@ function signalReason(signal: AbortSignal): Error {
   return new Error(typeof reason === 'string' ? reason : 'Authorization cancelled')
 }
 
-// Connectivity errno codes (offline, DNS, refused, TLS handshake) raised by
-// fetch/undici. A connect failure carrying one of these never reached the point
-// of attempting registration, so it must not be misread as a DCR failure.
-const NETWORK_ERROR_CODES = new Set([
-  'ENOTFOUND',
-  'ECONNREFUSED',
-  'ECONNRESET',
-  'ETIMEDOUT',
-  'EAI_AGAIN',
-  'EHOSTUNREACH',
-  'ENETUNREACH',
-  'EPIPE',
-  'UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_SOCKET'
-])
-
-// True when a connect failure is a transport/connectivity problem rather than a
-// server-side auth outcome. Walks the error's `cause` chain (fetch wraps the
-// real socket error) checking both the errno code and the message, so a
-// retryable network error is never mistaken for "registration unsupported".
-function isNetworkError(err: unknown): boolean {
-  for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause) {
-    const code = (e as { code?: unknown }).code
-    if (typeof code === 'string' && NETWORK_ERROR_CODES.has(code)) return true
-    if (
-      /fetch failed|network|getaddrinfo|socket hang up|timed out|tls|certificate/i.test(e.message)
-    )
-      return true
-  }
-  return false
+// True only when the SDK's own registration step is what actually failed —
+// not merely "some non-401 error happened on the first connect". On a first,
+// tokenless connect attempt the SDK's registerClient() is the only thing that
+// can throw either of these two shapes: a plain Error with this exact message
+// when the auth server's metadata has no registration_endpoint at all, or an
+// OAuthError subclass (ServerError, InvalidClientMetadataError, …) when the
+// registration POST itself came back non-2xx — the SDK falls back to
+// ServerError even for a malformed/non-JSON error body, so *any* failed
+// registration POST surfaces as an OAuthError here. Nothing else reachable
+// from a first, tokenless connect throws either shape: a wrong URL or a
+// down/erroring MCP endpoint throws a StreamableHTTPError, discovery failures
+// (bad .well-known metadata, unreachable host) throw plain Errors with
+// unrelated messages, and a protocol-version mismatch fails at the JSON-RPC
+// level — none of those should ever be misread as "needs a Client ID".
+function isDcrFailure(err: unknown): boolean {
+  if (err instanceof OAuthError) return true
+  return (
+    err instanceof Error && err.message.includes('does not support dynamic client registration')
+  )
 }
 
 // Classifies a non-UnauthorizedError connect failure and emits the matching auth
 // event. DCR is the only route to credentials when there's no configured clientId
-// and nothing registered yet — so a failure under those preconditions is treated
-// as "registration unsupported" (emit dcr_required, return true so the caller
-// throws the typed DCR error and the recovery modal opens) *unless* it's a
-// recognizable network error, which is retryable and surfaces its raw message.
+// and nothing registered yet — so a failure is treated as "registration
+// unsupported" (emit dcr_required, return true so the caller throws the typed
+// DCR error and the recovery modal opens) only when it's positively identified
+// as a registration failure (see isDcrFailure); every other failure — a typo'd
+// URL, a down server, malformed metadata, a version mismatch, a plain network
+// error — surfaces its own raw message instead of being misdiagnosed.
 async function emitConnectFailure(config: ServerConfig, err: unknown): Promise<boolean> {
   const t = config.transport
   const reason = err instanceof Error ? err.message : String(err)
   const hasClientId = t.type === 'streamable-http' && !!t.oauth?.clientId
-  if (!hasClientId && !isNetworkError(err)) {
+  if (!hasClientId && isDcrFailure(err)) {
     const saved = await readOAuthState(config.id)
     if (!saved?.client_information) {
       emitAuth({ type: 'dcr_required', serverId: config.id })
