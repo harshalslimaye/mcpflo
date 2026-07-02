@@ -7,6 +7,7 @@ import { parseServerConfigJson } from '../../lib/parseServerConfigJson'
 import {
   parseTransportUrl,
   credentialOverHttp,
+  oauthTokenOverHttp,
   findDuplicateKey,
   duplicateKeyMessage
 } from '../../lib/transportValidation'
@@ -152,6 +153,13 @@ function validate(form: FormState): Partial<Record<keyof FormState, string>> {
       if ('error' in parsed) errors.url = parsed.error
       else parsedUrl = parsed.url
     }
+    // OAuth attaches the bearer token to every request itself once signed in, so
+    // this must be checked independent of whatever static headers are set (or
+    // aren't) — see oauthTokenOverHttp.
+    if (parsedUrl && form.auth === 'oauth') {
+      const oauthCleartext = oauthTokenOverHttp(parsedUrl)
+      if (oauthCleartext) errors.url = oauthCleartext
+    }
     // Header errors, first applicable wins: a structural duplicate, then the
     // OAuth-managed Authorization collision, then a credential sent over plain http.
     const dupHeader = findDuplicateKey(
@@ -208,11 +216,6 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
     }
   }, [])
 
-  // Live OAuth-mode validation cues (independent of the on-submit errors map).
-  const isOAuth = mode === 'manual' && form.transportType !== 'stdio' && form.auth === 'oauth'
-  const authHeaderCollision = isOAuth && hasAuthorizationHeader(form.headers)
-  const oauthBlocked = isOAuth && encryptionAvailable === false
-
   // Live header/env validation cues (mirror authHeaderCollision: shown inline as
   // the user edits; validate() re-derives the same checks to block submit even
   // when the section is collapsed). A duplicate key takes precedence over the
@@ -224,6 +227,13 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
     const r = parseTransportUrl(form.url.trim())
     return 'url' in r ? r.url : undefined
   }, [form.url])
+
+  // Live OAuth-mode validation cues (independent of the on-submit errors map).
+  const isOAuth = mode === 'manual' && form.transportType !== 'stdio' && form.auth === 'oauth'
+  const authHeaderCollision = isOAuth && hasAuthorizationHeader(form.headers)
+  const oauthBlocked = isOAuth && encryptionAvailable === false
+  const oauthOverHttp = isOAuth && parsedUrl ? oauthTokenOverHttp(parsedUrl) : undefined
+
   const headerIssue = duplicateHeader
     ? duplicateKeyMessage('header', duplicateHeader)
     : isHttp && parsedUrl
@@ -468,6 +478,7 @@ export function AddServerModal({ onClose }: AddServerModalProps): React.JSX.Elem
                           system. Use a static token instead.
                         </p>
                       )}
+                      {oauthOverHttp && <p className="text-xs text-red-400">{oauthOverHttp}</p>}
                       <Field label="Client ID" hint="Optional">
                         <Input
                           placeholder="Leave blank to auto-register"

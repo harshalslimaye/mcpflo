@@ -133,6 +133,37 @@ describe('transportFactory', () => {
         })
       ).not.toThrow()
     })
+
+    it('refuses an OAuth transport over plain http to a non-loopback host even with no static headers', () => {
+      // The OAuth provider attaches Authorization: Bearer <token> itself at
+      // request time — it never appears in `headers`, so this must be caught
+      // independent of whatever static headers are (or aren't) configured.
+      expect(() =>
+        createTransport({
+          id: 'srv-oauth-insecure',
+          name: 'Insecure OAuth',
+          transport: {
+            type: 'streamable-http',
+            url: 'http://mcp.example.com/mcp',
+            auth: 'oauth'
+          }
+        })
+      ).toThrow('cleartext over http')
+    })
+
+    it('allows an OAuth transport over http to a loopback host', () => {
+      expect(() =>
+        createTransport({
+          id: 'srv-oauth-local',
+          name: 'Local OAuth',
+          transport: {
+            type: 'streamable-http',
+            url: 'http://127.0.0.1:8080/mcp',
+            auth: 'oauth'
+          }
+        })
+      ).not.toThrow()
+    })
   })
 
   describe('assertCredentialSafe', () => {
@@ -150,6 +181,18 @@ describe('transportFactory', () => {
 
     it('is a no-op when there are no headers', () => {
       expect(() => assertCredentialSafe(new URL('http://mcp.example.com/mcp'))).not.toThrow()
+    })
+
+    it('throws for oauth mode over plain http to a non-loopback host, even with no headers', () => {
+      expect(() =>
+        assertCredentialSafe(new URL('http://mcp.example.com/mcp'), undefined, true)
+      ).toThrow('cleartext over http')
+    })
+
+    it('allows oauth mode over https', () => {
+      expect(() =>
+        assertCredentialSafe(new URL('https://mcp.example.com/mcp'), undefined, true)
+      ).not.toThrow()
     })
   })
 })

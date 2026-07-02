@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseTransportUrl,
   credentialOverHttp,
+  oauthTokenOverHttp,
   findDuplicateKey,
   isLoopbackHost,
   isSensitiveHeaderKey
@@ -74,6 +75,23 @@ describe('credentialOverHttp', () => {
   it('allows non-sensitive headers over http', () => {
     const { url } = parseTransportUrl('http://mcp.example.com/mcp') as { url: URL }
     expect(credentialOverHttp(url, ['X-Team'])).toBeUndefined()
+  })
+})
+
+describe('oauthTokenOverHttp', () => {
+  it('flags plain http to a remote host with no headers at all', () => {
+    const { url } = parseTransportUrl('http://mcp.example.com/mcp') as { url: URL }
+    expect(oauthTokenOverHttp(url)).toContain('cleartext over http')
+  })
+
+  it('allows https', () => {
+    const { url } = parseTransportUrl('https://mcp.example.com/mcp') as { url: URL }
+    expect(oauthTokenOverHttp(url)).toBeUndefined()
+  })
+
+  it('allows http to a loopback host', () => {
+    const { url } = parseTransportUrl('http://127.0.0.1:8080/mcp') as { url: URL }
+    expect(oauthTokenOverHttp(url)).toBeUndefined()
   })
 })
 

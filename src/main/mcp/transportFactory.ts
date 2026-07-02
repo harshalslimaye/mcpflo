@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { ServerConfig } from '../../shared/mcp.types'
 import { resolveShellPath } from '../shellPath'
-import { credentialOverHttp } from '../../shared/transportSafety'
+import { credentialOverHttp, oauthTokenOverHttp } from '../../shared/transportSafety'
 
 // Builds the SDK transport for a server's configured transport type. Only this
 // construction is transport-specific — everything downstream (client, taps,
@@ -36,7 +36,7 @@ export function createTransport(config: ServerConfig): Transport {
       // Enforce the cleartext-credential guardrail here, not only in the UI, so a
       // config that bypassed the form (hand-edited config.json, a future import)
       // can't leak a credential header over plain http to a non-loopback host.
-      assertCredentialSafe(url, t.headers)
+      assertCredentialSafe(url, t.headers, t.auth === 'oauth')
       return new StreamableHTTPClientTransport(
         url,
         t.headers ? { requestInit: { headers: t.headers } } : undefined
@@ -48,8 +48,18 @@ export function createTransport(config: ServerConfig): Transport {
 // Refuses to build a transport that would send a credential header in cleartext
 // over non-loopback http. Throws (failing the connect) rather than silently
 // stripping the header — a misconfigured-but-secret-bearing server should surface
-// loudly, not connect unauthenticated.
-export function assertCredentialSafe(url: URL, headers?: Record<string, string>): void {
+// loudly, not connect unauthenticated. `oauth` covers the bearer token the SDK
+// attaches itself once signed in — it never appears in `headers`, so
+// credentialOverHttp alone can't see it (see oauthTokenOverHttp).
+export function assertCredentialSafe(
+  url: URL,
+  headers?: Record<string, string>,
+  oauth?: boolean
+): void {
+  if (oauth) {
+    const unsafeOAuth = oauthTokenOverHttp(url)
+    if (unsafeOAuth) throw new Error(unsafeOAuth)
+  }
   if (!headers) return
   const unsafe = credentialOverHttp(url, Object.keys(headers))
   if (unsafe) throw new Error(unsafe)

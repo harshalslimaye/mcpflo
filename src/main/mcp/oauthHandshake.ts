@@ -70,7 +70,9 @@ export async function buildOAuthTransport(config: ServerConfig): Promise<{
   // Static headers still ride alongside OAuth (Authorization is blocked in the UI,
   // so it can't collide with the bearer token the provider injects) — but they're
   // subject to the same cleartext-credential guardrail as a plain http transport.
-  assertCredentialSafe(url, t.headers)
+  // `oauth: true` also catches the bearer token itself, which never appears in
+  // `t.headers` since the provider attaches it dynamically per request.
+  assertCredentialSafe(url, t.headers, true)
 
   const saved = await readOAuthState(config.id)
   const oauthState = randomUUID()
