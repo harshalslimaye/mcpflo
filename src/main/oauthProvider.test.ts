@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 import {
   startLoopbackListener,
   createOAuthProvider,
+  disableAutoRedirect,
   CALLBACK_TIMEOUT_MS,
   type LoopbackListener
 } from './oauthProvider'
@@ -179,5 +180,14 @@ describe('createOAuthProvider', () => {
     await expect(p.codeVerifier()).rejects.toThrow('code verifier')
     await p.saveCodeVerifier('verifier-abc')
     expect(await p.codeVerifier()).toBe('verifier-abc')
+  })
+})
+
+describe('disableAutoRedirect', () => {
+  it('replaces redirectToAuthorization with a no-op that never opens the browser', () => {
+    const p = createOAuthProvider('srv-1', {}, 'http://127.0.0.1:51234/callback', 'st')
+    disableAutoRedirect(p)
+    p.redirectToAuthorization(new URL('https://auth.example.com/authorize?x=1'))
+    expect(h.openExternal).not.toHaveBeenCalled()
   })
 })

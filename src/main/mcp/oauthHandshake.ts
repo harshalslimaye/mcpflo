@@ -1,6 +1,9 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
+import {
+  UnauthorizedError,
+  type OAuthClientProvider
+} from '@modelcontextprotocol/sdk/client/auth.js'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import type { ServerConfig, AuthEvent } from '../../shared/mcp.types'
@@ -11,7 +14,12 @@ import {
   clearClientInformation,
   EncryptionUnavailableError
 } from '../oauthStore'
-import { createOAuthProvider, startLoopbackListener, type LoopbackListener } from '../oauthProvider'
+import {
+  createOAuthProvider,
+  disableAutoRedirect,
+  startLoopbackListener,
+  type LoopbackListener
+} from '../oauthProvider'
 import { assertCredentialSafe } from './transportFactory'
 
 // Thrown by the OAuth handshake when the server doesn't support Dynamic Client
@@ -58,6 +66,7 @@ export function onAuthEvent(listener: (event: AuthEvent) => void): () => void {
 export async function buildOAuthTransport(config: ServerConfig): Promise<{
   makeTransport: () => StreamableHTTPClientTransport
   loopback: LoopbackListener
+  provider: OAuthClientProvider
 }> {
   const t = config.transport
   if (t.type !== 'streamable-http') {
@@ -96,7 +105,7 @@ export async function buildOAuthTransport(config: ServerConfig): Promise<{
       authProvider: provider,
       requestInit: { headers: t.headers ?? {} }
     })
-  return { makeTransport, loopback }
+  return { makeTransport, loopback, provider }
 }
 
 // Drives the 401 → browser → finishAuth → retry handshake around connect. On the
@@ -109,6 +118,7 @@ export async function authorizeAndConnect(
   client: Client,
   makeTransport: () => StreamableHTTPClientTransport,
   loopback: LoopbackListener,
+  provider: OAuthClientProvider,
   signal?: AbortSignal
 ): Promise<StreamableHTTPClientTransport> {
   const serverId = config.id
@@ -117,6 +127,10 @@ export async function authorizeAndConnect(
   try {
     await client.connect(transport, { timeout, signal })
     loopback.close()
+    // The token was already valid — no browser round-trip happened, but the
+    // loopback is still torn down for good, so this provider must not try to
+    // auto-redirect through it later (see disableAutoRedirect).
+    disableAutoRedirect(provider)
     emitAuth({ type: 'success', serverId })
     return transport
   } catch (err) {
@@ -146,6 +160,10 @@ export async function authorizeAndConnect(
     emitAuth({ type: 'error', serverId, reason: err instanceof Error ? err.message : String(err) })
     throw err
   }
+  // The loopback already served (and self-closed after) this one callback —
+  // it can't be redirected through again, so neither this retry nor any later
+  // request on the resulting session should try.
+  disableAutoRedirect(provider)
   const retryTransport = makeTransport()
   await retryTransport.finishAuth(code)
   try {

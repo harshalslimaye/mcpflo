@@ -84,7 +84,8 @@ describe('session', () => {
     h.createTransport.mockReturnValue('plain-transport')
     h.buildOAuthTransport.mockResolvedValue({
       makeTransport: () => 'unauthorized-transport',
-      loopback: { close: vi.fn() }
+      loopback: { close: vi.fn() },
+      provider: {}
     })
     h.authorizeAndConnect.mockResolvedValue('authorized-transport')
     // Fresh `sessions` map per test.
@@ -151,6 +152,7 @@ describe('session', () => {
         expect.anything(),
         expect.any(Function),
         expect.anything(),
+        expect.anything(),
         undefined
       )
       // The session must hold the transport authorizeAndConnect actually
@@ -175,6 +177,7 @@ describe('session', () => {
         oauthConfig,
         expect.anything(),
         expect.any(Function),
+        expect.anything(),
         expect.anything(),
         signal
       )
