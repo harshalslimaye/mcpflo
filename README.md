@@ -269,7 +269,8 @@ npm run build:linux   # Linux
 
 Contributions are welcome. Open an issue to discuss a change or file a bug at the
 [issue tracker](https://github.com/harshalslimaye/mcpflo/issues), and send a pull
-request.
+request. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, conventions, and the
+PR process.
 
 ---
 
