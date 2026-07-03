@@ -43,7 +43,7 @@ export function CapabilitySection({
   const showRows = expanded && !disabled
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
+    <div className="flex shrink-0 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
       <button
         type="button"
         onClick={disabled ? undefined : onToggle}
