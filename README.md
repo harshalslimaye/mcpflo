@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A visual testing tool for MCP (Model Context Protocol) servers.</strong><br/>
-  Think Postman, but for MCP.
+  Think Bruno, but for MCP.
 </p>
 
 <p align="center">
