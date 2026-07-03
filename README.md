@@ -10,6 +10,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/harshalslimaye/mcpflo/releases"><img src="https://img.shields.io/github/v/release/harshalslimaye/mcpflo?include_prereleases&label=release" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platforms" />
+  <a href="https://github.com/harshalslimaye/mcpflo/issues"><img src="https://img.shields.io/github/issues/harshalslimaye/mcpflo" alt="Issues" /></a>
+</p>
+
+<p align="center">
   <img src="docs/images/screenshot-dark.png" alt="MCPFlo screenshot" width="820" />
 </p>
 
@@ -40,8 +47,12 @@ response in front of you, no model in the loop, no tokens spent.
 
 Everything below is implemented and working today.
 
+### Connect
+
 - **Multiple simultaneous servers.** Connect to as many servers as you want and
-  browse them side by side. Each runs over its own pooled connection.
+  browse them side by side. Each runs over its own pooled connection, with a
+  disconnect action per server — and spawned processes are cleaned up when a
+  server is removed or the app quits.
 - **stdio and Streamable HTTP transports.** Spawn a local server over stdio, or
   connect to a remote one over Streamable HTTP. HTTP connections support custom
   request headers (e.g. an `Authorization: Bearer …` token) for token-authed
@@ -51,36 +62,61 @@ Everything below is implemented and working today.
   PKCE flow: MCPFlo opens your system browser, captures the redirect on a
   loopback listener (RFC 8252), and reconnects. Clients register automatically
   via Dynamic Client Registration, with a manual Client ID fallback when a
-  server doesn't support it. Tokens are encrypted at rest using the OS keychain
-  (`safeStorage`), and static custom headers still work alongside OAuth.
-- **Browse capabilities.** View every tool, resource, and prompt across all
-  connected servers in a grouped tree.
+  server doesn't support it. An **Auth panel** in the server detail view shows
+  your current session — token status, expiry, scopes — with sign-out a click
+  away.
+- **Secrets encrypted at rest.** OAuth tokens, environment variables, and
+  request headers are encrypted with the OS keychain (`safeStorage`) and never
+  leave the main process — the UI layer only ever sees server IDs.
+- **Protocol version override.** Pin a connection to a specific MCP protocol
+  version when you need to test how a server negotiates.
+
+### Browse
+
+- **Capability tree.** View every tool, resource, and prompt across all
+  connected servers in a grouped tree, with expand/collapse-all controls.
 - **Unified filter.** A single search box (⌘K) filters tools, resources, and
   prompts across every server at once.
+- **Server detail view.** Select a server to see it at a glance: connection
+  status and actions, its full capability list, and a **context-budget card**
+  that estimates how many tokens the server's tool, resource, and prompt
+  definitions consume in a model's context window — segment by segment.
+- **Cancellable discovery.** A slow capability fetch can be cancelled mid-flight
+  instead of blocking the row.
+
+### Invoke
+
 - **Schema-driven parameter forms.** Tool inputs render as a form generated from
   the tool's JSON Schema, powered by [react-jsonschema-form](https://rjsf-team.github.io/react-jsonschema-form/).
   Nested objects and arrays are supported, with add/remove controls and
   client-side validation before the call goes out.
-- **Tool execution with rich response rendering.** Invoke a tool and inspect the
-  result. Content blocks render by type — text, pretty-printed JSON, images,
-  audio, and embedded/linked resources — and mixed content (multiple blocks of
-  different types in one response) renders inline. The full JSON-RPC envelope is
-  available as a raw view.
-- **Resource reading and prompt rendering.** Read a resource and view its text or
-  binary contents; render a prompt with named arguments and see the expanded
+- **Rich response rendering.** Content blocks render by type — text,
+  pretty-printed JSON with a collapsible **tree view**, images, audio, and
+  embedded/linked resources — and mixed content renders inline. The full
+  JSON-RPC envelope is always available as a raw view.
+- **Token footprint.** A **Tokens tab** on every result shows what the response
+  costs in context-window terms — and what the tool's own definition costs just
+  by being connected.
+- **Resource reading and prompt rendering.** Read a resource and view its text
+  or binary contents; render a prompt with named arguments and see the expanded
   message turns.
 - **Live notifications.** Progress notifications and log messages emitted by a
-  server while a tool call is in flight are captured and shown in a notifications
-  tab alongside the call.
+  server while a tool call is in flight are captured and shown in a
+  notifications tab alongside the call.
 - **Elicitation.** When a tool asks the user for input mid-call
-  (`elicitation/create`), MCPFlo renders the requested schema as a form and sends
-  your answer back. Form-mode elicitation is supported; URL-mode is not.
+  (`elicitation/create`), MCPFlo renders the requested schema as a form and
+  sends your answer back. Form-mode elicitation is supported; URL-mode is not.
 - **Sampling.** When a server asks the client to run an LLM completion
   (`sampling/createMessage`), MCPFlo prompts *you* to answer by hand instead of
   calling a model — keeping every interaction deterministic and token-free.
+
+### Revisit
+
 - **Call history.** Each tool, resource, and prompt keeps a per-capability
-  history of recent calls (up to 50 each) that you can revisit during a session.
-  History is in-memory only and **does not persist across app restarts.**
+  history of recent calls (up to 50 each), plus a unified **All** tab — a
+  cross-server activity log of everything you've run this session.
+- **One-click replay.** Activate any history entry and its parameters prefill
+  the form, ready to tweak and re-run.
 - **Light and dark themes.**
 
 ### Not supported
@@ -90,17 +126,22 @@ These are deliberate limitations, called out so there are no surprises:
 - **No SSE transport.** Only stdio and Streamable HTTP are supported. The
   deprecated HTTP+SSE transport is intentionally omitted.
 - **History does not persist.** Call history is cleared when the app closes.
-- **macOS releases are Apple Silicon (arm64) only**, and binaries are **unsigned
-  and not notarized** (see install note below).
+- **macOS releases are Apple Silicon (arm64) only.**
 
 ---
 
 ## Installation
 
-### Prerequisites
+### Download (macOS)
 
-- Node.js 18+
-- npm 9+
+Grab the latest `.dmg` from the
+[releases page](https://github.com/harshalslimaye/mcpflo/releases), open it, and
+drag **MCPFlo** into your Applications folder. Builds are signed with an Apple
+Developer ID and notarized, so the app opens without any Gatekeeper warnings.
+
+> **Upgrading from v0.0.6 or earlier?** Those builds were unsigned. Delete the
+> old copy and install fresh from the latest release — if the old app was ever
+> quarantined, the right-click → Open workaround is no longer needed.
 
 ### From source
 
@@ -111,55 +152,39 @@ npm install
 npm run dev
 ```
 
-### Installing a downloaded build (macOS)
-
-MCPFlo's macOS builds aren't signed with an Apple Developer ID or notarized, so
-the first time you open one Gatekeeper will warn that the app "can't be opened" or
-is from an unidentified developer. This is expected — clear it once and macOS
-remembers:
-
-1. In Finder, **right-click** (or Control-click) **MCPFlo.app → Open**.
-2. Click **Open** in the dialog.
-
-After that, MCPFlo launches normally on every subsequent run.
-
-If you prefer the terminal, you can strip the quarantine flag instead:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/MCPFlo.app
-```
-
-> If the app ever fails to launch with a *"different Team IDs"* error, the bundle
-> was modified after download (for example a partially applied update). Reinstall
-> a fresh copy from the latest release rather than re-signing it in place.
+Requires Node.js 18+ and npm 9+.
 
 ---
 
 ## Add your first server
 
-A fresh install is seeded with the MCP reference
-[`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers/tree/main/src/everything)
-server, which exercises every capability MCPFlo supports — a good place to start.
-To add your own:
+A fresh install is seeded with
+[`@mcpflo/server-everything`](packages/server-everything) — MCPFlo's own
+deterministic test-fixture server, which exercises every capability the app
+supports (tools, resources, prompts, elicitation, sampling, notifications) — a
+good place to start. To add your own:
 
 1. Click **+ Add Server** in the sidebar.
 2. Enter a name and choose a transport:
    - **stdio** — provide the command and args (e.g. `npx` with args
      `-y @modelcontextprotocol/server-memory`), plus any environment variables.
    - **Streamable HTTP** — provide the URL, plus any request headers
-     (e.g. `Authorization=Bearer …`).
-   - Environment variables and headers live in collapsible sections so the form
-     stays short until you need them.
-   - An **Advanced** section exposes an optional connection timeout.
+     (e.g. `Authorization: Bearer …`).
+   - Environment variables and headers use a key/value row editor and live in
+     collapsible sections, so the form stays short until you need them.
+   - An **Advanced** section exposes an optional connection timeout and MCP
+     protocol version override.
    - Prefer pasting a config? Switch to **JSON import** and paste an
      `mcpServers` block (single or multiple entries) instead of filling out the
      form by hand.
 3. Click **Add Server**.
 4. Expand the server row — MCPFlo connects and discovers all tools, resources,
-   and prompts automatically.
+   and prompts automatically. If the server requires OAuth, your browser opens
+   for sign-in and MCPFlo reconnects on its own.
 
 Server configs are persisted with [electron-store](https://github.com/sindresorhus/electron-store)
-to `config.json` under the app's user-data directory:
+to `config.json` under the app's user-data directory (secrets encrypted via the
+OS keychain):
 
 - macOS: `~/Library/Application Support/MCPFlo/config.json`
 - Windows: `%APPDATA%/MCPFlo/config.json`
@@ -168,6 +193,20 @@ to `config.json` under the app's user-data directory:
 Discovered capabilities are cached to disk per server under
 `<user-data>/servers/<server-id>/capabilities.json`, so they're available
 immediately on the next launch before a fresh fetch runs.
+
+---
+
+## Security
+
+MCPFlo runs untrusted server processes and talks to remote endpoints, so the app
+is hardened accordingly:
+
+- The renderer runs in Chromium's **sandbox** with a minimal, typed preload
+  bridge; transport secrets (tokens, env vars, headers) never enter the renderer.
+- IPC handlers **validate server IDs** before any value reaches a filesystem path.
+- The main window **blocks navigation** to non-app origins, and external links
+  only open through a **scheme allowlist**.
+- OAuth is **refused over cleartext HTTP** to non-loopback hosts.
 
 ---
 
@@ -180,7 +219,9 @@ immediately on the next launch before a fresh fetch runs.
 - [react-jsonschema-form (RJSF)](https://rjsf-team.github.io/react-jsonschema-form/) for schema-driven parameter forms
 - [Zustand](https://zustand-demo.pmnd.rs/) for state
 - [electron-store](https://github.com/sindresorhus/electron-store) for config persistence
-- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) for tests
+- [gpt-tokenizer](https://github.com/niieani/gpt-tokenizer) for context-budget estimation
+- [Vitest](https://vitest.dev/) + [Testing Library](https://testing-library.com/) for unit tests,
+  [Playwright](https://playwright.dev/) for end-to-end tests
 
 ---
 
@@ -198,14 +239,20 @@ npm run format      # format with Prettier
 
 `npm install` sets up Husky hooks; `git push` runs `npm test` via the `pre-push` hook.
 
+The Playwright e2e suite drives the app against
+[`@mcpflo/server-everything`](packages/server-everything), a bundled test-fixture
+MCP server that exercises every capability MCPFlo supports.
+
 ### Project structure
 
 ```
 src/
-├── main/        Electron main process — IPC, MCP client, persistence, caching
+├── main/        Electron main process — IPC, MCP client, OAuth, persistence, caching
 ├── preload/     Typed bridge between main and renderer
 ├── renderer/    React UI (sidebar, detail views, stores, RJSF forms)
 └── shared/      Types shared across processes (MCP schemas, configs)
+packages/
+└── server-everything/   Test-fixture MCP server used by the e2e suite
 ```
 
 ### Build

@@ -72,7 +72,7 @@ export function AuthDetailsCard({ server }: AuthDetailsCardProps): React.JSX.Ele
   if (!authenticated) return null
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
+    <div className="flex shrink-0 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
       <div className="flex items-center gap-3 border-b border-border bg-panel-2 px-4 py-[11px]">
         <ShieldCheck size={14} className="shrink-0 text-fg-faint" />
         <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-faint">

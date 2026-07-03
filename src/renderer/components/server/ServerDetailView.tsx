@@ -43,7 +43,7 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
             onDelete={() => setConfirmingDelete(true)}
           />
           {showAuthDetails ? (
-            <div className="grid grid-cols-1 items-stretch gap-[14px] @min-[760px]:grid-cols-[minmax(260px,380px)_1fr]">
+            <div className="grid shrink-0 grid-cols-1 items-stretch gap-[14px] @min-[760px]:grid-cols-[minmax(260px,380px)_1fr]">
               <AuthDetailsCard server={server} />
               <ContextBudgetCard server={server} />
             </div>
