@@ -8,9 +8,9 @@ export const CONTEXT_WINDOW_TOKENS = 200_000
 
 // gpt-tokenizer's default `encode` uses this BPE — surfaced in the UI so the
 // "~ Estimated" framing names what it's actually estimating against.
-export const TOKENIZER_LABEL = 'cl100k_base'
+export const TOKENIZER_LABEL = 'o200k_base'
 
-// Tokenizes a string with the default (cl100k_base) BPE. The whole budget is a
+// Tokenizes a string with the default (o200k_base) BPE. The whole budget is a
 // heuristic — actual usage depends on the agent's own tokenizer and which
 // capabilities it pulls in — so the exact encoding isn't load-bearing; this is
 // a consistent, dependency-light proxy.

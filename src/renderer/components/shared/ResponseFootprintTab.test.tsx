@@ -44,7 +44,7 @@ describe('ResponseFootprintTab', () => {
     expect(screen.getByText('Raw size')).toBeInTheDocument()
     expect(screen.getByText('Characters')).toBeInTheDocument()
     expect(screen.getByText(estimate.characters.toLocaleString())).toBeInTheDocument()
-    expect(screen.getByText('cl100k_base')).toBeInTheDocument()
+    expect(screen.getByText('o200k_base')).toBeInTheDocument()
   })
 
   it('renders one row per reference model', () => {
