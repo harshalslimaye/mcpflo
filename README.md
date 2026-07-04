@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://github.com/harshalslimaye/mcpflo/releases"><img src="https://img.shields.io/github/v/release/harshalslimaye/mcpflo?include_prereleases&label=release" alt="Latest release" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
-  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platforms" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey" alt="Platforms" />
   <a href="https://github.com/harshalslimaye/mcpflo/issues"><img src="https://img.shields.io/github/issues/harshalslimaye/mcpflo" alt="Issues" /></a>
 </p>
 
