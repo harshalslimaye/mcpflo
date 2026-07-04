@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
@@ -6,6 +6,7 @@ import { Toggle } from '../ui/Toggle'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
 import { TestScriptEditor } from '../shared/TestScriptEditor'
+import { useTestScript } from '../shared/useTestScript'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
@@ -15,12 +16,6 @@ import { estimateToolDefinitionPayload } from '../../lib/contextBudget'
 
 export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
-
-// Debounce window between the user's last keystroke in the Tests editor and
-// the autosave IPC call — short enough that a script survives a tab switch or
-// an accidental reload without feeling like a "save" step the user has to
-// remember to trigger.
-const SCRIPT_AUTOSAVE_DELAY_MS = 500
 
 interface ToolRequestPanelProps {
   tool: Tool
@@ -70,41 +65,12 @@ export function ToolRequestPanel({
   running,
   onExecute
 }: ToolRequestPanelProps): React.JSX.Element {
-  // The saved test script, loaded once per tool (ToolDetailView remounts this
-  // whole panel on tool change via a `${serverId}::${tool.name}` key, so there's
-  // no stale-tool risk here). Guarded against a missing `window.api.testing` —
-  // real Electron always has it (via preload); component tests that render this
-  // panel without stubbing it just see an empty, unsaved script instead of
-  // throwing.
-  const [script, setScript] = useState('')
-  const scriptEditedRef = useRef(false)
-  useEffect(() => {
-    let active = true
-    if (!window.api?.testing) return
-    window.api.testing.getScript(serverId, 'tool', tool.name).then((saved) => {
-      if (active) setScript(saved ?? '')
-    })
-    return () => {
-      active = false
-    }
-  }, [serverId, tool.name])
-
-  // Debounced autosave — only once the user has actually typed, so re-saving
-  // the just-loaded content back to disk on mount is skipped.
-  useEffect(() => {
-    if (!scriptEditedRef.current || !window.api?.testing) return
-    const id = setTimeout(() => {
-      window.api.testing.saveScript(serverId, 'tool', tool.name, script)
-    }, SCRIPT_AUTOSAVE_DELAY_MS)
-    return () => clearTimeout(id)
-  }, [script, serverId, tool.name])
-
-  const handleScriptChange = useCallback((next: string) => {
-    scriptEditedRef.current = true
-    setScript(next)
-  }, [])
-
-  const hasScript = script.trim() !== ''
+  // Load/autosave/flush-on-unmount for the Tests tab — see useTestScript.
+  const {
+    script,
+    hasScript,
+    onChange: handleScriptChange
+  } = useTestScript(serverId, 'tool', tool.name)
 
   const schema = tool.inputSchema as RJSFSchema
   // A schema with no declared properties has no form to render.

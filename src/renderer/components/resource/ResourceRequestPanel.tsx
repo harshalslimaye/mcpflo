@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import type { Resource } from '../../../shared/mcp.types'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TestScriptEditor } from '../shared/TestScriptEditor'
+import { useTestScript } from '../shared/useTestScript'
 import { estimateResourceTokens } from '../../lib/contextBudget'
 
 export type RequestTab = 'details' | 'tests'
-
-// See ToolRequestPanel.SCRIPT_AUTOSAVE_DELAY_MS.
-const SCRIPT_AUTOSAVE_DELAY_MS = 500
 
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'details', label: 'Details' },
@@ -41,34 +39,12 @@ export function ResourceRequestPanel({
 }: ResourceRequestPanelProps): React.JSX.Element {
   const definitionTokens = useMemo(() => estimateResourceTokens(resource), [resource])
 
-  // See ToolRequestPanel for the load/autosave/dot-indicator rationale.
-  const [script, setScript] = useState('')
-  const scriptEditedRef = useRef(false)
-  useEffect(() => {
-    let active = true
-    if (!window.api?.testing) return
-    window.api.testing.getScript(serverId, 'resource', resource.uri).then((saved) => {
-      if (active) setScript(saved ?? '')
-    })
-    return () => {
-      active = false
-    }
-  }, [serverId, resource.uri])
-
-  useEffect(() => {
-    if (!scriptEditedRef.current || !window.api?.testing) return
-    const id = setTimeout(() => {
-      window.api.testing.saveScript(serverId, 'resource', resource.uri, script)
-    }, SCRIPT_AUTOSAVE_DELAY_MS)
-    return () => clearTimeout(id)
-  }, [script, serverId, resource.uri])
-
-  const handleScriptChange = useCallback((next: string) => {
-    scriptEditedRef.current = true
-    setScript(next)
-  }, [])
-
-  const hasScript = script.trim() !== ''
+  // Load/autosave/flush-on-unmount for the Tests tab — see useTestScript.
+  const {
+    script,
+    hasScript,
+    onChange: handleScriptChange
+  } = useTestScript(serverId, 'resource', resource.uri)
 
   const headerEnd = (
     <div className="flex gap-0.5">

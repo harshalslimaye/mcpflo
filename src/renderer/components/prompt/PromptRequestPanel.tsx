@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Prompt } from '../../../shared/mcp.types'
@@ -6,6 +6,7 @@ import { Toggle } from '../ui/Toggle'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
 import { TestScriptEditor } from '../shared/TestScriptEditor'
+import { useTestScript } from '../shared/useTestScript'
 import { SchemaTab } from '../tool/SchemaTab'
 import { RjsfForm } from '../tool/rjsf/RjsfForm'
 import { validator } from '../tool/rjsf/validator'
@@ -16,9 +17,6 @@ import { estimatePromptDefinitionPayload } from '../../lib/contextBudget'
 
 export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
-
-// See ToolRequestPanel.SCRIPT_AUTOSAVE_DELAY_MS.
-const SCRIPT_AUTOSAVE_DELAY_MS = 500
 
 interface PromptRequestPanelProps {
   prompt: Prompt
@@ -81,34 +79,12 @@ export function PromptRequestPanel({
   running,
   onExecute
 }: PromptRequestPanelProps): React.JSX.Element {
-  // See ToolRequestPanel for the load/autosave/dot-indicator rationale.
-  const [script, setScript] = useState('')
-  const scriptEditedRef = useRef(false)
-  useEffect(() => {
-    let active = true
-    if (!window.api?.testing) return
-    window.api.testing.getScript(serverId, 'prompt', prompt.name).then((saved) => {
-      if (active) setScript(saved ?? '')
-    })
-    return () => {
-      active = false
-    }
-  }, [serverId, prompt.name])
-
-  useEffect(() => {
-    if (!scriptEditedRef.current || !window.api?.testing) return
-    const id = setTimeout(() => {
-      window.api.testing.saveScript(serverId, 'prompt', prompt.name, script)
-    }, SCRIPT_AUTOSAVE_DELAY_MS)
-    return () => clearTimeout(id)
-  }, [script, serverId, prompt.name])
-
-  const handleScriptChange = useCallback((next: string) => {
-    scriptEditedRef.current = true
-    setScript(next)
-  }, [])
-
-  const hasScript = script.trim() !== ''
+  // Load/autosave/flush-on-unmount for the Tests tab — see useTestScript.
+  const {
+    script,
+    hasScript,
+    onChange: handleScriptChange
+  } = useTestScript(serverId, 'prompt', prompt.name)
 
   const schema = useMemo(() => buildPromptSchema(prompt), [prompt])
   const rjsfSchema = schema as RJSFSchema
