@@ -137,7 +137,16 @@ const api = {
       kind?: TestKind
       result: ToolCallResult | GetPromptResult | ResourceReadResult
       callDurationMs?: number
-    }): Promise<TestRunSummary> => ipcRenderer.invoke('testing:run', input)
+    }): Promise<TestRunSummary> => ipcRenderer.invoke('testing:run', input),
+    // Opens a native folder-picker; resolves to the picked path, or null if
+    // cancelled. Persisting the choice is a separate mcp:updateServer call
+    // (see TestsFolderCard) — this only asks the OS for a folder.
+    chooseTestsFolder: (id: string): Promise<string | null> =>
+      ipcRenderer.invoke('testing:chooseTestsFolder', id),
+    getTestsFolderStatus: (
+      id: string
+    ): Promise<{ path: string; isCustom: boolean; exists: boolean }> =>
+      ipcRenderer.invoke('testing:getTestsFolderStatus', id)
   }
 }
 

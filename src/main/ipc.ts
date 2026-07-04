@@ -1,4 +1,6 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { promises as fs } from 'node:fs'
+import { join } from 'node:path'
 import { getServers, getServerById, addServer, updateServer, removeServer } from './store'
 import {
   fetchCapabilities,
@@ -363,4 +365,54 @@ export function registerIpcHandlers(): void {
       }
     ): Promise<TestRunSummary> => runTests(input)
   )
+
+  // Custom tests folder (Step 2b). Picking is a pure "ask the OS for a
+  // folder" operation — persisting the choice reuses the existing
+  // mcp:updateServer channel (renderer calls it with { testsPath: folder }
+  // after this resolves), so there's no separate "set" handler here. Clearing
+  // needs no handler at all: the renderer calls mcp:updateServer with
+  // { testsPath: undefined } directly.
+  ipcMain.handle('testing:chooseTestsFolder', async (event, id: string): Promise<string | null> => {
+    assertValidServerId(id)
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const result = parent
+      ? await dialog.showOpenDialog(parent, { properties: ['openDirectory', 'createDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const folder = result.filePaths[0]
+    await seedGitignore(folder)
+    return folder
+  })
+
+  // Read-only: whether the server's configured tests folder (custom or
+  // default) currently exists on disk, so the UI can warn instead of letting
+  // a write silently recreate a folder the user deleted intentionally.
+  ipcMain.handle(
+    'testing:getTestsFolderStatus',
+    async (_event, id: string): Promise<{ path: string; isCustom: boolean; exists: boolean }> => {
+      assertValidServerId(id)
+      const server = getServerById(id)
+      const path = resolveTestsRoot(id)
+      const exists = server.testsPath
+        ? await fs
+            .stat(path)
+            .then(() => true)
+            .catch(() => false)
+        : true
+      return { path, isCustom: server.testsPath !== undefined, exists }
+    }
+  )
+}
+
+// Seeds a `.gitignore` excluding machine-managed `.inputs.json` files, once,
+// the first time a folder is chosen as a custom tests root — a custom folder
+// is meant to be a real, git-tracked project directory, unlike the default
+// userData location.
+async function seedGitignore(folder: string): Promise<void> {
+  const gitignorePath = join(folder, '.gitignore')
+  try {
+    await fs.access(gitignorePath)
+  } catch {
+    await fs.writeFile(gitignorePath, '*.inputs.json\n', 'utf-8')
+  }
 }

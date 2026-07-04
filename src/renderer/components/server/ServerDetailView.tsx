@@ -5,6 +5,7 @@ import { ServerHeader } from './ServerHeader'
 import { ServerActionBar } from './ServerActionBar'
 import { AuthDetailsCard } from './AuthDetailsCard'
 import { ContextBudgetCard } from './ContextBudgetCard'
+import { TestsFolderCard } from './TestsFolderCard'
 import { CapabilitySections } from './CapabilitySections'
 import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { GlobalActivityRail } from '../shared/GlobalActivityRail'
@@ -50,6 +51,7 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
           ) : (
             <ContextBudgetCard server={server} />
           )}
+          <TestsFolderCard server={server} />
           <CapabilitySections server={server} />
         </div>
       </div>

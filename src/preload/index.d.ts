@@ -82,6 +82,10 @@ declare global {
           result: ToolCallResult | GetPromptResult | ResourceReadResult
           callDurationMs?: number
         }) => Promise<TestRunSummary>
+        chooseTestsFolder: (id: string) => Promise<string | null>
+        getTestsFolderStatus: (
+          id: string
+        ) => Promise<{ path: string; isCustom: boolean; exists: boolean }>
       }
     }
   }
