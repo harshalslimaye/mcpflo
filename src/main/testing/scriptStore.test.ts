@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createScriptStore, type ScriptStore } from './scriptStore'
+import { createScriptStore, escapesRoot, type ScriptStore } from './scriptStore'
 
 let root: string
 let store: ScriptStore
@@ -126,5 +126,33 @@ describe('path safety', () => {
     await expect(store.readScript(maliciousKind, 'passwd')).rejects.toThrow(
       /outside the tests root/
     )
+  })
+
+  describe('escapesRoot', () => {
+    it('flags a POSIX-style escape', () => {
+      expect(escapesRoot('..')).toBe(true)
+      expect(escapesRoot('../evil')).toBe(true)
+    })
+
+    it('flags a Windows-style escape (backslash-joined, as path.relative returns on Windows)', () => {
+      // Regression: a forward-slash-only `startsWith('../')` check misses
+      // this — path.relative joins with `\` on Windows, so the exact same
+      // escape that's caught on POSIX would previously slip through there.
+      expect(escapesRoot('..\\evil')).toBe(true)
+      expect(escapesRoot('..\\..\\evil')).toBe(true)
+    })
+
+    it('flags an absolute path', () => {
+      // `isAbsolute` is platform-native — on POSIX (where this test runs)
+      // that means a leading `/`. A Windows drive-absolute path (`C:\...`)
+      // isn't reachable from `path.relative` on POSIX, and testing it here
+      // would just assert POSIX `isAbsolute`'s own (unrelated) behavior.
+      expect(escapesRoot('/etc/passwd')).toBe(true)
+    })
+
+    it('does not flag a path that stays inside the root', () => {
+      expect(escapesRoot('tool/name.test.js')).toBe(false)
+      expect(escapesRoot('tool\\name.test.js')).toBe(false)
+    })
   })
 })

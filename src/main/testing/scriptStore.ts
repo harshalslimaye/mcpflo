@@ -30,6 +30,16 @@ const KINDS: TestKind[] = ['tool', 'prompt', 'resource']
 const SCRIPT_EXT = '.test.js'
 const INPUTS_EXT = '.inputs.json'
 
+// Whether a `path.relative(root, target)` result means `target` landed
+// outside `root`. Split on both separators rather than checking
+// `startsWith('../')` alone — `path.relative` joins with `\` on Windows, so a
+// forward-slash-only check silently misses an escape there. Exported only for
+// direct unit testing (see scriptStore.test.ts); not part of the ScriptStore
+// public API.
+export function escapesRoot(rel: string): boolean {
+  return isAbsolute(rel) || rel.split(/[\\/]/)[0] === '..'
+}
+
 // Resolves `parts` under `root`, throwing if the result would land outside
 // it. `encodeURIComponent(name)` already keeps a well-formed name from
 // escaping, but this is defense in depth against a malformed or unexpected
@@ -39,7 +49,7 @@ function safeJoin(root: string, ...parts: string[]): string {
   const resolvedRoot = resolve(root)
   const target = resolve(resolvedRoot, ...parts)
   const rel = relative(resolvedRoot, target)
-  if (rel === '..' || rel.startsWith(`..${'/'}`) || isAbsolute(rel)) {
+  if (escapesRoot(rel)) {
     throw new Error(`Refusing to access path outside the tests root: ${parts.join('/')}`)
   }
   return target

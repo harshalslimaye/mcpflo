@@ -14,6 +14,7 @@ import {
 import { clearOAuthTokens, hasValidOAuthTokens, readAuthDetails } from './oauthStore'
 import { isSecretStorageAvailable } from './secrets'
 import { assertValidServerId } from './serverId'
+import { assertValidTestKind } from './testing/testKind'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -320,16 +321,18 @@ export function registerIpcHandlers(): void {
   // override only has to change that one function.
   ipcMain.handle(
     'testing:getScript',
-    (_event, id: string, kind: TestKind, name: string): Promise<string | null> => {
+    (_event, id: string, kind: string, name: string): Promise<string | null> => {
       assertValidServerId(id)
+      assertValidTestKind(kind)
       return createScriptStore(resolveTestsRoot(id)).readScript(kind, name)
     }
   )
 
   ipcMain.handle(
     'testing:saveScript',
-    (_event, id: string, kind: TestKind, name: string, content: string): Promise<void> => {
+    (_event, id: string, kind: string, name: string, content: string): Promise<void> => {
       assertValidServerId(id)
+      assertValidTestKind(kind)
       return createScriptStore(resolveTestsRoot(id)).writeScript(kind, name, content)
     }
   )
@@ -339,11 +342,12 @@ export function registerIpcHandlers(): void {
     (
       _event,
       id: string,
-      kind: TestKind,
+      kind: string,
       name: string,
       inputs: Record<string, unknown>
     ): Promise<void> => {
       assertValidServerId(id)
+      assertValidTestKind(kind)
       return createScriptStore(resolveTestsRoot(id)).writeInputs(kind, name, inputs)
     }
   )
