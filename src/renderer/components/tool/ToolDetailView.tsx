@@ -80,6 +80,10 @@ export function ToolDetailView({
     setSelectedId(null)
     dock.reveal()
     setRunning(true)
+    // Machine-managed cache of the last-used call arguments, for a future
+    // "run all tests" pass — best-effort and independent of the call itself
+    // (a failed save here must never block or fail the call).
+    window.api?.testing?.saveInputs(serverId, 'tool', tool.name, payload).catch(() => {})
     try {
       await executeTool(serverId, tool.name, payload)
     } finally {
@@ -97,6 +101,7 @@ export function ToolDetailView({
           <ToolHeader tool={tool} serverName={serverName} />
           <ToolRequestPanel
             tool={tool}
+            serverId={serverId}
             activeTab={activeTab}
             onTabChange={setActiveTab}
             prefill={effectivePrefill}

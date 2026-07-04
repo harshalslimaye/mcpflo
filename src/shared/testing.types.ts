@@ -2,13 +2,19 @@
 // scripts run against a tool-call result). These cross the IPC boundary in
 // later phases; the engine itself (src/main/testing/) is the first consumer.
 
-import type { ToolCallResult } from './mcp.types'
+import type { ToolCallResult, GetPromptResult, ResourceReadResult } from './mcp.types'
+
+// Which kind of call the script is testing against. Selects which of the
+// three `res` builders bootstrap.js uses (buildToolRes/buildPromptRes/
+// buildResourceRes) and which fields SandboxInput.result actually holds.
+export type TestKind = 'tool' | 'prompt' | 'resource'
 
 // JSON payload the host writes into the sandbox as `globalThis.__MCPFLO_DATA__`
 // (src/main/testing/sandbox.ts). The bootstrap parses this once and builds
 // `res` from it before evaluating the user's script.
 export interface SandboxInput {
-  result: ToolCallResult
+  kind: TestKind
+  result: ToolCallResult | GetPromptResult | ResourceReadResult
   // Real UTF-8 byte lengths for `res.getSize()`, computed host-side via
   // `Buffer.byteLength` — the guest has no `TextEncoder`.
   bodyBytes: number
@@ -22,8 +28,9 @@ export interface SandboxInput {
 // The `res` contract the bootstrap (src/main/testing/bootstrap.js) builds
 // inside the sandbox from a `SandboxInput`. Not a compiled TS type — the
 // bootstrap is plain untyped JS evaluated inside QuickJS — but pinned here so
-// the bootstrap implementation and engine.test.ts fixtures stay in lockstep:
+// the bootstrap implementation and engine.test.ts fixtures stay in lockstep.
 //
+// Tool results (buildToolRes):
 //   res.body / res.getBody()             — result.structuredContent if
 //     defined; else all `text` content blocks joined the same way
 //     res.getText() does, JSON-parsed if the joined text parses, raw joined
@@ -38,6 +45,25 @@ export interface SandboxInput {
 //   res.getSize()                        — { body, total } in bytes, echoed
 //     from SandboxInput.bodyBytes / totalBytes
 //   res.raw / res.getRaw()               — the whole ToolCallResult, untouched
+//
+// Prompt results (buildPromptRes) and resource results (buildResourceRes)
+// share the same `getText`/`getBody`/`getResponseTime`/`getSize`/`getRaw`
+// shape, but have no `isError`/`getIsError` — there is no MCP-level error flag
+// at that level. In place of `getContent()`, each has its own raw-array
+// accessor, since prompt/resource results don't share a tool result's
+// `content` shape:
+//
+//   Prompt: res.messages / res.getMessages()  — result.messages array, or []
+//   Resource: res.contents / res.getContents() — result.contents array, or []
+//
+//   Prompt: res.getText() walks `messages`, taking each message's single
+//     `content` block's `.text` when its `type === 'text'` (a message's
+//     `content` is one block, not an array — unlike a tool result), joined
+//     with "\n". res.getBody() JSON-parses that joined text if it parses,
+//     else returns the raw joined string, else null if there's no text.
+//   Resource: res.getText() joins every `contents[].text` (skipping blob-only
+//     entries) with "\n". res.getBody() has the same JSON-parse-or-raw-or-null
+//     behavior as the prompt/tool one, applied to that joined text.
 
 // Outcome of a single `test("name", fn)` block.
 export interface TestResult {

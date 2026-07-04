@@ -170,3 +170,55 @@ describe('ResourceContentView — Tokens tab', () => {
     expect(screen.queryByText('Response footprint')).not.toBeInTheDocument()
   })
 })
+
+describe('ResourceContentView — Tests tab', () => {
+  it('is always present, unlabelled with a count when no test run was attempted', () => {
+    renderView(record())
+    expect(screen.getByRole('button', { name: 'Tests' })).toBeInTheDocument()
+  })
+
+  it('shows the total count in the label when a test run is attached', () => {
+    renderView(
+      record({
+        testRun: {
+          results: [{ name: 'a', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          durationMs: 2
+        }
+      })
+    )
+    expect(screen.getByRole('button', { name: 'Tests (1)' })).toBeInTheDocument()
+  })
+
+  it('shows the empty-state teaching copy when no test run was attempted', () => {
+    renderView(record(), 'tests')
+    expect(screen.getByText(/Write a test script on the Tests tab/)).toBeInTheDocument()
+  })
+
+  it('shows the pass/fail summary for an attached test run', () => {
+    renderView(
+      record({
+        testRun: {
+          results: [{ name: 'has content', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          durationMs: 2
+        }
+      }),
+      'tests'
+    )
+    expect(screen.getByText('Tests (1)')).toBeInTheDocument()
+    expect(screen.getByText('has content')).toBeInTheDocument()
+  })
+
+  it('reports tab selection through onTabChange', () => {
+    const { onTabChange } = renderView(record(), 'preview')
+    fireEvent.click(screen.getByRole('button', { name: 'Tests' }))
+    expect(onTabChange).toHaveBeenCalledWith('tests')
+  })
+})

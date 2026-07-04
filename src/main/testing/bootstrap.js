@@ -4,39 +4,17 @@
 // then the user's script. This file must stay plain, import-free script
 // syntax (no `import`/`export`) — it's evaluated as a script, not a module.
 //
-// Builds three globals for the user's script to use: `res` (the tool-call
-// result, see the contract in src/shared/testing.types.ts), `expect`/`assert`
-// (Chai, already on `globalThis.chai` from the UMD bundle), and `test()`. Also
+// Builds three globals for the user's script to use: `res` (the call result,
+// see the contract in src/shared/testing.types.ts), `expect`/`assert` (Chai,
+// already on `globalThis.chai` from the UMD bundle), and `test()`. Also
 // captures `console.*` output and exposes `__MCPFLO_COLLECT__` for the host to
 // pull results back out as JSON.
 
 // ── res ──────────────────────────────────────────────────────────────────
 ;(function () {
-  var raw = JSON.parse(globalThis.__MCPFLO_DATA__)
-  delete globalThis.__MCPFLO_DATA__
-
-  var result = raw.result || {}
-  var content = result.content || []
-
-  function getText() {
-    var texts = []
-    for (var i = 0; i < content.length; i++) {
-      var block = content[i]
-      if (block && block.type === 'text' && typeof block.text === 'string') {
-        texts.push(block.text)
-      }
-    }
-    return texts.join('\n')
-  }
-
-  function getBody() {
-    if (result.structuredContent !== undefined) return result.structuredContent
-    // Falls back to the same full join getText() uses — never drops a block.
-    // A single text block behaves exactly as before (join of one item is that
-    // item); multiple blocks are joined too, so at worst the JSON.parse below
-    // fails and the caller gets the complete raw text back, not a truncated
-    // first block.
-    var text = getText()
+  // Shared by all three builders' getBody(): JSON-parse the joined text if it
+  // parses, else return the raw joined string, else null if there's no text.
+  function parseTextOrRaw(text) {
     if (text === '') return null
     try {
       return JSON.parse(text)
@@ -45,49 +23,205 @@
     }
   }
 
-  function getIsError() {
-    return result.isError === true
+  function buildToolRes(raw) {
+    var result = raw.result || {}
+    var content = result.content || []
+
+    function getText() {
+      var texts = []
+      for (var i = 0; i < content.length; i++) {
+        var block = content[i]
+        if (block && block.type === 'text' && typeof block.text === 'string') {
+          texts.push(block.text)
+        }
+      }
+      return texts.join('\n')
+    }
+
+    function getBody() {
+      if (result.structuredContent !== undefined) return result.structuredContent
+      // Falls back to the same full join getText() uses — never drops a
+      // block. A single text block behaves exactly as before (join of one
+      // item is that item); multiple blocks are joined too, so at worst the
+      // JSON.parse fails and the caller gets the complete raw text back, not
+      // a truncated first block.
+      return parseTextOrRaw(getText())
+    }
+
+    function getIsError() {
+      return result.isError === true
+    }
+
+    function getContent() {
+      return content
+    }
+
+    function getResponseTime() {
+      return raw.callDurationMs
+    }
+
+    function getSize() {
+      return { body: raw.bodyBytes, total: raw.totalBytes }
+    }
+
+    function getRaw() {
+      return result
+    }
+
+    return {
+      get body() {
+        return getBody()
+      },
+      getBody: getBody,
+      get isError() {
+        return getIsError()
+      },
+      getIsError: getIsError,
+      get content() {
+        return getContent()
+      },
+      getContent: getContent,
+      getText: getText,
+      get responseTime() {
+        return getResponseTime()
+      },
+      getResponseTime: getResponseTime,
+      getSize: getSize,
+      get raw() {
+        return getRaw()
+      },
+      getRaw: getRaw
+    }
   }
 
-  function getContent() {
-    return content
+  function buildPromptRes(raw) {
+    var result = raw.result || {}
+    var messages = result.messages || []
+
+    function getText() {
+      var texts = []
+      for (var i = 0; i < messages.length; i++) {
+        // A message's `content` is a single block, not an array (unlike a
+        // tool result's `content`) — see PromptMessage in mcp.types.ts.
+        var message = messages[i]
+        var block = message && message.content
+        if (block && block.type === 'text' && typeof block.text === 'string') {
+          texts.push(block.text)
+        }
+      }
+      return texts.join('\n')
+    }
+
+    function getBody() {
+      return parseTextOrRaw(getText())
+    }
+
+    function getMessages() {
+      return messages
+    }
+
+    function getResponseTime() {
+      return raw.callDurationMs
+    }
+
+    function getSize() {
+      return { body: raw.bodyBytes, total: raw.totalBytes }
+    }
+
+    function getRaw() {
+      return result
+    }
+
+    return {
+      get body() {
+        return getBody()
+      },
+      getBody: getBody,
+      getText: getText,
+      get messages() {
+        return getMessages()
+      },
+      getMessages: getMessages,
+      get responseTime() {
+        return getResponseTime()
+      },
+      getResponseTime: getResponseTime,
+      getSize: getSize,
+      get raw() {
+        return getRaw()
+      },
+      getRaw: getRaw
+    }
   }
 
-  function getResponseTime() {
-    return raw.callDurationMs
+  function buildResourceRes(raw) {
+    var result = raw.result || {}
+    var contents = result.contents || []
+
+    function getText() {
+      var texts = []
+      for (var i = 0; i < contents.length; i++) {
+        // Blob-only entries carry no `text` — skipped, same as a tool
+        // result's non-text content blocks.
+        var entry = contents[i]
+        if (entry && typeof entry.text === 'string') {
+          texts.push(entry.text)
+        }
+      }
+      return texts.join('\n')
+    }
+
+    function getBody() {
+      return parseTextOrRaw(getText())
+    }
+
+    function getContents() {
+      return contents
+    }
+
+    function getResponseTime() {
+      return raw.callDurationMs
+    }
+
+    function getSize() {
+      return { body: raw.bodyBytes, total: raw.totalBytes }
+    }
+
+    function getRaw() {
+      return result
+    }
+
+    return {
+      get body() {
+        return getBody()
+      },
+      getBody: getBody,
+      getText: getText,
+      get contents() {
+        return getContents()
+      },
+      getContents: getContents,
+      get responseTime() {
+        return getResponseTime()
+      },
+      getResponseTime: getResponseTime,
+      getSize: getSize,
+      get raw() {
+        return getRaw()
+      },
+      getRaw: getRaw
+    }
   }
 
-  function getSize() {
-    return { body: raw.bodyBytes, total: raw.totalBytes }
-  }
+  var raw = JSON.parse(globalThis.__MCPFLO_DATA__)
+  delete globalThis.__MCPFLO_DATA__
 
-  function getRaw() {
-    return result
-  }
-
-  globalThis.res = {
-    get body() {
-      return getBody()
-    },
-    getBody: getBody,
-    get isError() {
-      return getIsError()
-    },
-    getIsError: getIsError,
-    get content() {
-      return getContent()
-    },
-    getContent: getContent,
-    getText: getText,
-    get responseTime() {
-      return getResponseTime()
-    },
-    getResponseTime: getResponseTime,
-    getSize: getSize,
-    get raw() {
-      return getRaw()
-    },
-    getRaw: getRaw
+  if (raw.kind === 'prompt') {
+    globalThis.res = buildPromptRes(raw)
+  } else if (raw.kind === 'resource') {
+    globalThis.res = buildResourceRes(raw)
+  } else {
+    globalThis.res = buildToolRes(raw)
   }
 })()
 

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { Resource } from '../../../shared/mcp.types'
 import { useServerStore, resourceKey } from '../../stores/serverStore'
 import { ResourceHeader } from './ResourceHeader'
-import { ResourceRequestPanel } from './ResourceRequestPanel'
+import { ResourceRequestPanel, type RequestTab } from './ResourceRequestPanel'
 import { ResourceContentView, type ResourceResultTab } from './ResourceContentView'
 import { ActivityRail } from '../shared/ActivityRail'
 import { ResultDock } from '../shared/ResultDock'
@@ -23,6 +23,7 @@ export function ResourceDetailView({
   const clearResourceHistory = useServerStore((s) => s.clearResourceHistory)
   const history =
     useServerStore((s) => s.resourceHistory[resourceKey(serverId, resource.uri)]) ?? []
+  const [activeTab, setActiveTab] = useState<RequestTab>('details')
   const [reading, setReading] = useState(false)
   // Kept here (not in the result view) so it survives across reads — each read
   // swaps in a new record, but the chosen result tab stays put.
@@ -59,7 +60,14 @@ export function ResourceDetailView({
       <div ref={centerRef} className="flex-1 min-w-0 flex flex-col min-h-0">
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-[18px] px-7 pt-[22px] pb-6">
           <ResourceHeader resource={resource} serverName={serverName} />
-          <ResourceRequestPanel resource={resource} reading={reading} onRead={handleRead} />
+          <ResourceRequestPanel
+            resource={resource}
+            serverId={serverId}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            reading={reading}
+            onRead={handleRead}
+          />
         </div>
 
         {/* Result dock: always present (minimized by default), revealed on

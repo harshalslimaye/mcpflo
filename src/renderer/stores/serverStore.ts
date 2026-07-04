@@ -8,6 +8,9 @@ import type {
   ResourceReadOutcome,
   PromptGetOutcome,
   ToolCallNotification,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult,
   ElicitationRequestEvent,
   ElicitationResult,
   SamplingRequestEvent,
@@ -16,8 +19,10 @@ import type {
   AuthEvent
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
+import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
+import type { TestKind, TestRunSummary } from '../../shared/testing.types'
 
 // Routes an MCPFlo operational failure to the toast surface. Used by actions
 // that talk to the main process, where a rejection has no other home (unlike
@@ -46,6 +51,12 @@ export interface ToolCallRecord {
   notifications: ToolCallNotification[]
   durationMs: number
   at: number
+  // Result of running this tool's saved test script against this call's
+  // result, when one exists. Undefined (not "empty") whenever no test run was
+  // attempted at all — a protocol-level failure (no result to test against)
+  // or a tool with no saved script — so the Tests tab can tell "never ran"
+  // apart from "ran zero tests".
+  testRun?: TestRunSummary
 }
 
 // A single recorded resource read, kept in memory for the session. Mirrors
@@ -64,6 +75,9 @@ export interface ResourceReadRecord {
   error?: string
   durationMs: number
   at: number
+  // See ToolCallRecord.testRun. A resource read has no arguments, so there's
+  // no saved-inputs concept here — only the saved script matters.
+  testRun?: TestRunSummary
 }
 
 // A single recorded prompt get, kept in memory for the session. Like a resource
@@ -84,6 +98,8 @@ export interface PromptGetRecord {
   error?: string
   durationMs: number
   at: number
+  // See ToolCallRecord.testRun.
+  testRun?: TestRunSummary
 }
 
 // An outcome counts as an error when the connection failed, the server returned
@@ -100,6 +116,38 @@ function outcomeStatus(
   if ('error' in envelope) return 'error'
   const result = envelope.result as { isError?: boolean } | undefined
   return result?.isError === true ? 'error' : 'success'
+}
+
+// Attempts to run this item's saved test script against a just-completed
+// call's result, attaching the summary to `record.testRun` in place. A no-op
+// whenever there's nothing to test against — no record at all (auth-required
+// outcome), a protocol-level failure with no well-formed result, or no
+// `window.api.testing` (real Electron always has it via preload) — or when
+// there's no saved script. Never throws: a failure running tests must not
+// affect the call's own recorded outcome, so it's reported as a toast instead.
+async function attachTestRun(
+  serverId: string,
+  kind: TestKind,
+  name: string,
+  record: { response?: unknown; durationMs: number; testRun?: TestRunSummary } | null
+): Promise<void> {
+  if (!record || !window.api?.testing) return
+  const result = extractEnvelopeResult<ToolCallResult | GetPromptResult | ResourceReadResult>(
+    record.response
+  )
+  if (!result) return
+  try {
+    const script = await window.api.testing.getScript(serverId, kind, name)
+    if (!script || script.trim() === '') return
+    record.testRun = await window.api.testing.run({
+      script,
+      kind,
+      result,
+      callDurationMs: record.durationMs
+    })
+  } catch (err) {
+    reportError(err)
+  }
 }
 
 // History is keyed per tool; names are only unique within a server.
@@ -392,6 +440,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       unsubscribe()
     }
 
+    // Auto-run this tool's saved test script against the result, if any (see
+    // attachTestRun — no-ops on a transport/protocol failure with no result;
+    // a tool result reporting `isError: true` is still a real result, the
+    // whole point of `res.getIsError()`, so that case still runs).
+    await attachTestRun(serverId, 'tool', toolName, record)
+
     set((state) => {
       const live = { ...state.liveNotifications }
       delete live[key]
@@ -452,6 +506,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
 
     if (!record) return
+    // Resources have no arguments, so there's nothing to save inputs for —
+    // just the saved script, if any.
+    await attachTestRun(serverId, 'resource', uri, record)
     const committed = record
     set((state) => ({
       resourceHistory: {
@@ -511,6 +568,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
 
     if (!record) return
+    await attachTestRun(serverId, 'prompt', promptName, record)
     const committed = record
     set((state) => ({
       promptHistory: {

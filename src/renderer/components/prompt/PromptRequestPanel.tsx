@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Prompt } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
+import { TestScriptEditor } from '../shared/TestScriptEditor'
 import { SchemaTab } from '../tool/SchemaTab'
 import { RjsfForm } from '../tool/rjsf/RjsfForm'
 import { validator } from '../tool/rjsf/validator'
@@ -13,11 +14,15 @@ import { requiredSummary } from '../tool/rjsf/formStatus'
 import { buildPromptSchema } from '../../lib/promptSchema'
 import { estimatePromptDefinitionPayload } from '../../lib/contextBudget'
 
-export type RequestTab = 'params' | 'schema' | 'tokens'
+export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
+
+// See ToolRequestPanel.SCRIPT_AUTOSAVE_DELAY_MS.
+const SCRIPT_AUTOSAVE_DELAY_MS = 500
 
 interface PromptRequestPanelProps {
   prompt: Prompt
+  serverId: string
   // The tab toggle is owned by the parent so the panel header and the body stay
   // in sync; the form state itself lives here.
   activeTab: RequestTab
@@ -35,7 +40,8 @@ interface PromptRequestPanelProps {
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'params', label: 'Params' },
   { key: 'schema', label: 'Schema' },
-  { key: 'tokens', label: 'Tokens' }
+  { key: 'tokens', label: 'Tokens' },
+  { key: 'tests', label: 'Tests' }
 ]
 
 function parseJsonObject(
@@ -68,12 +74,42 @@ function toStringArgs(values: Record<string, unknown>): Record<string, string> {
 
 export function PromptRequestPanel({
   prompt,
+  serverId,
   activeTab,
   onTabChange,
   prefill,
   running,
   onExecute
 }: PromptRequestPanelProps): React.JSX.Element {
+  // See ToolRequestPanel for the load/autosave/dot-indicator rationale.
+  const [script, setScript] = useState('')
+  const scriptEditedRef = useRef(false)
+  useEffect(() => {
+    let active = true
+    if (!window.api?.testing) return
+    window.api.testing.getScript(serverId, 'prompt', prompt.name).then((saved) => {
+      if (active) setScript(saved ?? '')
+    })
+    return () => {
+      active = false
+    }
+  }, [serverId, prompt.name])
+
+  useEffect(() => {
+    if (!scriptEditedRef.current || !window.api?.testing) return
+    const id = setTimeout(() => {
+      window.api.testing.saveScript(serverId, 'prompt', prompt.name, script)
+    }, SCRIPT_AUTOSAVE_DELAY_MS)
+    return () => clearTimeout(id)
+  }, [script, serverId, prompt.name])
+
+  const handleScriptChange = useCallback((next: string) => {
+    scriptEditedRef.current = true
+    setScript(next)
+  }, [])
+
+  const hasScript = script.trim() !== ''
+
   const schema = useMemo(() => buildPromptSchema(prompt), [prompt])
   const rjsfSchema = schema as RJSFSchema
   // A prompt with no declared arguments has no form to render.
@@ -171,13 +207,19 @@ export function PromptRequestPanel({
             key={tab.key}
             type="button"
             onClick={() => onTabChange(tab.key)}
-            className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
               activeTab === tab.key
                 ? 'bg-accent-soft text-accent'
                 : 'text-text-muted hover:text-text-primary'
             }`}
           >
             {tab.label}
+            {tab.key === 'tests' && hasScript && (
+              <span
+                aria-label="Has a saved test script"
+                className="h-1.5 w-1.5 rounded-full bg-accent"
+              />
+            )}
           </button>
         ))}
       </div>
@@ -216,6 +258,14 @@ export function PromptRequestPanel({
           tokens={definitionEstimate.tokens}
           characters={definitionEstimate.characters}
           rawBytes={definitionEstimate.rawBytes}
+        />
+      ) : activeTab === 'tests' ? (
+        <TestScriptEditor
+          value={script}
+          onChange={handleScriptChange}
+          placeholder={
+            'test("has a message", function () {\n  expect(res.getText()).to.be.a("string")\n})'
+          }
         />
       ) : (
         <div className="flex flex-col gap-4">

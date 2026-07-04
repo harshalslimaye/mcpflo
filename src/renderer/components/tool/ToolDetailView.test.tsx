@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ToolDetailView } from './ToolDetailView'
 import { useServerStore, toolKey, type ToolCallRecord } from '../../stores/serverStore'
@@ -234,6 +234,31 @@ describe('ToolDetailView', () => {
     expect(screen.getByText('OLD RESULT')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Execute' }))
     await waitFor(() => expect(screen.getByText('NEW RESULT')).toBeInTheDocument())
+  })
+
+  describe('with a stubbed testing API', () => {
+    const saveInputs = vi.fn().mockResolvedValue(undefined)
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'api', {
+        configurable: true,
+        // getScript must resolve (not be missing) — ToolRequestPanel's Tests
+        // tab loads a script on mount regardless of which tab is active.
+        value: { testing: { getScript: vi.fn().mockResolvedValue(null), saveInputs } }
+      })
+    })
+
+    afterEach(() => {
+      // @ts-expect-error — test-only cleanup of a global stubbed above.
+      delete window.api
+    })
+
+    it('fires testing.saveInputs with the call arguments when Execute is clicked', () => {
+      render(<ToolDetailView tool={tool} serverId="memory-mcp" serverName="Memory MCP" />)
+      fireEvent.change(screen.getByRole('textbox', { name: 'query' }), { target: { value: 'hi' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Execute' }))
+      expect(saveInputs).toHaveBeenCalledWith('memory-mcp', 'tool', 'search_nodes', { query: 'hi' })
+    })
   })
 
   it('renders header badges for a tool that declares all annotation hints', () => {

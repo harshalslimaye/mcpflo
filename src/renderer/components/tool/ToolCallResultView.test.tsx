@@ -363,3 +363,92 @@ describe('ToolCallResultView — Notifications tab', () => {
     expect(onTabChange).toHaveBeenCalledWith('notifications')
   })
 })
+
+describe('ToolCallResultView — Tests tab', () => {
+  it('is always present, unlabelled with a count when no test run was attempted', () => {
+    view(rec({ response: envelope }))
+    expect(screen.getByRole('button', { name: 'Tests' })).toBeInTheDocument()
+  })
+
+  it('shows the total count in the label when a test run is attached', () => {
+    view(
+      rec({
+        response: envelope,
+        testRun: {
+          results: [{ name: 'a', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          durationMs: 2
+        }
+      })
+    )
+    expect(screen.getByRole('button', { name: 'Tests (1)' })).toBeInTheDocument()
+  })
+
+  it('shows the empty-state teaching copy when no test run was attempted', () => {
+    view(rec({ response: envelope }), 'tests')
+    expect(screen.getByText(/Write a test script on the Tests tab/)).toBeInTheDocument()
+  })
+
+  it('shows the pass/fail summary and rows for an attached test run', () => {
+    view(
+      rec({
+        response: envelope,
+        testRun: {
+          results: [
+            { name: 'passes', status: 'pass' },
+            { name: 'fails', status: 'fail', error: 'expected 1 to equal 2' }
+          ],
+          passed: 1,
+          failed: 1,
+          total: 2,
+          logs: [],
+          durationMs: 3
+        }
+      }),
+      'tests'
+    )
+    expect(screen.getByText('Tests (2)')).toBeInTheDocument()
+    expect(screen.getByText('Passed: 1')).toBeInTheDocument()
+    expect(screen.getByText('Failed: 1')).toBeInTheDocument()
+    expect(screen.getByText('passes')).toBeInTheDocument()
+    expect(screen.getByText('fails')).toBeInTheDocument()
+  })
+
+  it('shows a script-error banner distinct from failing test rows', () => {
+    view(
+      rec({
+        response: envelope,
+        testRun: {
+          results: [{ name: 'first', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          scriptError: { type: 'runtime', message: "cannot read property 'foo' of null" },
+          durationMs: 3
+        }
+      }),
+      'tests'
+    )
+    expect(screen.getByText(/Script error/)).toBeInTheDocument()
+    expect(screen.getByText(/cannot read property 'foo' of null/)).toBeInTheDocument()
+    // The test that did complete before the failure is still shown.
+    expect(screen.getByText('first')).toBeInTheDocument()
+  })
+
+  it('reports tab selection through onTabChange', () => {
+    const onTabChange = vi.fn()
+    render(
+      <ToolCallResultView
+        record={rec({ response: envelope })}
+        tab="preview"
+        onTabChange={onTabChange}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Tests' }))
+    expect(onTabChange).toHaveBeenCalledWith('tests')
+  })
+})

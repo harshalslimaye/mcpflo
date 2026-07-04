@@ -79,6 +79,8 @@ export function PromptDetailView({
     setSelectedId(null)
     dock.reveal()
     setRunning(true)
+    // See ToolDetailView.handleExecute — best-effort, must never block the get.
+    window.api?.testing?.saveInputs(serverId, 'prompt', prompt.name, payload).catch(() => {})
     try {
       await getPrompt(serverId, prompt.name, payload)
     } finally {
@@ -95,6 +97,7 @@ export function PromptDetailView({
           <PromptHeader prompt={prompt} serverName={serverName} />
           <PromptRequestPanel
             prompt={prompt}
+            serverId={serverId}
             activeTab={activeTab}
             onTabChange={setActiveTab}
             prefill={effectivePrefill}

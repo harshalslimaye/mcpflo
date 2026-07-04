@@ -1,5 +1,5 @@
-import type { ToolCallResult } from '../../shared/mcp.types'
-import type { SandboxInput, TestResult, TestRunSummary } from '../../shared/testing.types'
+import type { ToolCallResult, GetPromptResult, ResourceReadResult } from '../../shared/mcp.types'
+import type { SandboxInput, TestKind, TestResult, TestRunSummary } from '../../shared/testing.types'
 import { evaluateInSandbox } from './sandbox'
 
 // Shape of the JSON string bootstrap.js's __MCPFLO_COLLECT__ returns. An
@@ -9,6 +9,26 @@ import { evaluateInSandbox } from './sandbox'
 interface CollectedResults {
   results: TestResult[]
   logs: string[]
+}
+
+// The "payload" portion of a result, for res.getSize()'s `body` byte count —
+// mirrors each kind's own getBody()/getText() precedence in bootstrap.js, but
+// as a size measurement rather than a recreation of its parsing: bytes don't
+// care whether text happens to parse as JSON.
+function bodyPayload(
+  kind: TestKind,
+  result: ToolCallResult | GetPromptResult | ResourceReadResult
+): unknown {
+  switch (kind) {
+    case 'prompt':
+      return (result as GetPromptResult).messages ?? null
+    case 'resource':
+      return (result as ResourceReadResult).contents ?? null
+    case 'tool':
+      return (
+        (result as ToolCallResult).structuredContent ?? (result as ToolCallResult).content ?? null
+      )
+  }
 }
 
 // Runs a Bruno-style test script (test() + expect()) against a tool-call
@@ -24,7 +44,8 @@ interface CollectedResults {
 // be silently swallowed into a fake passing/failing result.
 export async function runTests(input: {
   script: string
-  result: ToolCallResult
+  kind?: TestKind
+  result: ToolCallResult | GetPromptResult | ResourceReadResult
   callDurationMs?: number
   timeoutMs?: number
 }): Promise<TestRunSummary> {
@@ -41,18 +62,16 @@ export async function runTests(input: {
     }
   }
 
+  const kind = input.kind ?? 'tool'
+
   // Real UTF-8 byte counts for res.getSize(), computed here rather than in
-  // the sandbox since the guest has no TextEncoder. `body` is just the
-  // payload portion (structuredContent, or content if there's no structured
-  // form); `total` is the whole result. This is a size measurement, not a
-  // recreation of getBody()'s parsing precedence — bytes don't care whether
-  // text happens to parse as JSON.
-  const bodyBytes = Buffer.byteLength(
-    JSON.stringify(input.result.structuredContent ?? input.result.content ?? null)
-  )
+  // the sandbox since the guest has no TextEncoder. `total` is the whole
+  // result; `body` is just the payload portion, per bodyPayload() above.
+  const bodyBytes = Buffer.byteLength(JSON.stringify(bodyPayload(kind, input.result)))
   const totalBytes = Buffer.byteLength(JSON.stringify(input.result))
 
   const sandboxInput: SandboxInput = {
+    kind,
     result: input.result,
     bodyBytes,
     totalBytes,

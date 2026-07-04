@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ToolRequestPanel } from './ToolRequestPanel'
 import type { Tool } from '../../../shared/mcp.types'
@@ -29,6 +29,7 @@ function renderPanel(
   return render(
     <ToolRequestPanel
       tool={t}
+      serverId="memory-mcp"
       activeTab="params"
       onTabChange={mockOnTabChange}
       running={false}
@@ -264,6 +265,7 @@ describe('ToolRequestPanel — prefill from history', () => {
     rerender(
       <ToolRequestPanel
         tool={primitiveTool}
+        serverId="memory-mcp"
         activeTab="params"
         onTabChange={mockOnTabChange}
         running={false}
@@ -402,5 +404,101 @@ describe('ToolRequestPanel — Tokens tab', () => {
     renderPanel(primitiveTool)
     fireEvent.click(screen.getByRole('button', { name: 'Tokens' }))
     expect(mockOnTabChange).toHaveBeenCalledWith('tokens')
+  })
+})
+
+describe('ToolRequestPanel — Tests tab', () => {
+  it('offers a Tests tab alongside Params, Schema, and Tokens', () => {
+    renderPanel(primitiveTool)
+    expect(screen.getByRole('button', { name: 'Tests' })).toBeInTheDocument()
+  })
+
+  it('switches to the Tests tab when clicked', () => {
+    renderPanel(primitiveTool)
+    fireEvent.click(screen.getByRole('button', { name: 'Tests' }))
+    expect(mockOnTabChange).toHaveBeenCalledWith('tests')
+  })
+
+  it('renders the script editor without throwing when window.api.testing is unavailable', () => {
+    // No window.api stub in this file's tests — the panel must degrade to an
+    // empty, unsaved script rather than crash.
+    expect(window.api).toBeUndefined()
+    renderPanel(primitiveTool, { activeTab: 'tests' })
+    expect(screen.queryByLabelText('Has a saved test script')).not.toBeInTheDocument()
+  })
+
+  describe('with a stubbed testing API', () => {
+    let getScript: ReturnType<typeof vi.fn>
+    let saveScript: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      getScript = vi.fn().mockResolvedValue(null)
+      saveScript = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(window, 'api', {
+        configurable: true,
+        value: { testing: { getScript, saveScript, saveInputs: vi.fn(), run: vi.fn() } }
+      })
+    })
+
+    afterEach(() => {
+      // @ts-expect-error — test-only cleanup of a global stubbed above.
+      delete window.api
+    })
+
+    it('loads the saved script for this tool on mount', async () => {
+      getScript.mockResolvedValue('test("a", function () {})')
+      renderPanel(primitiveTool, { activeTab: 'tests' })
+      await waitFor(() =>
+        expect(getScript).toHaveBeenCalledWith('memory-mcp', 'tool', 'search_tool')
+      )
+      // CodeMirror's syntax highlighting splits the line across sibling spans,
+      // so read the editor's plain text rather than screen.findByText.
+      await waitFor(() =>
+        expect(document.querySelector('.cm-content')?.textContent).toBe('test("a", function () {})')
+      )
+    })
+
+    it('shows the dot indicator once a non-empty saved script loads', async () => {
+      getScript.mockResolvedValue('test("a", function () {})')
+      renderPanel(primitiveTool)
+      expect(await screen.findByLabelText('Has a saved test script')).toBeInTheDocument()
+    })
+
+    it('shows no dot indicator when there is no saved script', async () => {
+      getScript.mockResolvedValue(null)
+      renderPanel(primitiveTool)
+      await waitFor(() => expect(getScript).toHaveBeenCalled())
+      expect(screen.queryByLabelText('Has a saved test script')).not.toBeInTheDocument()
+    })
+
+    it('autosaves an edited script after the debounce delay', async () => {
+      const user = userEvent.setup()
+      renderPanel(primitiveTool, { activeTab: 'tests' })
+      await waitFor(() => expect(getScript).toHaveBeenCalled())
+
+      const editable = document.querySelector('.cm-content') as HTMLElement
+      editable.focus()
+      await user.type(editable, 'x')
+
+      expect(saveScript).not.toHaveBeenCalled()
+      await waitFor(
+        () => expect(saveScript).toHaveBeenCalledWith('memory-mcp', 'tool', 'search_tool', 'x'),
+        {
+          timeout: 2000
+        }
+      )
+    })
+
+    it('does not re-save the just-loaded script back to disk on mount', async () => {
+      getScript.mockResolvedValue('test("a", function () {})')
+      renderPanel(primitiveTool, { activeTab: 'tests' })
+      await waitFor(() =>
+        expect(document.querySelector('.cm-content')?.textContent).toBe('test("a", function () {})')
+      )
+      // Give the debounce window a chance to fire if it (incorrectly) had been
+      // scheduled on load.
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(saveScript).not.toHaveBeenCalled()
+    })
   })
 })

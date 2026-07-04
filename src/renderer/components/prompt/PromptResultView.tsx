@@ -5,8 +5,9 @@ import { ContentBlockPreview } from '../tool/ContentBlockPreview'
 import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
 import { ResponseFootprintTab } from '../shared/ResponseFootprintTab'
+import { TestResultsView } from '../shared/TestResultsView'
 
-export type PromptResultTab = 'preview' | 'raw' | 'pretty' | 'tokens'
+export type PromptResultTab = 'preview' | 'raw' | 'pretty' | 'tokens' | 'tests'
 
 interface PromptResultViewProps extends DockChrome {
   // Absent while a get is in flight — the view then renders its busy state.
@@ -39,11 +40,12 @@ export function PromptResultView({
   onTabChange,
   ...dock
 }: PromptResultViewProps): React.JSX.Element {
-  const tabs: { key: PromptResultTab; label: string }[] = [
+  const tabs: { key: PromptResultTab; label: string; count?: number }[] = [
     { key: 'preview', label: 'Preview' },
     { key: 'raw', label: 'Raw' },
     { key: 'pretty', label: 'Pretty' },
-    { key: 'tokens', label: 'Tokens' }
+    { key: 'tokens', label: 'Tokens' },
+    { key: 'tests', label: 'Tests', count: record?.testRun?.total }
   ]
 
   return (
@@ -56,7 +58,9 @@ export function PromptResultView({
       onTabChange={onTabChange}
       {...dock}
     >
-      {record ? (
+      {tab === 'tests' ? (
+        <TestResultsView summary={record?.testRun} />
+      ) : record ? (
         <ResponseBody record={record} tab={tab} />
       ) : busy ? (
         <p className="py-6 text-center text-sm text-text-muted">Getting…</p>
@@ -77,7 +81,7 @@ function ResponseBody({
   tab
 }: {
   record: PromptGetRecord
-  tab: PromptResultTab
+  tab: Exclude<PromptResultTab, 'tests'>
 }): React.JSX.Element {
   if (record.responseTruncated) {
     return (

@@ -28,13 +28,20 @@ import {
   clearCapabilities,
   removeServerDir
 } from './capabilitiesCache'
+import { createScriptStore } from './testing/scriptStore'
+import { resolveTestsRoot } from './testing/testsRoot'
+import { runTests } from './testing/engine'
 import type {
   ServerConfig,
   TaskSupport,
   ElicitationResult,
   SamplingResult,
-  AuthEvent
+  AuthEvent,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult
 } from '../shared/mcp.types'
+import type { TestKind, TestRunSummary } from '../shared/testing.types'
 
 export function registerIpcHandlers(): void {
   // In-flight capability fetches, keyed by server id, so a later
@@ -303,4 +310,57 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mcp:respondToSampling', (_event, samplingId: string, result: SamplingResult) => {
     resolvePendingSampling(samplingId, result)
   })
+
+  // Testing (Bruno-style test() + expect() scripts). A separate `testing:`
+  // namespace, deliberately apart from `mcp:` — it's a local file-store +
+  // sandbox concern, not an MCP protocol operation. Each handler resolves the
+  // server's tests root fresh (resolveTestsRoot), so a future custom-folder
+  // override only has to change that one function.
+  ipcMain.handle(
+    'testing:getScript',
+    (_event, id: string, kind: TestKind, name: string): Promise<string | null> => {
+      assertValidServerId(id)
+      return createScriptStore(resolveTestsRoot(id)).readScript(kind, name)
+    }
+  )
+
+  ipcMain.handle(
+    'testing:saveScript',
+    (_event, id: string, kind: TestKind, name: string, content: string): Promise<void> => {
+      assertValidServerId(id)
+      return createScriptStore(resolveTestsRoot(id)).writeScript(kind, name, content)
+    }
+  )
+
+  ipcMain.handle(
+    'testing:saveInputs',
+    (
+      _event,
+      id: string,
+      kind: TestKind,
+      name: string,
+      inputs: Record<string, unknown>
+    ): Promise<void> => {
+      assertValidServerId(id)
+      return createScriptStore(resolveTestsRoot(id)).writeInputs(kind, name, inputs)
+    }
+  )
+
+  // Runs a test script against an already-unwrapped call result (the renderer
+  // extracts the result from the JSON-RPC envelope before calling this — see
+  // ToolCallOutcome/PromptGetOutcome/ResourceReadOutcome). No server id or
+  // script-store lookup involved: the renderer already holds the script text
+  // it's editing/autosaving, so this is a pure pass-through to the engine.
+  ipcMain.handle(
+    'testing:run',
+    (
+      _event,
+      input: {
+        script: string
+        kind?: TestKind
+        result: ToolCallResult | GetPromptResult | ResourceReadResult
+        callDurationMs?: number
+      }
+    ): Promise<TestRunSummary> => runTests(input)
+  )
 }

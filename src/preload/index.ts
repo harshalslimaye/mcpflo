@@ -17,8 +17,12 @@ import type {
   SamplingClosedEvent,
   SamplingResult,
   AuthEvent,
-  AuthDetails
+  AuthDetails,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult
 } from '../shared/mcp.types'
+import type { TestKind, TestRunSummary } from '../shared/testing.types'
 
 const api = {
   mcp: {
@@ -116,6 +120,24 @@ const api = {
         ipcRenderer.removeListener('mcp:authEvent', listener)
       }
     }
+  },
+  testing: {
+    getScript: (id: string, kind: TestKind, name: string): Promise<string | null> =>
+      ipcRenderer.invoke('testing:getScript', id, kind, name),
+    saveScript: (id: string, kind: TestKind, name: string, content: string): Promise<void> =>
+      ipcRenderer.invoke('testing:saveScript', id, kind, name, content),
+    saveInputs: (
+      id: string,
+      kind: TestKind,
+      name: string,
+      inputs: Record<string, unknown>
+    ): Promise<void> => ipcRenderer.invoke('testing:saveInputs', id, kind, name, inputs),
+    run: (input: {
+      script: string
+      kind?: TestKind
+      result: ToolCallResult | GetPromptResult | ResourceReadResult
+      callDurationMs?: number
+    }): Promise<TestRunSummary> => ipcRenderer.invoke('testing:run', input)
   }
 }
 

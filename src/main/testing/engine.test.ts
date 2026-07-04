@@ -8,7 +8,15 @@ import {
   isErrorResult,
   imageResult,
   emptyResult,
-  multiTextBlockResult
+  multiTextBlockResult,
+  promptTextResult,
+  promptJsonTextResult,
+  promptMixedContentResult,
+  promptEmptyResult,
+  resourceTextResult,
+  resourceBlobResult,
+  resourceTextAndBlobResult,
+  resourceJsonTextResult
 } from './fixtures'
 
 // ── test() pass/fail semantics ────────────────────────────────────────────
@@ -345,5 +353,178 @@ describe('empty script', () => {
       logs: [],
       durationMs: summary.durationMs
     })
+  })
+})
+
+// ── prompt kind ─────────────────────────────────────────────────────────────
+
+describe('res API for kind: "prompt"', () => {
+  it("getText() joins each message's single text content with newlines", async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script:
+        'test("text", function () { expect(res.getText()).to.equal("Say hello to {{name}}\\nHello, Ada!") })',
+      result: promptTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getBody() JSON-parses the joined text when it parses', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script: 'test("body", function () { expect(res.getBody()).to.eql({ greeting: "hi" }) })',
+      result: promptJsonTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getBody() falls back to the raw joined string when it is not JSON', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script:
+        'test("body", function () { expect(res.getBody()).to.equal("Say hello to {{name}}\\nHello, Ada!") })',
+      result: promptTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getText()/getBody() skip non-text message content', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script: 'test("text", function () { expect(res.getText()).to.equal("Look at this:") })',
+      result: promptMixedContentResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getBody() is null when there are no messages', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script: 'test("body", function () { expect(res.getBody()).to.equal(null) })',
+      result: promptEmptyResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getRaw() returns the raw GetPromptResult, and there is no getIsError/getContent', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script: `
+        test("raw", function () {
+          expect(res.getRaw().description).to.equal("A greeting prompt")
+          expect(typeof res.getIsError).to.equal("undefined")
+          expect(typeof res.getContent).to.equal("undefined")
+        })
+      `,
+      result: promptTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getMessages() returns the raw messages array, untouched', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script: `
+        test("messages", function () {
+          var messages = res.getMessages()
+          expect(messages).to.have.lengthOf(2)
+          expect(messages[0]).to.eql({ role: "user", content: { type: "text", text: "Say hello to {{name}}" } })
+          expect(messages[1].role).to.equal("assistant")
+        })
+      `,
+      result: promptTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getResponseTime()/getSize() behave the same as for tool results', async () => {
+    const summary = await runTests({
+      kind: 'prompt',
+      script: `
+        test("meta", function () {
+          expect(res.getResponseTime()).to.equal(250)
+          expect(res.getSize().total).to.be.a("number")
+        })
+      `,
+      result: promptTextResult,
+      callDurationMs: 250
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+})
+
+// ── resource kind ───────────────────────────────────────────────────────────
+
+describe('res API for kind: "resource"', () => {
+  it("getText() returns a text resource's content", async () => {
+    const summary = await runTests({
+      kind: 'resource',
+      script: 'test("text", function () { expect(res.getText()).to.equal("hello resource") })',
+      result: resourceTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getText() is empty and getBody() is null for a blob-only resource', async () => {
+    const summary = await runTests({
+      kind: 'resource',
+      script: `
+        test("blob", function () {
+          expect(res.getText()).to.equal("")
+          expect(res.getBody()).to.equal(null)
+        })
+      `,
+      result: resourceBlobResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getText() skips a blob entry mixed in with a text entry', async () => {
+    const summary = await runTests({
+      kind: 'resource',
+      script: 'test("mixed", function () { expect(res.getText()).to.equal("the text part") })',
+      result: resourceTextAndBlobResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getBody() JSON-parses the text when it parses', async () => {
+    const summary = await runTests({
+      kind: 'resource',
+      script: 'test("body", function () { expect(res.getBody()).to.eql({ count: 3 }) })',
+      result: resourceJsonTextResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getContents() returns the raw contents array, including a blob-only entry', async () => {
+    const summary = await runTests({
+      kind: 'resource',
+      script: `
+        test("contents", function () {
+          var contents = res.getContents()
+          expect(contents).to.have.lengthOf(1)
+          expect(contents[0].blob).to.equal("ZmFrZS1iYXNlNjQ=")
+          expect(contents[0].mimeType).to.equal("image/png")
+        })
+      `,
+      result: resourceBlobResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
+  })
+
+  it('getRaw() returns the raw ResourceReadResult, and there is no getIsError/getContent', async () => {
+    const summary = await runTests({
+      kind: 'resource',
+      script: `
+        test("raw", function () {
+          expect(res.getRaw().contents[0].blob).to.equal("ZmFrZS1iYXNlNjQ=")
+          expect(typeof res.getIsError).to.equal("undefined")
+          expect(typeof res.getContent).to.equal("undefined")
+        })
+      `,
+      result: resourceBlobResult
+    })
+    expect(summary).toMatchObject({ passed: 1, failed: 0 })
   })
 })

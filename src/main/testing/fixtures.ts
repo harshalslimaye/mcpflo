@@ -1,4 +1,4 @@
-import type { ToolCallResult } from '../../shared/mcp.types'
+import type { ToolCallResult, GetPromptResult, ResourceReadResult } from '../../shared/mcp.types'
 
 // Fixtures shared across engine.test.ts. Named after what makes each one
 // structurally distinct, since several look similar at a glance.
@@ -42,4 +42,58 @@ export const multiTextBlockResult: ToolCallResult = {
     { type: 'text', text: 'B' },
     { type: 'text', text: 'C' }
   ]
+}
+
+// ── prompt fixtures ─────────────────────────────────────────────────────────
+
+// Mixed-role messages, each a single text block — the normal shape.
+export const promptTextResult: GetPromptResult = {
+  description: 'A greeting prompt',
+  messages: [
+    { role: 'user', content: { type: 'text', text: 'Say hello to {{name}}' } },
+    { role: 'assistant', content: { type: 'text', text: 'Hello, Ada!' } }
+  ]
+}
+
+// A single message whose text happens to be JSON.
+export const promptJsonTextResult: GetPromptResult = {
+  messages: [{ role: 'user', content: { type: 'text', text: '{"greeting":"hi"}' } }]
+}
+
+// A non-text content block (e.g. an embedded resource) mixed with a text one
+// — the non-text message is skipped by getText(), same as a tool result's
+// non-text content blocks.
+export const promptMixedContentResult: GetPromptResult = {
+  messages: [
+    { role: 'user', content: { type: 'text', text: 'Look at this:' } },
+    { role: 'user', content: { type: 'image', data: 'ZmFrZS1iYXNlNjQ=', mimeType: 'image/png' } }
+  ]
+}
+
+export const promptEmptyResult: GetPromptResult = { messages: [] }
+
+// ── resource fixtures ────────────────────────────────────────────────────────
+
+// A single text resource.
+export const resourceTextResult: ResourceReadResult = {
+  contents: [{ uri: 'file:///notes.txt', mimeType: 'text/plain', text: 'hello resource' }]
+}
+
+// A single binary (blob-only) resource — no `text` at all.
+export const resourceBlobResult: ResourceReadResult = {
+  contents: [{ uri: 'file:///image.png', mimeType: 'image/png', blob: 'ZmFrZS1iYXNlNjQ=' }]
+}
+
+// A resource read that returned both a text entry and a blob entry —
+// getText()/getBody() only see the text one.
+export const resourceTextAndBlobResult: ResourceReadResult = {
+  contents: [
+    { uri: 'file:///doc.txt', mimeType: 'text/plain', text: 'the text part' },
+    { uri: 'file:///doc.png', mimeType: 'image/png', blob: 'ZmFrZS1iYXNlNjQ=' }
+  ]
+}
+
+// A single text resource whose text happens to be JSON.
+export const resourceJsonTextResult: ResourceReadResult = {
+  contents: [{ uri: 'file:///data.json', mimeType: 'application/json', text: '{"count":3}' }]
 }

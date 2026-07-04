@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { PromptRequestPanel } from './PromptRequestPanel'
 import type { Prompt } from '../../../shared/mcp.types'
 
@@ -20,6 +21,7 @@ function renderPanel(
   return render(
     <PromptRequestPanel
       prompt={p}
+      serverId="memory-mcp"
       activeTab="params"
       onTabChange={mockOnTabChange}
       running={false}
@@ -142,5 +144,76 @@ describe('PromptRequestPanel — Tokens tab', () => {
     renderPanel(argPrompt)
     fireEvent.click(screen.getByRole('button', { name: 'Tokens' }))
     expect(mockOnTabChange).toHaveBeenCalledWith('tokens')
+  })
+})
+
+describe('PromptRequestPanel — Tests tab', () => {
+  it('offers a Tests tab alongside Params, Schema, and Tokens', () => {
+    renderPanel(argPrompt)
+    expect(screen.getByRole('button', { name: 'Tests' })).toBeInTheDocument()
+  })
+
+  it('switches to the Tests tab when clicked', () => {
+    renderPanel(argPrompt)
+    fireEvent.click(screen.getByRole('button', { name: 'Tests' }))
+    expect(mockOnTabChange).toHaveBeenCalledWith('tests')
+  })
+
+  it('renders the script editor without throwing when window.api.testing is unavailable', () => {
+    expect(window.api).toBeUndefined()
+    renderPanel(argPrompt, { activeTab: 'tests' })
+    expect(screen.queryByLabelText('Has a saved test script')).not.toBeInTheDocument()
+  })
+
+  describe('with a stubbed testing API', () => {
+    let getScript: ReturnType<typeof vi.fn>
+    let saveScript: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      getScript = vi.fn().mockResolvedValue(null)
+      saveScript = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(window, 'api', {
+        configurable: true,
+        value: { testing: { getScript, saveScript, saveInputs: vi.fn(), run: vi.fn() } }
+      })
+    })
+
+    afterEach(() => {
+      // @ts-expect-error — test-only cleanup of a global stubbed above.
+      delete window.api
+    })
+
+    it('loads the saved script for this prompt on mount', async () => {
+      getScript.mockResolvedValue('test("a", function () {})')
+      renderPanel(argPrompt, { activeTab: 'tests' })
+      await waitFor(() =>
+        expect(getScript).toHaveBeenCalledWith('memory-mcp', 'prompt', 'summarize')
+      )
+      await waitFor(() =>
+        expect(document.querySelector('.cm-content')?.textContent).toBe('test("a", function () {})')
+      )
+    })
+
+    it('shows the dot indicator once a non-empty saved script loads', async () => {
+      getScript.mockResolvedValue('test("a", function () {})')
+      renderPanel(argPrompt)
+      expect(await screen.findByLabelText('Has a saved test script')).toBeInTheDocument()
+    })
+
+    it('autosaves an edited script after the debounce delay', async () => {
+      const user = userEvent.setup()
+      renderPanel(argPrompt, { activeTab: 'tests' })
+      await waitFor(() => expect(getScript).toHaveBeenCalled())
+
+      const editable = document.querySelector('.cm-content') as HTMLElement
+      editable.focus()
+      await user.type(editable, 'x')
+
+      expect(saveScript).not.toHaveBeenCalled()
+      await waitFor(
+        () => expect(saveScript).toHaveBeenCalledWith('memory-mcp', 'prompt', 'summarize', 'x'),
+        { timeout: 2000 }
+      )
+    })
   })
 })

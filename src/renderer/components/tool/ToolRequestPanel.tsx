@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
+import { TestScriptEditor } from '../shared/TestScriptEditor'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
@@ -12,11 +13,18 @@ import { buildUiSchema } from './rjsf/layout'
 import { requiredSummary } from './rjsf/formStatus'
 import { estimateToolDefinitionPayload } from '../../lib/contextBudget'
 
-export type RequestTab = 'params' | 'schema' | 'tokens'
+export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
+
+// Debounce window between the user's last keystroke in the Tests editor and
+// the autosave IPC call — short enough that a script survives a tab switch or
+// an accidental reload without feeling like a "save" step the user has to
+// remember to trigger.
+const SCRIPT_AUTOSAVE_DELAY_MS = 500
 
 interface ToolRequestPanelProps {
   tool: Tool
+  serverId: string
   // The tab toggle is owned by the parent so the panel header and the body stay
   // in sync; the form state itself lives here.
   activeTab: RequestTab
@@ -34,7 +42,8 @@ interface ToolRequestPanelProps {
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'params', label: 'Params' },
   { key: 'schema', label: 'Schema' },
-  { key: 'tokens', label: 'Tokens' }
+  { key: 'tokens', label: 'Tokens' },
+  { key: 'tests', label: 'Tests' }
 ]
 
 function parseJsonObject(
@@ -54,12 +63,49 @@ function parseJsonObject(
 
 export function ToolRequestPanel({
   tool,
+  serverId,
   activeTab,
   onTabChange,
   prefill,
   running,
   onExecute
 }: ToolRequestPanelProps): React.JSX.Element {
+  // The saved test script, loaded once per tool (ToolDetailView remounts this
+  // whole panel on tool change via a `${serverId}::${tool.name}` key, so there's
+  // no stale-tool risk here). Guarded against a missing `window.api.testing` —
+  // real Electron always has it (via preload); component tests that render this
+  // panel without stubbing it just see an empty, unsaved script instead of
+  // throwing.
+  const [script, setScript] = useState('')
+  const scriptEditedRef = useRef(false)
+  useEffect(() => {
+    let active = true
+    if (!window.api?.testing) return
+    window.api.testing.getScript(serverId, 'tool', tool.name).then((saved) => {
+      if (active) setScript(saved ?? '')
+    })
+    return () => {
+      active = false
+    }
+  }, [serverId, tool.name])
+
+  // Debounced autosave — only once the user has actually typed, so re-saving
+  // the just-loaded content back to disk on mount is skipped.
+  useEffect(() => {
+    if (!scriptEditedRef.current || !window.api?.testing) return
+    const id = setTimeout(() => {
+      window.api.testing.saveScript(serverId, 'tool', tool.name, script)
+    }, SCRIPT_AUTOSAVE_DELAY_MS)
+    return () => clearTimeout(id)
+  }, [script, serverId, tool.name])
+
+  const handleScriptChange = useCallback((next: string) => {
+    scriptEditedRef.current = true
+    setScript(next)
+  }, [])
+
+  const hasScript = script.trim() !== ''
+
   const schema = tool.inputSchema as RJSFSchema
   // A schema with no declared properties has no form to render.
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
@@ -160,13 +206,19 @@ export function ToolRequestPanel({
             key={tab.key}
             type="button"
             onClick={() => onTabChange(tab.key)}
-            className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
               activeTab === tab.key
                 ? 'bg-accent-soft text-accent'
                 : 'text-text-muted hover:text-text-primary'
             }`}
           >
             {tab.label}
+            {tab.key === 'tests' && hasScript && (
+              <span
+                aria-label="Has a saved test script"
+                className="h-1.5 w-1.5 rounded-full bg-accent"
+              />
+            )}
           </button>
         ))}
       </div>
@@ -205,6 +257,14 @@ export function ToolRequestPanel({
           tokens={definitionEstimate.tokens}
           characters={definitionEstimate.characters}
           rawBytes={definitionEstimate.rawBytes}
+        />
+      ) : activeTab === 'tests' ? (
+        <TestScriptEditor
+          value={script}
+          onChange={handleScriptChange}
+          placeholder={
+            'test("returns ok", function () {\n  expect(res.getIsError()).to.equal(false)\n})'
+          }
         />
       ) : (
         <div className="flex flex-col gap-4">

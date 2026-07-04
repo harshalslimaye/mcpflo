@@ -6,8 +6,9 @@ import { NotificationsTab } from './ToolCallNotifications'
 import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
 import { ResponseFootprintTab } from '../shared/ResponseFootprintTab'
+import { TestResultsView } from '../shared/TestResultsView'
 
-export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications' | 'tokens'
+export type ResultTab = 'preview' | 'raw' | 'pretty' | 'notifications' | 'tokens' | 'tests'
 
 interface ToolCallResultViewProps extends DockChrome {
   // Absent while the call is in flight — the view then renders its executing
@@ -39,7 +40,8 @@ export function ToolCallResultView({
     { key: 'raw', label: 'Raw' },
     { key: 'pretty', label: 'Pretty' },
     { key: 'notifications', label: 'Notifications', count: notificationCount },
-    { key: 'tokens', label: 'Tokens' }
+    { key: 'tokens', label: 'Tokens' },
+    { key: 'tests', label: 'Tests', count: record?.testRun?.total }
   ]
 
   return (
@@ -54,6 +56,8 @@ export function ToolCallResultView({
     >
       {tab === 'notifications' ? (
         <NotificationsTab notifications={notifications} live={busy} />
+      ) : tab === 'tests' ? (
+        <TestResultsView summary={record?.testRun} />
       ) : record ? (
         <ResponseBody record={record} tab={tab} />
       ) : busy ? (
@@ -75,7 +79,7 @@ function ResponseBody({
   tab
 }: {
   record: ToolCallRecord
-  tab: Exclude<ResultTab, 'notifications'>
+  tab: Exclude<ResultTab, 'notifications' | 'tests'>
 }): React.JSX.Element {
   if (record.responseTruncated) {
     return (
