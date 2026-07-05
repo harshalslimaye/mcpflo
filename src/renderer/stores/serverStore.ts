@@ -23,6 +23,7 @@ import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
 import type { TestKind, TestRunSummary } from '../../shared/testing.types'
+import { autoToolArgs, autoPromptArgs } from '../lib/autoArgs'
 
 // Routes an MCPFlo operational failure to the toast surface. Used by actions
 // that talk to the main process, where a rejection has no other home (unlike
@@ -169,6 +170,22 @@ export function promptKey(serverId: string, promptName: string): string {
   return `${serverId}::${promptName}`
 }
 
+// A capability's last Tests-tab-triggered run. `skipped` means the capability
+// has a saved script but couldn't be auto-invoked (a required tool/prompt
+// argument had no derivable default — see lib/autoArgs) — distinct from a
+// real pass/fail, so the server-level Tests tab doesn't report a false result.
+export type TestsTabRunState =
+  | { state: 'running' }
+  | { state: 'skipped' }
+  | { state: 'done'; summary: TestRunSummary }
+
+// Keyed per capability across all three kinds — unlike history's three
+// separate maps, a single map is simpler here since callers already have
+// `kind` in hand (from listScripts) rather than branching on call type.
+export function testsTabKey(serverId: string, kind: TestKind, name: string): string {
+  return `${serverId}::${kind}::${name}`
+}
+
 // Identifies a selected tool. Tool names are only unique within a server, so
 // the owning server id is part of the key.
 export interface SelectedTool {
@@ -226,6 +243,13 @@ interface ServerStore {
   // Sampling requests awaiting a user answer, in arrival order. Same queueing
   // behaviour as elicitations.
   pendingSamplings: SamplingRequestEvent[]
+  // Last Tests-tab-triggered run per capability, keyed by testsTabKey.
+  // Session-only (never persisted) and deliberately separate from the per-call
+  // `testRun` fields above: those are "this one call's result scored against
+  // the script", this is "the Tests tab's own last aggregate run" — a
+  // Tests-tab run shouldn't synthesize a fake history entry to hang its result
+  // off of.
+  testsTabRuns: Record<string, TestsTabRunState>
 
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
@@ -269,6 +293,14 @@ interface ServerStore {
   // Applies an OAuth flow event (pushed over mcp:authEvent via AuthHost) to the
   // owning server's `auth` field. Status is never touched here.
   handleAuthEvent: (event: AuthEvent) => void
+  // Runs one capability's saved script via a real invocation (best-effort
+  // auto-args — see lib/autoArgs) and records the outcome in `testsTabRuns`.
+  // A no-op if the capability has no saved script.
+  runCapabilityTests: (serverId: string, kind: TestKind, name: string) => Promise<void>
+  // Runs every capability with a saved script, sequentially (a manual, once-
+  // in-a-while bulk action, not a hot path — no need to parallelize calls
+  // against the same server).
+  runAllTests: (serverId: string) => Promise<void>
 }
 
 function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = false): MCPServer {
@@ -306,6 +338,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
+  testsTabRuns: {},
 
   hydrate: async () => {
     try {
@@ -647,6 +680,102 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       delete next[key]
       return { promptHistory: next }
     })
+  },
+
+  runCapabilityTests: async (serverId, kind, name) => {
+    const server = get().servers.find((s) => s.id === serverId)
+    if (!server) return
+    const key = testsTabKey(serverId, kind, name)
+
+    function clearRun(): void {
+      set((state) => {
+        const next = { ...state.testsTabRuns }
+        delete next[key]
+        return { testsTabRuns: next }
+      })
+    }
+
+    const script = await window.api.testing.getScript(serverId, kind, name)
+    if (!script || script.trim() === '') {
+      clearRun()
+      return
+    }
+
+    // Best-effort auto-args per kind — a resource read takes none at all.
+    // `ok: false` means a required field has no derivable default, so the
+    // capability is marked "skipped" rather than invoked with guessed args.
+    let toolArgs: Record<string, unknown> = {}
+    let promptArgs: Record<string, string> = {}
+    if (kind === 'tool') {
+      const tool = server.tools.find((t) => t.name === name)
+      if (!tool) return
+      const auto = autoToolArgs(tool)
+      if (!auto.ok) {
+        set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } } }))
+        return
+      }
+      toolArgs = auto.args
+    } else if (kind === 'prompt') {
+      const prompt = server.prompts.find((p) => p.name === name)
+      if (!prompt) return
+      const auto = autoPromptArgs(prompt)
+      if (!auto.ok) {
+        set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } } }))
+        return
+      }
+      promptArgs = auto.args as Record<string, string>
+    }
+
+    set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'running' } } }))
+
+    const at = Date.now()
+    try {
+      const outcome =
+        kind === 'tool'
+          ? await window.api.mcp.callTool(serverId, name, toolArgs)
+          : kind === 'resource'
+            ? await window.api.mcp.readResource(serverId, name)
+            : await window.api.mcp.getPrompt(serverId, name, promptArgs)
+
+      if (outcome.authRequired) {
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+        clearRun()
+        return
+      }
+
+      const result = extractEnvelopeResult<ToolCallResult | GetPromptResult | ResourceReadResult>(
+        outcome.response
+      )
+      if (!result) {
+        // Transport/protocol failure — nothing well-formed to score against a
+        // script, so this capability goes back to "not tested" rather than a
+        // misleading pass/fail.
+        clearRun()
+        return
+      }
+
+      const summary = await window.api.testing.run({
+        script,
+        kind,
+        result,
+        callDurationMs: Date.now() - at
+      })
+      set((state) => ({
+        testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'done', summary } }
+      }))
+    } catch (err) {
+      reportError(err)
+      clearRun()
+    }
+  },
+
+  runAllTests: async (serverId) => {
+    const scripts = await window.api.testing.listScripts(serverId)
+    // Sequential: this is a manual, occasional bulk action against one
+    // server, not a hot path — no need to fire every call concurrently.
+    for (const { kind, name } of scripts) {
+      await get().runCapabilityTests(serverId, kind, name)
+    }
   },
 
   clearAllActivity: () =>

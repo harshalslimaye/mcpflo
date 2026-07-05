@@ -67,6 +67,9 @@ export function CapabilitySection({
 
       {showRows && (
         <div className="flex flex-col border-t border-border-soft">
+          {/* No trailing chevron here: the whole row already navigates to the
+              capability's own detail view on click, so a chevron would imply
+              an inline expansion that doesn't exist. */}
           {rows.map((row) => (
             <button
               key={row.key}
@@ -84,7 +87,6 @@ export function CapabilitySection({
               <span className="shrink-0 text-[11.5px] text-fg-faint">
                 {formatTokens(row.tokens)}
               </span>
-              <ChevronRight size={13} className="shrink-0 text-fg-faint" />
             </button>
           ))}
         </div>

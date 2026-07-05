@@ -352,6 +352,17 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  // Every saved script across a server's tools/resources/prompts, so the
+  // server-level Tests tab can show not-tested/tested status per capability
+  // without loading each script's body up front.
+  ipcMain.handle(
+    'testing:listScripts',
+    (_event, id: string): Promise<{ kind: TestKind; name: string }[]> => {
+      assertValidServerId(id)
+      return createScriptStore(resolveTestsRoot(id)).listScripts()
+    }
+  )
+
   // Runs a test script against an already-unwrapped call result (the renderer
   // extracts the result from the JSON-RPC envelope before calling this — see
   // ToolCallOutcome/PromptGetOutcome/ResourceReadOutcome). No server id or

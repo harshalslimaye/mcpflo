@@ -22,10 +22,36 @@ beforeEach(() => {
   useServerStore.setState({ updateServer: mockUpdateServer })
 })
 
+function expandFolderCard(): void {
+  fireEvent.click(screen.getByRole('button', { name: /Tests Folder/ }))
+}
+
+describe('TestsFolderCard — collapsed by default', () => {
+  it('starts collapsed, showing only the header', () => {
+    render(<TestsFolderCard server={server} />)
+    expect(screen.getByRole('button', { name: /Tests Folder/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument()
+  })
+
+  it('expands to show the body on click', () => {
+    render(<TestsFolderCard server={server} />)
+    expandFolderCard()
+    expect(screen.getByRole('button', { name: /Tests Folder/ })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+    expect(screen.getByText('Loading…')).toBeInTheDocument()
+  })
+})
+
 describe('TestsFolderCard — no stubbed testing API', () => {
   it('stays in the loading state without throwing when window.api.testing is unavailable', () => {
     expect(window.api).toBeUndefined()
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     expect(screen.getByText('Loading…')).toBeInTheDocument()
   })
 })
@@ -55,6 +81,7 @@ describe('TestsFolderCard — with a stubbed testing API', () => {
       exists: true
     })
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     expect(await screen.findByText('/userData/tests/memory-mcp')).toBeInTheDocument()
     expect(screen.queryByText('Custom')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Use default' })).not.toBeInTheDocument()
@@ -68,6 +95,7 @@ describe('TestsFolderCard — with a stubbed testing API', () => {
       exists: true
     })
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     expect(await screen.findByText('/Users/me/my-project/tests')).toBeInTheDocument()
     expect(screen.getByText('Custom')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Use default' })).toBeInTheDocument()
@@ -81,6 +109,7 @@ describe('TestsFolderCard — with a stubbed testing API', () => {
       exists: false
     })
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     expect(await screen.findByText('Folder not found')).toBeInTheDocument()
     // The fix is still offered even while broken.
     expect(screen.getByRole('button', { name: 'Use default' })).toBeInTheDocument()
@@ -94,6 +123,7 @@ describe('TestsFolderCard — with a stubbed testing API', () => {
     })
     chooseTestsFolder.mockResolvedValue('/Users/me/picked-folder')
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     await screen.findByText('/userData/tests/memory-mcp')
 
     fireEvent.click(screen.getByRole('button', { name: 'Choose folder…' }))
@@ -112,6 +142,7 @@ describe('TestsFolderCard — with a stubbed testing API', () => {
     })
     chooseTestsFolder.mockResolvedValue(null)
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     await screen.findByText('/userData/tests/memory-mcp')
 
     fireEvent.click(screen.getByRole('button', { name: 'Choose folder…' }))
@@ -126,6 +157,7 @@ describe('TestsFolderCard — with a stubbed testing API', () => {
       exists: true
     })
     render(<TestsFolderCard server={server} />)
+    expandFolderCard()
     await screen.findByText('/Users/me/my-project/tests')
 
     fireEvent.click(screen.getByRole('button', { name: 'Use default' }))

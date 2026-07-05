@@ -5,8 +5,11 @@ import type { TestResult, TestRunSummary } from '../../../shared/testing.types'
 // One test() result as an expansion row: collapsed shows the pass/fail dot and
 // name; a failing test with a message and/or actual/expected values expands to
 // show them. A passing test (or a failure with no extra detail — e.g. a plain
-// thrown string) has nothing to expand, so the chevron is omitted.
-function TestRow({ result }: { result: TestResult }): React.JSX.Element {
+// thrown string) has nothing to expand, so the chevron is omitted. Exported
+// so the server-level Tests tab (ServerTestsTab) can render one row per test
+// without the surrounding per-capability "Tests (n)" header this file's
+// TestResultsView wraps it in.
+export function TestRow({ result }: { result: TestResult }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const isPass = result.status === 'pass'
   const hasDetail =

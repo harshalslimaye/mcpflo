@@ -132,6 +132,8 @@ const api = {
       name: string,
       inputs: Record<string, unknown>
     ): Promise<void> => ipcRenderer.invoke('testing:saveInputs', id, kind, name, inputs),
+    listScripts: (id: string): Promise<{ kind: TestKind; name: string }[]> =>
+      ipcRenderer.invoke('testing:listScripts', id),
     run: (input: {
       script: string
       kind?: TestKind

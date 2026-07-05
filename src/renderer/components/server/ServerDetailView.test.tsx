@@ -58,14 +58,84 @@ describe('ServerDetailView', () => {
     expect(screen.getByText('Context budget')).toBeInTheDocument()
   })
 
-  it('renders the capability sections when the server has capabilities', () => {
+  it('renders the capability sections under the Capabilities tab', () => {
     render(
       <ServerDetailView
         server={server({ tools: [{ name: 'x', inputSchema: { type: 'object' } }] })}
       />
     )
+    expect(screen.queryByText('x')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Capabilities (1)' }))
     expect(screen.getByRole('button', { name: /Tools/ })).toBeInTheDocument()
     expect(screen.getByText('x')).toBeInTheDocument()
+  })
+
+  describe('summary tiles', () => {
+    const multi = server({
+      tools: [{ name: 'x', inputSchema: { type: 'object' } }],
+      resources: [{ uri: 'r://one' }],
+      prompts: []
+    })
+
+    it('shows a tile per category with its count', () => {
+      render(<ServerDetailView server={multi} />)
+      expect(screen.getByRole('button', { name: /Tools/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Resources/ })).toBeInTheDocument()
+    })
+
+    it('disables the tile for an empty category', () => {
+      render(<ServerDetailView server={multi} />)
+      const promptsTile = screen.getAllByRole('button').find((b) => b.textContent?.includes('0'))
+      expect(promptsTile).toBeDisabled()
+    })
+
+    it('jumps to the Capabilities tab filtered to the clicked category', () => {
+      render(<ServerDetailView server={multi} />)
+      fireEvent.click(screen.getByRole('button', { name: /^Resources/ }))
+      expect(screen.getByText('r://one')).toBeInTheDocument()
+      expect(screen.queryByText('x')).not.toBeInTheDocument()
+    })
+
+    it('shows all categories when the Capabilities tab is opened directly', () => {
+      render(<ServerDetailView server={multi} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Capabilities (2)' }))
+      expect(screen.getByText('x')).toBeInTheDocument()
+      expect(screen.getByText('r://one')).toBeInTheDocument()
+    })
+  })
+
+  describe('auth_required', () => {
+    it('shows the Auth card side-by-side with the budget card', () => {
+      render(
+        <ServerDetailView
+          server={server({
+            auth: { status: 'auth_required' },
+            tools: [{ name: 'x', inputSchema: { type: 'object' } }]
+          })}
+        />
+      )
+      expect(screen.getByText('Needs re-auth')).toBeInTheDocument()
+      expect(screen.getByText('Context budget')).toBeInTheDocument()
+    })
+  })
+
+  describe('tabs', () => {
+    it('shows Overview, Capabilities, and Tests, starting on Overview', () => {
+      render(<ServerDetailView server={server()} />)
+      expect(screen.getByRole('button', { name: 'Overview' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Capabilities' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Tests' })).toBeInTheDocument()
+    })
+
+    it('switches to the Tests tab and shows the capability groups', () => {
+      render(
+        <ServerDetailView
+          server={server({ tools: [{ name: 'x', inputSchema: { type: 'object' } }] })}
+        />
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Tests' }))
+      expect(screen.getByText('x')).toBeInTheDocument()
+    })
   })
 
   it('reloads capabilities for the server', () => {

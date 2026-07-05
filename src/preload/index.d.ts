@@ -76,6 +76,7 @@ declare global {
           name: string,
           inputs: Record<string, unknown>
         ) => Promise<void>
+        listScripts: (id: string) => Promise<{ kind: TestKind; name: string }[]>
         run: (input: {
           script: string
           kind?: TestKind

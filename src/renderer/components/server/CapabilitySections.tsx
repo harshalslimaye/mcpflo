@@ -10,8 +10,15 @@ import {
 } from '../../lib/contextBudget'
 import { CapabilitySection, type CapabilityRowData } from './CapabilitySection'
 
+export type Category = 'tools' | 'resources' | 'prompts'
+
 interface CapabilitySectionsProps {
   server: MCPServer
+  // Pre-expand only this one category (others start collapsed) — set by the
+  // Overview tab's summary tiles. Read once on mount; this component remounts
+  // whenever the Capabilities tab becomes active (ServerDetailView renders it
+  // conditionally), so a fresh tile click always takes effect.
+  initialFilter?: Category
 }
 
 // Mirrors the sidebar tree's fallback (SecondarySidebar's itemLabel): a
@@ -21,22 +28,29 @@ function resourceLabel(resource: Resource): string {
   return resource.name ?? resource.uri
 }
 
-type Category = 'tools' | 'resources' | 'prompts'
-
 // Tools/Resources/Prompts groups for the server details view — each
-// collapsible independently, all expanded by default (matching the mockup,
-// where a freshly-selected server shows every group open). Hidden entirely
-// when the server has no capabilities, mirroring ContextBudgetCard so the two
-// disappear together rather than leaving empty/disabled headers behind.
-export function CapabilitySections({ server }: CapabilitySectionsProps): React.JSX.Element | null {
+// collapsible independently. With no `initialFilter`, all three start
+// expanded (a freshly-selected server shows every group open); with one, only
+// that category starts expanded — the tile-jump case.
+// Hidden entirely when the server has no capabilities, mirroring
+// ContextBudgetCard so the two disappear together rather than leaving
+// empty/disabled headers behind.
+export function CapabilitySections({
+  server,
+  initialFilter
+}: CapabilitySectionsProps): React.JSX.Element | null {
   const selectTool = useServerStore((s) => s.selectTool)
   const selectResource = useServerStore((s) => s.selectResource)
   const selectPrompt = useServerStore((s) => s.selectPrompt)
-  const [expanded, setExpanded] = useState<Record<Category, boolean>>({
-    tools: true,
-    resources: true,
-    prompts: true
-  })
+  const [expanded, setExpanded] = useState<Record<Category, boolean>>(() =>
+    initialFilter
+      ? {
+          tools: initialFilter === 'tools',
+          resources: initialFilter === 'resources',
+          prompts: initialFilter === 'prompts'
+        }
+      : { tools: true, resources: true, prompts: true }
+  )
 
   function toggle(category: Category): void {
     setExpanded((prev) => ({ ...prev, [category]: !prev[category] }))

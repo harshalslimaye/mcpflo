@@ -43,7 +43,8 @@ const mockApi = {
     getScript: vi.fn(),
     saveScript: vi.fn(),
     saveInputs: vi.fn(),
-    run: vi.fn()
+    run: vi.fn(),
+    listScripts: vi.fn()
   }
 }
 
@@ -98,6 +99,7 @@ describe('serverStore', () => {
       logs: [],
       durationMs: 1
     })
+    mockApi.testing.listScripts.mockResolvedValue([])
     vi.resetModules()
     const mod = await import('./serverStore')
     useServerStore = mod.useServerStore
@@ -903,6 +905,139 @@ describe('serverStore', () => {
       const promptHistory = useServerStore.getState().promptHistory
       expect(promptHistory['github-mcp::summarize']).toBeUndefined()
       expect(promptHistory['github-mcp::translate']).toHaveLength(1)
+    })
+  })
+
+  async function addServerWithCapabilities(
+    toolProperties: Record<string, unknown> = {},
+    toolRequired: string[] = []
+  ): Promise<void> {
+    await useServerStore.getState().addServer(githubConfig)
+    mockApi.mcp.fetchCapabilities.mockResolvedValue({
+      tools: [
+        {
+          name: 'create_issue',
+          inputSchema: { type: 'object', properties: toolProperties, required: toolRequired }
+        }
+      ],
+      resources: [{ uri: 'repo://x' }],
+      prompts: [{ name: 'summarize', arguments: [] }]
+    })
+    await useServerStore.getState().fetchCapabilities('github-mcp')
+  }
+
+  describe('runCapabilityTests', () => {
+    it('does nothing when the capability has no saved script', async () => {
+      await addServerWithCapabilities()
+      mockApi.testing.getScript.mockResolvedValue(null)
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'tool', 'create_issue')
+      expect(mockApi.mcp.callTool).not.toHaveBeenCalled()
+      expect(
+        useServerStore.getState().testsTabRuns['github-mcp::tool::create_issue']
+      ).toBeUndefined()
+    })
+
+    it('marks a tool skipped when a required arg has no derivable default', async () => {
+      await addServerWithCapabilities({ query: { type: 'string' } }, ['query'])
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'tool', 'create_issue')
+      expect(mockApi.mcp.callTool).not.toHaveBeenCalled()
+      expect(useServerStore.getState().testsTabRuns['github-mcp::tool::create_issue']).toEqual({
+        state: 'skipped'
+      })
+    })
+
+    it('invokes the tool with auto-filled args and records the scored result', async () => {
+      await addServerWithCapabilities({ flag: { type: 'boolean' } }, ['flag'])
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      mockApi.testing.run.mockResolvedValue({
+        results: [{ name: 'x', status: 'pass' }],
+        passed: 1,
+        failed: 0,
+        total: 1,
+        logs: [],
+        durationMs: 2
+      })
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'tool', 'create_issue')
+      expect(mockApi.mcp.callTool).toHaveBeenCalledWith('github-mcp', 'create_issue', {
+        flag: false
+      })
+      expect(useServerStore.getState().testsTabRuns['github-mcp::tool::create_issue']).toEqual({
+        state: 'done',
+        summary: expect.objectContaining({ passed: 1 })
+      })
+    })
+
+    it('reads a resource with no args needed', async () => {
+      await addServerWithCapabilities()
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'resource', 'repo://x')
+      expect(mockApi.mcp.readResource).toHaveBeenCalledWith('github-mcp', 'repo://x')
+    })
+
+    it('skips a prompt with a required argument it cannot auto-fill', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [],
+        resources: [],
+        prompts: [{ name: 'summarize', arguments: [{ name: 'topic', required: true }] }]
+      })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'prompt', 'summarize')
+      expect(mockApi.mcp.getPrompt).not.toHaveBeenCalled()
+      expect(useServerStore.getState().testsTabRuns['github-mcp::prompt::summarize']).toEqual({
+        state: 'skipped'
+      })
+    })
+
+    it('flips auth to auth_required and drops the run when sign-in is needed', async () => {
+      await addServerWithCapabilities()
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      mockApi.mcp.callTool.mockResolvedValue({ authRequired: true })
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'tool', 'create_issue')
+      expect(useServerStore.getState().servers[0].auth).toEqual({ status: 'auth_required' })
+      expect(
+        useServerStore.getState().testsTabRuns['github-mcp::tool::create_issue']
+      ).toBeUndefined()
+    })
+
+    it('drops the run rather than recording a false result on a transport error', async () => {
+      await addServerWithCapabilities()
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      mockApi.mcp.callTool.mockResolvedValue({ error: 'connection refused' })
+      await useServerStore.getState().runCapabilityTests('github-mcp', 'tool', 'create_issue')
+      expect(mockApi.testing.run).not.toHaveBeenCalled()
+      expect(
+        useServerStore.getState().testsTabRuns['github-mcp::tool::create_issue']
+      ).toBeUndefined()
+    })
+  })
+
+  describe('runAllTests', () => {
+    it('runs every capability listScripts reports, sequentially', async () => {
+      await addServerWithCapabilities({ flag: { type: 'boolean' } }, ['flag'])
+      mockApi.testing.listScripts.mockResolvedValue([
+        { kind: 'tool', name: 'create_issue' },
+        { kind: 'resource', name: 'repo://x' }
+      ])
+      mockApi.testing.getScript.mockResolvedValue('test("x", function () {})')
+      await useServerStore.getState().runAllTests('github-mcp')
+      expect(mockApi.mcp.callTool).toHaveBeenCalledWith('github-mcp', 'create_issue', {
+        flag: false
+      })
+      expect(mockApi.mcp.readResource).toHaveBeenCalledWith('github-mcp', 'repo://x')
+      const runs = useServerStore.getState().testsTabRuns
+      expect(runs['github-mcp::tool::create_issue'].state).toBe('done')
+      expect(runs['github-mcp::resource::repo://x'].state).toBe('done')
+    })
+
+    it('does nothing when no capability has a saved script', async () => {
+      await addServerWithCapabilities()
+      mockApi.testing.listScripts.mockResolvedValue([])
+      await useServerStore.getState().runAllTests('github-mcp')
+      expect(mockApi.mcp.callTool).not.toHaveBeenCalled()
+      expect(mockApi.mcp.readResource).not.toHaveBeenCalled()
     })
   })
 

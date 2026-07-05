@@ -3,6 +3,7 @@ import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
 import { Toggle } from '../ui/Toggle'
+import { Tabs, type TabItem } from '../ui/Tabs'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
 import { TestScriptEditor } from '../shared/TestScriptEditor'
@@ -13,6 +14,7 @@ import { validator } from './rjsf/validator'
 import { buildUiSchema } from './rjsf/layout'
 import { requiredSummary } from './rjsf/formStatus'
 import { estimateToolDefinitionPayload } from '../../lib/contextBudget'
+import { seedToolDefaults } from '../../lib/autoArgs'
 
 export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
@@ -82,18 +84,9 @@ export function ToolRequestPanel({
   const definitionEstimate = useMemo(() => estimateToolDefinitionPayload(tool), [tool])
 
   // Seed the form with schema-declared defaults so our validity check matches
-  // what RJSF renders. Required booleans are seeded to `false`: a toggle always
-  // has a value, so an untouched required boolean would otherwise read as
-  // "missing" and wedge Execute even though the UI shows a valid (off) state.
-  const initialData = useMemo<Record<string, unknown>>(() => {
-    const seeded =
-      (getDefaultFormState(validator, schema, {}, schema) as Record<string, unknown>) ?? {}
-    const props = (schema.properties ?? {}) as Record<string, { type?: unknown }>
-    for (const key of Array.isArray(schema.required) ? schema.required : []) {
-      if (props[key]?.type === 'boolean' && seeded[key] === undefined) seeded[key] = false
-    }
-    return seeded
-  }, [schema])
+  // what RJSF renders — see seedToolDefaults for why required booleans are a
+  // special case.
+  const initialData = useMemo<Record<string, unknown>>(() => seedToolDefaults(schema), [schema])
 
   const [mode, setMode] = useState<Mode>('form')
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
@@ -164,30 +157,13 @@ export function ToolRequestPanel({
     onExecute(payload)
   }
 
+  const tabItems: TabItem<RequestTab>[] = TABS.map((tab) =>
+    tab.key === 'tests' && hasScript ? { ...tab, dotLabel: 'Has a saved test script' } : tab
+  )
+
   const headerEnd = (
     <>
-      <div className="flex gap-0.5">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => onTabChange(tab.key)}
-            className={`inline-flex items-center gap-1.5 rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-              activeTab === tab.key
-                ? 'bg-accent-soft text-accent'
-                : 'text-text-muted hover:text-text-primary'
-            }`}
-          >
-            {tab.label}
-            {tab.key === 'tests' && hasScript && (
-              <span
-                aria-label="Has a saved test script"
-                className="h-1.5 w-1.5 rounded-full bg-accent"
-              />
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabItems} activeTab={activeTab} onTabChange={onTabChange} />
       <div className="flex-1" />
       {activeTab === 'params' && !isEmpty && (
         <div className="flex items-center gap-2">
