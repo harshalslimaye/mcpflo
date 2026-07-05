@@ -465,6 +465,36 @@ describe('serverStore', () => {
         expect(mockApi.testing.run).toHaveBeenCalled()
       })
 
+      it('commits the response to history before the test run resolves, then patches testRun in', async () => {
+        mockApi.testing.getScript.mockResolvedValue('test("a", function () {})')
+        let resolveRun: ((summary: unknown) => void) | undefined
+        mockApi.testing.run.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveRun = resolve
+            })
+        )
+        await useServerStore.getState().addServer(githubConfig)
+
+        const exec = useServerStore.getState().executeTool('github-mcp', 'create_issue', {})
+        // The response is committed as soon as this resolves, well before the
+        // still-pending test run — the Response panel must never wait on it.
+        await vi.waitFor(() => expect(useServerStore.getState().history[key]).toHaveLength(1))
+        expect(useServerStore.getState().history[key][0].status).toBe('success')
+        expect(useServerStore.getState().history[key][0].testRun).toBeUndefined()
+
+        resolveRun?.({
+          results: [{ name: 'a', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          durationMs: 2
+        })
+        await exec
+        expect(useServerStore.getState().history[key][0].testRun).toMatchObject({ passed: 1 })
+      })
+
       it('does not attempt a test run when the call fails at the transport level', async () => {
         mockApi.mcp.callTool.mockResolvedValue({ error: 'connection refused' })
         mockApi.testing.getScript.mockResolvedValue('test("a", function () {})')
@@ -684,6 +714,37 @@ describe('serverStore', () => {
         expect(mockApi.testing.saveInputs).not.toHaveBeenCalled()
       })
 
+      it('commits the read to history before the test run resolves, then patches testRun in', async () => {
+        mockApi.testing.getScript.mockResolvedValue('test("a", function () {})')
+        let resolveRun: ((summary: unknown) => void) | undefined
+        mockApi.testing.run.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveRun = resolve
+            })
+        )
+        await useServerStore.getState().addServer(githubConfig)
+
+        const exec = useServerStore.getState().readResource('github-mcp', 'mem://x')
+        await vi.waitFor(() =>
+          expect(useServerStore.getState().resourceHistory[key]).toHaveLength(1)
+        )
+        expect(useServerStore.getState().resourceHistory[key][0].testRun).toBeUndefined()
+
+        resolveRun?.({
+          results: [{ name: 'a', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          durationMs: 2
+        })
+        await exec
+        expect(useServerStore.getState().resourceHistory[key][0].testRun).toMatchObject({
+          passed: 1
+        })
+      })
+
       it('does not attempt a test run when the resource has no saved script', async () => {
         mockApi.testing.getScript.mockResolvedValue(null)
         await useServerStore.getState().addServer(githubConfig)
@@ -783,6 +844,35 @@ describe('serverStore', () => {
           result: { messages: [{ role: 'user', content: { type: 'text', text: 'hi' } }] },
           callDurationMs: expect.any(Number)
         })
+        expect(useServerStore.getState().promptHistory[key][0].testRun).toMatchObject({ passed: 1 })
+      })
+
+      it('commits the get to history before the test run resolves, then patches testRun in', async () => {
+        mockApi.testing.getScript.mockResolvedValue('test("a", function () {})')
+        let resolveRun: ((summary: unknown) => void) | undefined
+        mockApi.testing.run.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveRun = resolve
+            })
+        )
+        await useServerStore.getState().addServer(githubConfig)
+
+        const exec = useServerStore
+          .getState()
+          .getPrompt('github-mcp', 'summarize', { topic: 'mcp' })
+        await vi.waitFor(() => expect(useServerStore.getState().promptHistory[key]).toHaveLength(1))
+        expect(useServerStore.getState().promptHistory[key][0].testRun).toBeUndefined()
+
+        resolveRun?.({
+          results: [{ name: 'a', status: 'pass' }],
+          passed: 1,
+          failed: 0,
+          total: 1,
+          logs: [],
+          durationMs: 2
+        })
+        await exec
         expect(useServerStore.getState().promptHistory[key][0].testRun).toMatchObject({ passed: 1 })
       })
 

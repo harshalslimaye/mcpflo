@@ -119,34 +119,38 @@ function outcomeStatus(
 }
 
 // Attempts to run this item's saved test script against a just-completed
-// call's result, attaching the summary to `record.testRun` in place. A no-op
-// whenever there's nothing to test against — no record at all (auth-required
-// outcome), a protocol-level failure with no well-formed result, or no
-// `window.api.testing` (real Electron always has it via preload) — or when
-// there's no saved script. Never throws: a failure running tests must not
-// affect the call's own recorded outcome, so it's reported as a toast instead.
-async function attachTestRun(
+// call's result, returning the summary (or undefined if none was run).
+// Deliberately returns rather than mutating a record in place: the caller
+// commits the call's own response to the store first — so the Response panel
+// never waits on this — then, once this resolves, patches `testRun` into a
+// *new* record object via a second `set()` (Zustand/React only re-render on a
+// changed reference, so mutating the already-committed record wouldn't
+// actually update anything on screen).
+//
+// A no-op whenever there's nothing to test against: a protocol-level failure
+// with no well-formed result, no `window.api.testing` (real Electron always
+// has it via preload), or no saved script. Never throws: a failure running
+// tests must not affect the call's own recorded outcome, so it's reported as
+// a toast instead.
+async function runTestForCall(
   serverId: string,
   kind: TestKind,
   name: string,
-  record: { response?: unknown; durationMs: number; testRun?: TestRunSummary } | null
-): Promise<void> {
-  if (!record || !window.api?.testing) return
+  response: unknown,
+  callDurationMs: number
+): Promise<TestRunSummary | undefined> {
+  if (!window.api?.testing) return undefined
   const result = extractEnvelopeResult<ToolCallResult | GetPromptResult | ResourceReadResult>(
-    record.response
+    response
   )
-  if (!result) return
+  if (!result) return undefined
   try {
     const script = await window.api.testing.getScript(serverId, kind, name)
-    if (!script || script.trim() === '') return
-    record.testRun = await window.api.testing.run({
-      script,
-      kind,
-      result,
-      callDurationMs: record.durationMs
-    })
+    if (!script || script.trim() === '') return undefined
+    return await window.api.testing.run({ script, kind, result, callDurationMs })
   } catch (err) {
     reportError(err)
+    return undefined
   }
 }
 
@@ -440,12 +444,6 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       unsubscribe()
     }
 
-    // Auto-run this tool's saved test script against the result, if any (see
-    // attachTestRun — no-ops on a transport/protocol failure with no result;
-    // a tool result reporting `isError: true` is still a real result, the
-    // whole point of `res.getIsError()`, so that case still runs).
-    await attachTestRun(serverId, 'tool', toolName, record)
-
     set((state) => {
       const live = { ...state.liveNotifications }
       delete live[key]
@@ -456,6 +454,33 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         liveNotifications: live
       }
     })
+
+    // Auto-run this tool's saved test script against the result, if any —
+    // after the response above is already committed and visible, so a slow
+    // first-ever run (QuickJS's WASM cold-compile) never delays the Response
+    // panel. See runTestForCall: no-ops on a transport/protocol failure with
+    // no result; a tool result reporting `isError: true` is still a real
+    // result, the whole point of `res.getIsError()`, so that case still runs.
+    if (record) {
+      const recordId = record.id
+      const testRun = await runTestForCall(
+        serverId,
+        'tool',
+        toolName,
+        record.response,
+        record.durationMs
+      )
+      if (testRun) {
+        set((state) => ({
+          history: {
+            ...state.history,
+            [key]: (state.history[key] ?? []).map((r) =>
+              r.id === recordId ? { ...r, testRun } : r
+            )
+          }
+        }))
+      }
+    }
   },
 
   clearHistory: (serverId, toolName) => {
@@ -506,9 +531,6 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
 
     if (!record) return
-    // Resources have no arguments, so there's nothing to save inputs for —
-    // just the saved script, if any.
-    await attachTestRun(serverId, 'resource', uri, record)
     const committed = record
     set((state) => ({
       resourceHistory: {
@@ -516,6 +538,27 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         [key]: pushCapped(state.resourceHistory[key], committed)
       }
     }))
+
+    // Resources have no arguments, so there's nothing to save inputs for —
+    // just the saved script, if any. Run after the read above is already
+    // committed — see executeTool's runTestForCall comment.
+    const testRun = await runTestForCall(
+      serverId,
+      'resource',
+      uri,
+      committed.response,
+      committed.durationMs
+    )
+    if (testRun) {
+      set((state) => ({
+        resourceHistory: {
+          ...state.resourceHistory,
+          [key]: (state.resourceHistory[key] ?? []).map((r) =>
+            r.id === committed.id ? { ...r, testRun } : r
+          )
+        }
+      }))
+    }
   },
 
   clearResourceHistory: (serverId, uri) => {
@@ -568,7 +611,6 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
 
     if (!record) return
-    await attachTestRun(serverId, 'prompt', promptName, record)
     const committed = record
     set((state) => ({
       promptHistory: {
@@ -576,6 +618,26 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         [key]: pushCapped(state.promptHistory[key], committed)
       }
     }))
+
+    // Run after the get above is already committed — see executeTool's
+    // runTestForCall comment.
+    const testRun = await runTestForCall(
+      serverId,
+      'prompt',
+      promptName,
+      committed.response,
+      committed.durationMs
+    )
+    if (testRun) {
+      set((state) => ({
+        promptHistory: {
+          ...state.promptHistory,
+          [key]: (state.promptHistory[key] ?? []).map((r) =>
+            r.id === committed.id ? { ...r, testRun } : r
+          )
+        }
+      }))
+    }
   },
 
   clearPromptHistory: (serverId, promptName) => {
