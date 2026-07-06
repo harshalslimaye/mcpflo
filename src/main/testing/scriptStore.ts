@@ -134,10 +134,14 @@ export function createScriptStore(root: string): ScriptStore {
       const raw = await readFileOrNull(requestsPath(root, kind, name))
       if (raw === null) return null
       try {
-        return JSON.parse(raw) as RequestsFile
+        const parsed = JSON.parse(raw) as RequestsFile
+        // A corrupt file — unparseable JSON, or valid JSON with the wrong
+        // shape (e.g. a synced-folder conflict copy or a bad hand edit) — is
+        // treated as absent, not a thrown error: callers index straight into
+        // `requests` without expecting this call to throw.
+        if (!Array.isArray(parsed?.requests)) return null
+        return parsed
       } catch {
-        // A corrupt file (e.g. a synced-folder conflict copy) is treated as
-        // absent, not a thrown error.
         return null
       }
     },

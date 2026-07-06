@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TestKind, SavedRequest } from '../../../shared/testing.types'
+import { useErrorStore, toMessage } from '../../stores/errorStore'
+
+// This is MCPFlo's own failure (a failed IPC call), not a server-protocol
+// error, so it goes to the toast surface — same convention serverStore.ts
+// uses for its own IPC calls.
+function reportError(err: unknown): void {
+  useErrorStore.getState().pushError(toMessage(err))
+}
 
 // Debounce window for inline-edit persistence — same value as
 // useTestScript's AUTOSAVE_DELAY_MS, for the same reason: short enough that
@@ -64,23 +72,40 @@ export function useSavedRequests(
 
   useEffect(() => {
     let active = true
-    if (!window.api?.testing) return
-    window.api.testing.getRequests(serverId, kind, name).then((file) => {
-      if (!active) return
-      const next = file?.requests ?? []
-      // A dangling testRequestId (the marked request no longer exists) is
-      // resolved to undefined once here, so every other read of the field —
-      // in this hook or its callers — can trust it without re-checking.
-      const resolvedTestRequestId =
-        file?.testRequestId && next.some((r) => r.id === file.testRequestId)
-          ? file.testRequestId
-          : undefined
-      setRequests(next)
-      requestsRef.current = next
-      setTestRequestIdState(resolvedTestRequestId)
-      testRequestIdRef.current = resolvedTestRequestId
+    if (!window.api?.testing) {
+      // No preload bridge (degraded/test environment) — there's nothing to
+      // wait for, so this is known-empty, not still-loading. Without this,
+      // `loaded` would never flip, and the Saved tab (gated on it) would be
+      // stuck on "Loading…" forever instead of degrading to its empty state.
       setLoaded(true)
-    })
+      return
+    }
+    window.api.testing
+      .getRequests(serverId, kind, name)
+      .then((file) => {
+        if (!active) return
+        const next = file?.requests ?? []
+        // A dangling testRequestId (the marked request no longer exists) is
+        // resolved to undefined once here, so every other read of the field —
+        // in this hook or its callers — can trust it without re-checking.
+        const resolvedTestRequestId =
+          file?.testRequestId && next.some((r) => r.id === file.testRequestId)
+            ? file.testRequestId
+            : undefined
+        setRequests(next)
+        requestsRef.current = next
+        setTestRequestIdState(resolvedTestRequestId)
+        testRequestIdRef.current = resolvedTestRequestId
+        setLoaded(true)
+      })
+      .catch((err) => {
+        // A failed load must still unblock `loaded` — otherwise the Saved
+        // tab (and the footer Save button, gated on this flag) is stuck
+        // showing "Loading…" forever instead of surfacing the failure.
+        if (!active) return
+        reportError(err)
+        setLoaded(true)
+      })
     return () => {
       active = false
     }
@@ -91,10 +116,12 @@ export function useSavedRequests(
   // disk on the next autosave tick.
   const persist = useCallback(
     (next: SavedRequest[], nextTestRequestId: string | undefined) => {
-      window.api?.testing?.saveRequests(serverId, kind, name, {
-        requests: next,
-        testRequestId: nextTestRequestId
-      })
+      window.api?.testing
+        ?.saveRequests(serverId, kind, name, {
+          requests: next,
+          testRequestId: nextTestRequestId
+        })
+        .catch(reportError)
     },
     [serverId, kind, name]
   )

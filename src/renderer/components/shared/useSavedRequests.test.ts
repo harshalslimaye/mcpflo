@@ -3,11 +3,15 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { useSavedRequests } from './useSavedRequests'
 
 describe('useSavedRequests — no stubbed testing API', () => {
-  it('starts with an empty, unloaded list without throwing', () => {
+  it('resolves to an empty, loaded list without throwing', () => {
+    // No preload bridge means there's nothing to fetch — this is
+    // known-empty, not still-loading, so callers gated on `loaded` (e.g. the
+    // Saved tab's "Loading…" vs. empty-state check) settle immediately
+    // instead of hanging forever.
     expect(window.api).toBeUndefined()
     const { result } = renderHook(() => useSavedRequests('srv', 'tool', 'echo'))
     expect(result.current.requests).toEqual([])
-    expect(result.current.loaded).toBe(false)
+    expect(result.current.loaded).toBe(true)
   })
 })
 

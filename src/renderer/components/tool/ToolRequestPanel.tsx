@@ -230,7 +230,10 @@ export function ToolRequestPanel({
       footerExtra={
         !isEmpty && (
           <SaveRequestButton
-            disabled={mode === 'json' && !jsonValid}
+            // Also disabled until the mount fetch resolves — saving earlier
+            // would persist just the new entry over whatever's already on
+            // disk, since `savedRequests.requests` still reads as empty.
+            disabled={(mode === 'json' && !jsonValid) || !savedRequests.loaded}
             requestCount={savedRequests.requests.length}
             onSave={handleSaveCurrentAs}
           />
@@ -239,7 +242,9 @@ export function ToolRequestPanel({
     >
       {activeTab === 'saved' ? (
         <div className="flex flex-col gap-3">
-          {savedRequests.requests.length === 0 ? (
+          {!savedRequests.loaded ? (
+            <p className="text-sm text-text-muted">Loading…</p>
+          ) : savedRequests.requests.length === 0 ? (
             <p className="text-sm text-text-muted">
               No saved requests yet. Fill in the Params tab, then save it here as a reusable
               request.
