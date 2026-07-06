@@ -21,7 +21,7 @@ import type {
   GetPromptResult,
   ResourceReadResult
 } from '../shared/mcp.types'
-import type { TestKind, TestRunSummary } from '../shared/testing.types'
+import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
 declare global {
   interface Window {
@@ -70,11 +70,12 @@ declare global {
       testing: {
         getScript: (id: string, kind: TestKind, name: string) => Promise<string | null>
         saveScript: (id: string, kind: TestKind, name: string, content: string) => Promise<void>
-        saveInputs: (
+        getRequests: (id: string, kind: TestKind, name: string) => Promise<RequestsFile | null>
+        saveRequests: (
           id: string,
           kind: TestKind,
           name: string,
-          inputs: Record<string, unknown>
+          file: RequestsFile
         ) => Promise<void>
         listScripts: (id: string) => Promise<{ kind: TestKind; name: string }[]>
         run: (input: {

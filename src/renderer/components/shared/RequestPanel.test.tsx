@@ -60,6 +60,24 @@ describe('RequestPanel', () => {
     expect(onRun).not.toHaveBeenCalled()
   })
 
+  it('renders footerExtra just left of the run button when provided', () => {
+    render(
+      <RequestPanel statusHint="x" run={run()} footerExtra={<button>Save</button>}>
+        body
+      </RequestPanel>
+    )
+    expect(screen.getByText('Save')).toBeInTheDocument()
+  })
+
+  it('omits footerExtra entirely when not provided', () => {
+    render(
+      <RequestPanel statusHint="x" run={run()}>
+        body
+      </RequestPanel>
+    )
+    expect(screen.queryByText('Save')).not.toBeInTheDocument()
+  })
+
   it('runs on ⌘/Ctrl+Enter, but not when disabled', () => {
     const onRun = vi.fn()
     const { rerender } = render(

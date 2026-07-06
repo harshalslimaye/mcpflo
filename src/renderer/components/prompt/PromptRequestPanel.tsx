@@ -2,11 +2,16 @@ import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Prompt } from '../../../shared/mcp.types'
+import type { SavedRequest } from '../../../shared/testing.types'
 import { Toggle } from '../ui/Toggle'
+import { Tabs, type TabItem } from '../ui/Tabs'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
 import { TestScriptEditor } from '../shared/TestScriptEditor'
 import { useTestScript } from '../shared/useTestScript'
+import { useSavedRequests } from '../shared/useSavedRequests'
+import { SavedRequestRow } from '../shared/SavedRequestRow'
+import { SaveRequestButton } from '../shared/SaveRequestButton'
 import { SchemaTab } from '../tool/SchemaTab'
 import { RjsfForm } from '../tool/rjsf/RjsfForm'
 import { validator } from '../tool/rjsf/validator'
@@ -15,7 +20,7 @@ import { requiredSummary } from '../tool/rjsf/formStatus'
 import { buildPromptSchema } from '../../lib/promptSchema'
 import { estimatePromptDefinitionPayload } from '../../lib/contextBudget'
 
-export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
+export type RequestTab = 'params' | 'saved' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
 
 interface PromptRequestPanelProps {
@@ -37,6 +42,7 @@ interface PromptRequestPanelProps {
 
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'params', label: 'Params' },
+  { key: 'saved', label: 'Saved' },
   { key: 'schema', label: 'Schema' },
   { key: 'tokens', label: 'Tokens' },
   { key: 'tests', label: 'Tests' }
@@ -85,6 +91,9 @@ export function PromptRequestPanel({
     hasScript,
     onChange: handleScriptChange
   } = useTestScript(serverId, 'prompt', prompt.name)
+
+  // Named, reusable argument sets for the Saved tab — see useSavedRequests.
+  const savedRequests = useSavedRequests(serverId, 'prompt', prompt.name)
 
   const schema = useMemo(() => buildPromptSchema(prompt), [prompt])
   const rjsfSchema = schema as RJSFSchema
@@ -158,6 +167,37 @@ export function PromptRequestPanel({
     setMode('form')
   }
 
+  // Load copies a saved request into the live Params form (seeded through
+  // schema defaults the same way the History-prefill path does, so a request
+  // saved before the schema gained an argument still gets a sensible value
+  // for it) and switches to the Params tab — a one-way copy, not a live
+  // binding, so later form edits never mutate the saved entry.
+  function handleLoadSavedRequest(request: SavedRequest): void {
+    setFormData(
+      getDefaultFormState(validator, rjsfSchema, request.args, rjsfSchema) as Record<
+        string,
+        unknown
+      >
+    )
+    setMode('form')
+    setTouched(new Set())
+    onTabChange('params')
+  }
+
+  // Snapshots whatever the live Params form currently holds — the parsed Raw
+  // JSON object in JSON mode, or the raw form state in form mode — under the
+  // given name (from the footer Save button's popover; SaveRequestButton
+  // itself already defaults an empty name to "Request N"). Stored as raw
+  // values, NOT the wire-format string map toStringArgs produces at execute
+  // time, so Load can round-trip it straight back into the RJSF form. The
+  // button is disabled by its caller when Raw JSON mode doesn't currently
+  // parse, so `raw` is only null in a state the button should never allow.
+  function handleSaveCurrentAs(name: string): void {
+    const raw = mode === 'json' ? (jsonParse.ok ? jsonParse.value : null) : formData
+    if (raw === null) return
+    savedRequests.add(name, raw)
+  }
+
   const executeDisabled = running || (mode === 'json' ? !jsonValid : !formValid)
 
   // Footer hint: required/missing counts in form mode, JSON validity in JSON mode.
@@ -175,30 +215,17 @@ export function PromptRequestPanel({
     onExecute(toStringArgs(raw))
   }
 
+  const tabItems: TabItem<RequestTab>[] = TABS.map((tab) => {
+    if (tab.key === 'tests' && hasScript) return { ...tab, dotLabel: 'Has a saved test script' }
+    if (tab.key === 'saved' && savedRequests.requests.length > 0) {
+      return { ...tab, count: savedRequests.requests.length }
+    }
+    return tab
+  })
+
   const headerEnd = (
     <>
-      <div className="flex gap-0.5">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => onTabChange(tab.key)}
-            className={`inline-flex items-center gap-1.5 rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-              activeTab === tab.key
-                ? 'bg-accent-soft text-accent'
-                : 'text-text-muted hover:text-text-primary'
-            }`}
-          >
-            {tab.label}
-            {tab.key === 'tests' && hasScript && (
-              <span
-                aria-label="Has a saved test script"
-                className="h-1.5 w-1.5 rounded-full bg-accent"
-              />
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabItems} activeTab={activeTab} onTabChange={onTabChange} />
       <div className="flex-1" />
       {activeTab === 'params' && !isEmpty && (
         <div className="flex items-center gap-2">
@@ -224,8 +251,61 @@ export function PromptRequestPanel({
         disabled: executeDisabled,
         onRun: handleExecute
       }}
+      footerExtra={
+        !isEmpty && (
+          <SaveRequestButton
+            disabled={mode === 'json' && !jsonValid}
+            requestCount={savedRequests.requests.length}
+            onSave={handleSaveCurrentAs}
+          />
+        )
+      }
     >
-      {activeTab === 'schema' ? (
+      {activeTab === 'saved' ? (
+        <div className="flex flex-col gap-3">
+          {savedRequests.requests.length === 0 ? (
+            <p className="text-sm text-text-muted">
+              No saved requests yet. Fill in the Params tab, then save it here as a reusable
+              request.
+            </p>
+          ) : (
+            <>
+              {savedRequests.testRequestId && (
+                <p className="text-[12.5px] text-text-muted">
+                  {`Automated test runs use "${
+                    savedRequests.requests.find((r) => r.id === savedRequests.testRequestId)?.name
+                  }" for this capability.`}
+                </p>
+              )}
+              {/* Bounded + internally scrollable, same pattern as the object-params
+                  editor's row list (AddServerModal.tsx) — scrollbar-gutter keeps
+                  the border from shifting when the bar appears; the themed
+                  scrollbar itself is global (base.css), no extra class needed. */}
+              <div className="flex max-h-96 flex-col overflow-y-auto rounded-[8px] border border-border-soft [scrollbar-gutter:stable]">
+                {savedRequests.requests.map((r) => (
+                  <SavedRequestRow
+                    key={r.id}
+                    request={r}
+                    schema={rjsfSchema}
+                    uiSchema={uiSchema}
+                    editable={!isEmpty}
+                    isTestDefault={savedRequests.testRequestId === r.id}
+                    onLoad={() => handleLoadSavedRequest(r)}
+                    onUpdateArgs={(args) => savedRequests.updateArgs(r.id, args)}
+                    onRename={(newName) => savedRequests.rename(r.id, newName)}
+                    onRemove={() => savedRequests.remove(r.id)}
+                    onSetTestDefault={() =>
+                      savedRequests.setTestRequestId(
+                        savedRequests.testRequestId === r.id ? undefined : r.id
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : activeTab === 'schema' ? (
         <SchemaTab schema={schema} />
       ) : activeTab === 'tokens' ? (
         <TokenFootprintView

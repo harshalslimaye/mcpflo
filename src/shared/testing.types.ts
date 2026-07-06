@@ -87,6 +87,30 @@ export interface ScriptError {
   message: string
 }
 
+// A named, reusable argument set for a tool/prompt, managed from that
+// capability's own "Saved" tab (independent of any live call). `args` holds
+// raw form values — for a prompt this is NOT the wire-format string map
+// (see toStringArgs in PromptRequestPanel.tsx), since a saved request must
+// round-trip back into the RJSF form on Load.
+export interface SavedRequest {
+  id: string // crypto.randomUUID() at creation; stable across renames
+  name: string
+  args: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
+// Every saved request for one capability, in creation order.
+export interface RequestsFile {
+  requests: SavedRequest[]
+  // Which single saved request feeds automated test runs (server Tests tab /
+  // run-all) for this capability. undefined = no test source — the
+  // capability stays "skipped" in run-all unless schema defaults alone
+  // satisfy every required field. Deliberately no other fallback (e.g. no
+  // last-executed-args cache); exactly one id may be set at a time.
+  testRequestId?: string
+}
+
 // Result of running a test script against a single tool-call result.
 export interface TestRunSummary {
   results: TestResult[]

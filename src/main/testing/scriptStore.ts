@@ -1,12 +1,12 @@
 import { promises as fs } from 'node:fs'
 import { join, resolve, relative, isAbsolute, dirname } from 'node:path'
-import type { TestKind } from '../../shared/testing.types'
+import type { TestKind, RequestsFile } from '../../shared/testing.types'
 
-// Persists test scripts and their last-used call inputs as plain files under a
-// single root directory, one per test item:
+// Persists test scripts and saved requests as plain files under a single
+// root directory, one per test item:
 //
 //   <root>/<kind>/<encodeURIComponent(name)>.test.js
-//   <root>/<kind>/<encodeURIComponent(name)>.inputs.json
+//   <root>/<kind>/<encodeURIComponent(name)>.requests.json
 //
 // Deliberately plain Node (no Electron imports) and deliberately unaware of
 // *which* root it's given — resolving that root (the default
@@ -20,15 +20,18 @@ export interface ScriptStore {
   // writing an empty one, so "the file exists" stays an honest signal for a
   // sidebar dot — no test author writes an intentionally blank script.
   writeScript(kind: TestKind, name: string, content: string): Promise<void>
-  readInputs(kind: TestKind, name: string): Promise<Record<string, unknown> | null>
-  writeInputs(kind: TestKind, name: string, inputs: Record<string, unknown>): Promise<void>
   // Every script file found under `root`, across all three kind subfolders.
   listScripts(): Promise<{ kind: TestKind; name: string }[]>
+  readRequests(kind: TestKind, name: string): Promise<RequestsFile | null>
+  // An empty `requests` list deletes the file rather than writing an empty
+  // one, same convention as writeScript — no need to keep a husk around once
+  // the user has removed every saved request for this capability.
+  writeRequests(kind: TestKind, name: string, file: RequestsFile): Promise<void>
 }
 
 const KINDS: TestKind[] = ['tool', 'prompt', 'resource']
 const SCRIPT_EXT = '.test.js'
-const INPUTS_EXT = '.inputs.json'
+const REQUESTS_EXT = '.requests.json'
 
 // Whether a `path.relative(root, target)` result means `target` landed
 // outside `root`. Split on both separators rather than checking
@@ -59,8 +62,8 @@ function scriptPath(root: string, kind: TestKind, name: string): string {
   return safeJoin(root, kind, `${encodeURIComponent(name)}${SCRIPT_EXT}`)
 }
 
-function inputsPath(root: string, kind: TestKind, name: string): string {
-  return safeJoin(root, kind, `${encodeURIComponent(name)}${INPUTS_EXT}`)
+function requestsPath(root: string, kind: TestKind, name: string): string {
+  return safeJoin(root, kind, `${encodeURIComponent(name)}${REQUESTS_EXT}`)
 }
 
 async function readFileOrNull(path: string): Promise<string | null> {
@@ -73,12 +76,23 @@ async function readFileOrNull(path: string): Promise<string | null> {
 }
 
 // Temp-file + rename so a crash mid-write can't leave a half-written script or
-// inputs file behind — the same pattern oauthStore.ts uses for oauth.json.
+// requests file behind — the same pattern oauthStore.ts uses for oauth.json.
 async function writeFileAtomic(path: string, content: string): Promise<void> {
   await fs.mkdir(dirname(path), { recursive: true })
   const tmp = `${path}.tmp`
   await fs.writeFile(tmp, content, 'utf-8')
   await fs.rename(tmp, path)
+}
+
+// Saved requests echo argument values the user typed, which may include
+// secrets — keep the file private, same rationale as store.ts's config.json.
+// Best-effort: an unsupported FS must not break persistence.
+async function tightenPermissions(path: string): Promise<void> {
+  try {
+    await fs.chmod(path, 0o600)
+  } catch {
+    // See above.
+  }
 }
 
 export function createScriptStore(root: string): ScriptStore {
@@ -94,33 +108,6 @@ export function createScriptStore(root: string): ScriptStore {
         return
       }
       await writeFileAtomic(path, content)
-    },
-
-    async readInputs(kind, name) {
-      const raw = await readFileOrNull(inputsPath(root, kind, name))
-      if (raw === null) return null
-      try {
-        return JSON.parse(raw) as Record<string, unknown>
-      } catch {
-        // A corrupt or partially-written inputs file is treated as absent
-        // rather than surfacing a raw parse error — it's a machine-managed
-        // cache of last-used values, not something worth failing a call over.
-        return null
-      }
-    },
-
-    async writeInputs(kind, name, inputs) {
-      const path = inputsPath(root, kind, name)
-      await writeFileAtomic(path, JSON.stringify(inputs, null, 2))
-      // Inputs echo argument values the user typed, which may include
-      // secrets — keep the file private, same rationale as store.ts's
-      // config.json. Best-effort: an unsupported FS must not break
-      // persistence.
-      try {
-        await fs.chmod(path, 0o600)
-      } catch {
-        // See above.
-      }
     },
 
     async listScripts() {
@@ -141,6 +128,28 @@ export function createScriptStore(root: string): ScriptStore {
         }
       }
       return found
+    },
+
+    async readRequests(kind, name) {
+      const raw = await readFileOrNull(requestsPath(root, kind, name))
+      if (raw === null) return null
+      try {
+        return JSON.parse(raw) as RequestsFile
+      } catch {
+        // A corrupt file (e.g. a synced-folder conflict copy) is treated as
+        // absent, not a thrown error.
+        return null
+      }
+    },
+
+    async writeRequests(kind, name, file) {
+      const path = requestsPath(root, kind, name)
+      if (file.requests.length === 0) {
+        await fs.rm(path, { force: true })
+        return
+      }
+      await writeFileAtomic(path, JSON.stringify(file, null, 2))
+      await tightenPermissions(path)
     }
   }
 }

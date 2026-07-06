@@ -79,8 +79,6 @@ export function PromptDetailView({
     setSelectedId(null)
     dock.reveal()
     setRunning(true)
-    // See ToolDetailView.handleExecute — best-effort, must never block the get.
-    window.api?.testing?.saveInputs(serverId, 'prompt', prompt.name, payload).catch(() => {})
     try {
       await getPrompt(serverId, prompt.name, payload)
     } finally {

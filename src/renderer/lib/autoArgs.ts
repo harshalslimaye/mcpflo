@@ -31,21 +31,43 @@ export interface AutoArgsResult {
   args: Record<string, unknown>
 }
 
-// Best-effort args for a server-level "run all tests" pass: seed schema
-// defaults the same way the Params form does, then report whether every
-// required field ended up filled.
-export function autoToolArgs(tool: Tool): AutoArgsResult {
+// Args for a server-level "run all tests" pass. `testArgs` is a single
+// capability's marked Saved Request (its `.args`), or `null` when none is
+// marked — there is no other fallback (e.g. no last-executed-args cache):
+// schema defaults, overridden by the marked request when one exists, then a
+// required-fields check decides `ok`.
+export function resolveToolArgs(
+  tool: Tool,
+  testArgs: Record<string, unknown> | null
+): AutoArgsResult {
   const schema = tool.inputSchema as RJSFSchema
   const seeded = seedToolDefaults(schema)
+  // The marked request wins per key; schema defaults still fill in anything
+  // it doesn't cover (e.g. a field the schema gained after the request was
+  // saved).
+  const merged = testArgs ? { ...seeded, ...testArgs } : seeded
   const required = Array.isArray(schema.required) ? schema.required : []
-  const ok = required.every((key) => !isUnset(seeded[key]))
-  return { ok, args: seeded }
+  const ok = required.every((key) => !isUnset(merged[key]))
+  return { ok, args: merged }
 }
 
 // A prompt argument is a plain { name, required? } pair — no schema, no
-// default value concept. Any required argument can't be auto-filled, so the
-// whole prompt is skipped rather than guessed at.
-export function autoPromptArgs(prompt: Prompt): AutoArgsResult {
-  const hasRequired = (prompt.arguments ?? []).some((a) => a.required)
-  return hasRequired ? { ok: false, args: {} } : { ok: true, args: {} }
+// default value concept, so there's nothing to seed the way tool args are.
+// `testArgs` (a marked Saved Request's raw args) is filtered to string-valued
+// entries only, since prompts/get needs Record<string, string> on the wire.
+// `null` reduces to: ok only when the prompt has no required arguments at
+// all, since none can be auto-filled without a marked request.
+export function resolvePromptArgs(
+  prompt: Prompt,
+  testArgs: Record<string, unknown> | null
+): AutoArgsResult {
+  const stringArgs: Record<string, unknown> = {}
+  if (testArgs) {
+    for (const [key, value] of Object.entries(testArgs)) {
+      if (typeof value === 'string' && value !== '') stringArgs[key] = value
+    }
+  }
+  const required = (prompt.arguments ?? []).filter((a) => a.required).map((a) => a.name)
+  const ok = required.every((name) => typeof stringArgs[name] === 'string')
+  return { ok, args: stringArgs }
 }

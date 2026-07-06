@@ -2,12 +2,16 @@ import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
+import type { SavedRequest } from '../../../shared/testing.types'
 import { Toggle } from '../ui/Toggle'
 import { Tabs, type TabItem } from '../ui/Tabs'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
 import { TestScriptEditor } from '../shared/TestScriptEditor'
 import { useTestScript } from '../shared/useTestScript'
+import { useSavedRequests } from '../shared/useSavedRequests'
+import { SavedRequestRow } from '../shared/SavedRequestRow'
+import { SaveRequestButton } from '../shared/SaveRequestButton'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
@@ -16,7 +20,7 @@ import { requiredSummary } from './rjsf/formStatus'
 import { estimateToolDefinitionPayload } from '../../lib/contextBudget'
 import { seedToolDefaults } from '../../lib/autoArgs'
 
-export type RequestTab = 'params' | 'schema' | 'tokens' | 'tests'
+export type RequestTab = 'params' | 'saved' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
 
 interface ToolRequestPanelProps {
@@ -38,6 +42,7 @@ interface ToolRequestPanelProps {
 
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'params', label: 'Params' },
+  { key: 'saved', label: 'Saved' },
   { key: 'schema', label: 'Schema' },
   { key: 'tokens', label: 'Tokens' },
   { key: 'tests', label: 'Tests' }
@@ -73,6 +78,9 @@ export function ToolRequestPanel({
     hasScript,
     onChange: handleScriptChange
   } = useTestScript(serverId, 'tool', tool.name)
+
+  // Named, reusable argument sets for the Saved tab — see useSavedRequests.
+  const savedRequests = useSavedRequests(serverId, 'tool', tool.name)
 
   const schema = tool.inputSchema as RJSFSchema
   // A schema with no declared properties has no form to render.
@@ -140,6 +148,32 @@ export function ToolRequestPanel({
     setMode('form')
   }
 
+  // Load copies a saved request into the live Params form (seeded through
+  // schema defaults the same way the History-prefill path does, so a request
+  // saved before the schema gained a field still gets a sensible value for
+  // it) and switches to the Params tab — a one-way copy, not a live binding,
+  // so later form edits never mutate the saved entry.
+  function handleLoadSavedRequest(request: SavedRequest): void {
+    setFormData(
+      getDefaultFormState(validator, schema, request.args, schema) as Record<string, unknown>
+    )
+    setMode('form')
+    setTouched(new Set())
+    onTabChange('params')
+  }
+
+  // Snapshots whatever the live Params form currently holds — the parsed Raw
+  // JSON object in JSON mode, or the form state in form mode — under the
+  // given name (from the footer Save button's popover; SaveRequestButton
+  // itself already defaults an empty name to "Request N"). The button is
+  // disabled by its caller when Raw JSON mode doesn't currently parse, so
+  // `raw` is only null in a state the button should never have allowed.
+  function handleSaveCurrentAs(name: string): void {
+    const raw = mode === 'json' ? (jsonParse.ok ? jsonParse.value : null) : formData
+    if (raw === null) return
+    savedRequests.add(name, raw)
+  }
+
   const executeDisabled = running || (mode === 'json' ? !jsonValid : !formValid)
 
   // Footer hint: required/missing counts in form mode, JSON validity in JSON mode.
@@ -157,9 +191,13 @@ export function ToolRequestPanel({
     onExecute(payload)
   }
 
-  const tabItems: TabItem<RequestTab>[] = TABS.map((tab) =>
-    tab.key === 'tests' && hasScript ? { ...tab, dotLabel: 'Has a saved test script' } : tab
-  )
+  const tabItems: TabItem<RequestTab>[] = TABS.map((tab) => {
+    if (tab.key === 'tests' && hasScript) return { ...tab, dotLabel: 'Has a saved test script' }
+    if (tab.key === 'saved' && savedRequests.requests.length > 0) {
+      return { ...tab, count: savedRequests.requests.length }
+    }
+    return tab
+  })
 
   const headerEnd = (
     <>
@@ -189,8 +227,61 @@ export function ToolRequestPanel({
         disabled: executeDisabled,
         onRun: handleExecute
       }}
+      footerExtra={
+        !isEmpty && (
+          <SaveRequestButton
+            disabled={mode === 'json' && !jsonValid}
+            requestCount={savedRequests.requests.length}
+            onSave={handleSaveCurrentAs}
+          />
+        )
+      }
     >
-      {activeTab === 'schema' ? (
+      {activeTab === 'saved' ? (
+        <div className="flex flex-col gap-3">
+          {savedRequests.requests.length === 0 ? (
+            <p className="text-sm text-text-muted">
+              No saved requests yet. Fill in the Params tab, then save it here as a reusable
+              request.
+            </p>
+          ) : (
+            <>
+              {savedRequests.testRequestId && (
+                <p className="text-[12.5px] text-text-muted">
+                  {`Automated test runs use "${
+                    savedRequests.requests.find((r) => r.id === savedRequests.testRequestId)?.name
+                  }" for this capability.`}
+                </p>
+              )}
+              {/* Bounded + internally scrollable, same pattern as the object-params
+                  editor's row list (AddServerModal.tsx) — scrollbar-gutter keeps
+                  the border from shifting when the bar appears; the themed
+                  scrollbar itself is global (base.css), no extra class needed. */}
+              <div className="flex max-h-96 flex-col overflow-y-auto rounded-[8px] border border-border-soft [scrollbar-gutter:stable]">
+                {savedRequests.requests.map((r) => (
+                  <SavedRequestRow
+                    key={r.id}
+                    request={r}
+                    schema={schema}
+                    uiSchema={uiSchema}
+                    editable={!isEmpty}
+                    isTestDefault={savedRequests.testRequestId === r.id}
+                    onLoad={() => handleLoadSavedRequest(r)}
+                    onUpdateArgs={(args) => savedRequests.updateArgs(r.id, args)}
+                    onRename={(newName) => savedRequests.rename(r.id, newName)}
+                    onRemove={() => savedRequests.remove(r.id)}
+                    onSetTestDefault={() =>
+                      savedRequests.setTestRequestId(
+                        savedRequests.testRequestId === r.id ? undefined : r.id
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : activeTab === 'schema' ? (
         <SchemaTab schema={tool.inputSchema} />
       ) : activeTab === 'tokens' ? (
         <TokenFootprintView

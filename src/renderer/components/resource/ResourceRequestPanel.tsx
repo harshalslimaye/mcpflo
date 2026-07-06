@@ -26,9 +26,9 @@ interface ResourceRequestPanelProps {
 
 // A resource has no parameters to fill — the request is just the (read-only) uri
 // and the Read action — so the Details tab shows that read-only context inline,
-// same as before this component had any tabs at all. There is no `.inputs.json`
-// concept for a resource (its "arguments" are just its own fixed uri), so —
-// unlike tools/prompts — nothing here ever calls `testing.saveInputs`.
+// same as before this component had any tabs at all. Its "arguments" are just
+// its own fixed uri, so — unlike tools/prompts — there's no Saved Requests
+// concept here either.
 export function ResourceRequestPanel({
   resource,
   serverId,

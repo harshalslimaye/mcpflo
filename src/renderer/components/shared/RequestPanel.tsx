@@ -13,6 +13,10 @@ interface RequestPanelProps {
     disabled: boolean
     onRun: () => void
   }
+  // Optional secondary footer control, rendered just left of the run button —
+  // currently only the tool/prompt panels' Saved-tab "Save" button+popover;
+  // resource calls have no saved-request concept and omit this.
+  footerExtra?: React.ReactNode
   // The panel body.
   children: React.ReactNode
 }
@@ -24,6 +28,7 @@ export function RequestPanel({
   headerEnd,
   statusHint,
   run,
+  footerExtra,
   children
 }: RequestPanelProps): React.JSX.Element {
   function handleRun(): void {
@@ -55,6 +60,7 @@ export function RequestPanel({
       <div className="flex items-center gap-3 border-t border-border-soft bg-bg-elevated px-4 py-[13px]">
         <span className="font-mono text-[11.5px] text-fg-faint">{statusHint}</span>
         <div className="flex-1" />
+        {footerExtra}
         <button
           type="button"
           onClick={handleRun}

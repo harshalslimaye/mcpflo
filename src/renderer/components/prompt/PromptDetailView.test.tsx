@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { PromptDetailView } from './PromptDetailView'
 import { useServerStore, promptKey, type PromptGetRecord } from '../../stores/serverStore'
@@ -103,31 +103,6 @@ describe('PromptDetailView', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'topic' }), { target: { value: 'mcp' } })
     fireEvent.click(screen.getByRole('button', { name: /Get Prompt/ }))
     expect(mockGetPrompt).toHaveBeenCalledWith('srv', 'summarize', { topic: 'mcp' })
-  })
-
-  describe('with a stubbed testing API', () => {
-    const saveInputs = vi.fn().mockResolvedValue(undefined)
-
-    beforeEach(() => {
-      Object.defineProperty(window, 'api', {
-        configurable: true,
-        // getScript must resolve (not be missing) — PromptRequestPanel's
-        // Tests tab loads a script on mount regardless of the active tab.
-        value: { testing: { getScript: vi.fn().mockResolvedValue(null), saveInputs } }
-      })
-    })
-
-    afterEach(() => {
-      // @ts-expect-error — test-only cleanup of a global stubbed above.
-      delete window.api
-    })
-
-    it('fires testing.saveInputs with the call arguments when Get Prompt is clicked', () => {
-      renderView()
-      fireEvent.change(screen.getByRole('textbox', { name: 'topic' }), { target: { value: 'mcp' } })
-      fireEvent.click(screen.getByRole('button', { name: /Get Prompt/ }))
-      expect(saveInputs).toHaveBeenCalledWith('srv', 'prompt', 'summarize', { topic: 'mcp' })
-    })
   })
 
   it('shows a Getting… state while a get is in flight', () => {

@@ -23,7 +23,7 @@ import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
 import type { TestKind, TestRunSummary } from '../../shared/testing.types'
-import { autoToolArgs, autoPromptArgs } from '../lib/autoArgs'
+import { resolveToolArgs, resolvePromptArgs } from '../lib/autoArgs'
 
 // Routes an MCPFlo operational failure to the toast surface. Used by actions
 // that talk to the main process, where a rejection has no other home (unlike
@@ -171,9 +171,10 @@ export function promptKey(serverId: string, promptName: string): string {
 }
 
 // A capability's last Tests-tab-triggered run. `skipped` means the capability
-// has a saved script but couldn't be auto-invoked (a required tool/prompt
-// argument had no derivable default — see lib/autoArgs) — distinct from a
-// real pass/fail, so the server-level Tests tab doesn't report a false result.
+// has a saved script but couldn't be auto-invoked — a required tool/prompt
+// argument had no value even after layering its marked Saved Request (if any)
+// over schema defaults, see lib/autoArgs — distinct from a real pass/fail, so
+// the server-level Tests tab doesn't report a false result.
 export type TestsTabRunState =
   | { state: 'running' }
   | { state: 'skipped' }
@@ -701,29 +702,46 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       return
     }
 
-    // Best-effort auto-args per kind — a resource read takes none at all.
-    // `ok: false` means a required field has no derivable default, so the
+    // Args per kind — a resource read takes none at all. The single source
+    // for tools/prompts is whichever Saved Request is marked "use for tests"
+    // on that capability's own Saved tab, layered over schema defaults;
+    // there is no other fallback (e.g. no last-executed-args cache). `ok:
+    // false` means a required field is still unset after that, so the
     // capability is marked "skipped" rather than invoked with guessed args.
     let toolArgs: Record<string, unknown> = {}
     let promptArgs: Record<string, string> = {}
-    if (kind === 'tool') {
-      const tool = server.tools.find((t) => t.name === name)
-      if (!tool) return
-      const auto = autoToolArgs(tool)
-      if (!auto.ok) {
-        set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } } }))
-        return
+    if (kind === 'tool' || kind === 'prompt') {
+      // Best-effort — a failed read here must not abort the rest of a bulk
+      // "Run all tests" pass over one capability's metadata.
+      const requestsFile = await window.api.testing
+        .getRequests(serverId, kind, name)
+        .catch(() => null)
+      const marked = requestsFile?.requests.find((r) => r.id === requestsFile.testRequestId)
+      const testArgs = marked?.args ?? null
+
+      if (kind === 'tool') {
+        const tool = server.tools.find((t) => t.name === name)
+        if (!tool) return
+        const resolved = resolveToolArgs(tool, testArgs)
+        if (!resolved.ok) {
+          set((state) => ({
+            testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } }
+          }))
+          return
+        }
+        toolArgs = resolved.args
+      } else {
+        const prompt = server.prompts.find((p) => p.name === name)
+        if (!prompt) return
+        const resolved = resolvePromptArgs(prompt, testArgs)
+        if (!resolved.ok) {
+          set((state) => ({
+            testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } }
+          }))
+          return
+        }
+        promptArgs = resolved.args as Record<string, string>
       }
-      toolArgs = auto.args
-    } else if (kind === 'prompt') {
-      const prompt = server.prompts.find((p) => p.name === name)
-      if (!prompt) return
-      const auto = autoPromptArgs(prompt)
-      if (!auto.ok) {
-        set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } } }))
-        return
-      }
-      promptArgs = auto.args as Record<string, string>
     }
 
     set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'running' } } }))

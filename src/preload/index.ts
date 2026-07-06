@@ -22,7 +22,7 @@ import type {
   GetPromptResult,
   ResourceReadResult
 } from '../shared/mcp.types'
-import type { TestKind, TestRunSummary } from '../shared/testing.types'
+import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
 const api = {
   mcp: {
@@ -126,12 +126,10 @@ const api = {
       ipcRenderer.invoke('testing:getScript', id, kind, name),
     saveScript: (id: string, kind: TestKind, name: string, content: string): Promise<void> =>
       ipcRenderer.invoke('testing:saveScript', id, kind, name, content),
-    saveInputs: (
-      id: string,
-      kind: TestKind,
-      name: string,
-      inputs: Record<string, unknown>
-    ): Promise<void> => ipcRenderer.invoke('testing:saveInputs', id, kind, name, inputs),
+    getRequests: (id: string, kind: TestKind, name: string): Promise<RequestsFile | null> =>
+      ipcRenderer.invoke('testing:getRequests', id, kind, name),
+    saveRequests: (id: string, kind: TestKind, name: string, file: RequestsFile): Promise<void> =>
+      ipcRenderer.invoke('testing:saveRequests', id, kind, name, file),
     listScripts: (id: string): Promise<{ kind: TestKind; name: string }[]> =>
       ipcRenderer.invoke('testing:listScripts', id),
     run: (input: {

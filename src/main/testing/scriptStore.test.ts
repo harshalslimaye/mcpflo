@@ -62,28 +62,68 @@ describe('readScript / writeScript', () => {
   })
 })
 
-describe('readInputs / writeInputs', () => {
-  it('returns null when no inputs have been written', async () => {
-    expect(await store.readInputs('tool', 'get_weather')).toBeNull()
+describe('readRequests / writeRequests', () => {
+  it('returns null when no requests have been written', async () => {
+    expect(await store.readRequests('tool', 'get_weather')).toBeNull()
   })
 
-  it('round-trips a written inputs object', async () => {
-    await store.writeInputs('tool', 'get_weather', { city: 'Lisbon' })
-    expect(await store.readInputs('tool', 'get_weather')).toEqual({ city: 'Lisbon' })
+  it('round-trips a written requests file', async () => {
+    const file = {
+      requests: [
+        { id: '1', name: 'Happy path', args: { city: 'Lisbon' }, createdAt: 1, updatedAt: 1 }
+      ]
+    }
+    await store.writeRequests('tool', 'get_weather', file)
+    expect(await store.readRequests('tool', 'get_weather')).toEqual(file)
   })
 
-  it('treats a corrupt inputs file as absent rather than throwing', async () => {
-    await store.writeInputs('tool', 'get_weather', { city: 'Lisbon' })
-    const path = join(root, 'tool', `${encodeURIComponent('get_weather')}.inputs.json`)
+  it('treats a corrupt requests file as absent rather than throwing', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    const path = join(root, 'tool', `${encodeURIComponent('get_weather')}.requests.json`)
     await writeFile(path, '{ not json', 'utf-8')
-    expect(await store.readInputs('tool', 'get_weather')).toBeNull()
+    expect(await store.readRequests('tool', 'get_weather')).toBeNull()
   })
 
-  it('writes the inputs file with 0o600 permissions', async () => {
-    await store.writeInputs('tool', 'get_weather', { city: 'Lisbon' })
-    const path = join(root, 'tool', `${encodeURIComponent('get_weather')}.inputs.json`)
+  it('writes the requests file with 0o600 permissions', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    const path = join(root, 'tool', `${encodeURIComponent('get_weather')}.requests.json`)
     const mode = statSync(path).mode & 0o777
     expect(mode).toBe(0o600)
+  })
+
+  it('an empty requests list deletes the file rather than writing an empty one', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    await store.writeRequests('tool', 'get_weather', { requests: [] })
+    expect(await store.readRequests('tool', 'get_weather')).toBeNull()
+  })
+
+  it('deleting requests that were never written is a no-op, not an error', async () => {
+    await expect(
+      store.writeRequests('tool', 'never_written', { requests: [] })
+    ).resolves.toBeUndefined()
+  })
+
+  it('keeps requests independent from the script file for the same name', async () => {
+    await store.writeScript('tool', 'get_weather', 'test("a", function () {})')
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    await store.writeScript('tool', 'get_weather', '')
+    expect(await store.readScript('tool', 'get_weather')).toBeNull()
+    expect(await store.readRequests('tool', 'get_weather')).not.toBeNull()
+  })
+
+  it('round-trips a name with characters that need encoding (slashes, spaces)', async () => {
+    const name = 'weird/name with spaces'
+    const file = { requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }] }
+    await store.writeRequests('resource', name, file)
+    expect(await store.readRequests('resource', name)).toEqual(file)
   })
 })
 
@@ -114,8 +154,10 @@ describe('listScripts', () => {
     expect(await store.listScripts()).toEqual([])
   })
 
-  it('does not treat an .inputs.json file as a script', async () => {
-    await store.writeInputs('tool', 'get_weather', { city: 'Lisbon' })
+  it('does not treat a .requests.json file as a script', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
     expect(await store.listScripts()).toEqual([])
   })
 })

@@ -92,7 +92,12 @@ function CapabilityTestRow({
               Running…
             </span>
           ) : run?.state === 'skipped' ? (
-            <span className="text-[11.5px] text-orange-500">Skipped — needs input</span>
+            <span
+              className="text-[11.5px] text-orange-500"
+              title='Save a request on its Saved tab and mark it "Use for tests".'
+            >
+              Skipped — needs input
+            </span>
           ) : run?.state === 'done' ? (
             <span className="inline-flex items-center gap-2 text-[11.5px]">
               <span className="text-green">{run.summary.passed} passed</span>

@@ -1,6 +1,5 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
 import { getServers, getServerById, addServer, updateServer, removeServer } from './store'
 import {
   fetchCapabilities,
@@ -44,7 +43,7 @@ import type {
   GetPromptResult,
   ResourceReadResult
 } from '../shared/mcp.types'
-import type { TestKind, TestRunSummary } from '../shared/testing.types'
+import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
 export function registerIpcHandlers(): void {
   // In-flight capability fetches, keyed by server id, so a later
@@ -337,18 +336,24 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  // Saved Requests — a named list of reusable argument sets per capability,
+  // managed from that capability's own "Saved" tab. The renderer always
+  // sends the whole file on any edit; there's no per-request IPC method.
   ipcMain.handle(
-    'testing:saveInputs',
-    (
-      _event,
-      id: string,
-      kind: string,
-      name: string,
-      inputs: Record<string, unknown>
-    ): Promise<void> => {
+    'testing:getRequests',
+    (_event, id: string, kind: string, name: string): Promise<RequestsFile | null> => {
       assertValidServerId(id)
       assertValidTestKind(kind)
-      return createScriptStore(resolveTestsRoot(id)).writeInputs(kind, name, inputs)
+      return createScriptStore(resolveTestsRoot(id)).readRequests(kind, name)
+    }
+  )
+
+  ipcMain.handle(
+    'testing:saveRequests',
+    (_event, id: string, kind: string, name: string, file: RequestsFile): Promise<void> => {
+      assertValidServerId(id)
+      assertValidTestKind(kind)
+      return createScriptStore(resolveTestsRoot(id)).writeRequests(kind, name, file)
     }
   )
 
@@ -394,9 +399,7 @@ export function registerIpcHandlers(): void {
       ? await dialog.showOpenDialog(parent, { properties: ['openDirectory', 'createDirectory'] })
       : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     if (result.canceled || result.filePaths.length === 0) return null
-    const folder = result.filePaths[0]
-    await seedGitignore(folder)
-    return folder
+    return result.filePaths[0]
   })
 
   // Read-only: whether the server's configured tests folder (custom or
@@ -417,17 +420,4 @@ export function registerIpcHandlers(): void {
       return { path, isCustom: server.testsPath !== undefined, exists }
     }
   )
-}
-
-// Seeds a `.gitignore` excluding machine-managed `.inputs.json` files, once,
-// the first time a folder is chosen as a custom tests root — a custom folder
-// is meant to be a real, git-tracked project directory, unlike the default
-// userData location.
-async function seedGitignore(folder: string): Promise<void> {
-  const gitignorePath = join(folder, '.gitignore')
-  try {
-    await fs.access(gitignorePath)
-  } catch {
-    await fs.writeFile(gitignorePath, '*.inputs.json\n', 'utf-8')
-  }
 }

@@ -87,7 +87,7 @@ describe('ResourceRequestPanel — Tests tab', () => {
       saveScript = vi.fn().mockResolvedValue(undefined)
       Object.defineProperty(window, 'api', {
         configurable: true,
-        value: { testing: { getScript, saveScript, saveInputs: vi.fn(), run: vi.fn() } }
+        value: { testing: { getScript, saveScript, run: vi.fn() } }
       })
     })
 
