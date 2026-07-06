@@ -5,7 +5,7 @@
 <h1 align="center">MCPFlo</h1>
 
 <p align="center">
-  <strong>A visual testing tool for MCP (Model Context Protocol) servers.</strong><br/>
+  The deterministic testing platform for MCP (Model Context Protocol).</strong><br/>
   Think Bruno, but for MCP.
 </p>
 
