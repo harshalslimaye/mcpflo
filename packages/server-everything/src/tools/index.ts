@@ -18,6 +18,12 @@ import { registerTriggerSamplingRequestAsync } from './trigger-sampling-request-
 import { registerTriggerSamplingRequest } from './trigger-sampling-request'
 import { registerTriggerUrlElicitation } from './trigger-url-elicitation'
 import { registerGetRootsList } from './get-roots-list'
+import { registerComplexProfileIntake } from './complex-profile-intake'
+import { registerSourceSelectorOneof } from './source-selector-oneof'
+import { registerFiltersAnyofArray } from './filters-anyof-array'
+import { registerNotificationsMatrix } from './notifications-matrix'
+import { registerUntypedPayloadAndMap } from './untyped-payload-and-map'
+import { registerDeepNestingCutoff } from './deep-nesting-cutoff'
 
 // Tools with no capability dependency — safe to register immediately at
 // server construction, before any client has connected.
@@ -31,6 +37,12 @@ const registerFns: Array<(server: McpServer) => void> = [
   registerGetStructuredContent,
   registerGetResourceLinks,
   registerGzipFileAsResource,
+  registerComplexProfileIntake,
+  registerSourceSelectorOneof,
+  registerFiltersAnyofArray,
+  registerNotificationsMatrix,
+  registerUntypedPayloadAndMap,
+  registerDeepNestingCutoff,
   registerToggleSimulatedLogging,
   registerToggleSubscriberUpdates,
   registerTriggerLongRunningOperation
