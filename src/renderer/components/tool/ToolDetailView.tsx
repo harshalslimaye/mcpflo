@@ -97,6 +97,7 @@ export function ToolDetailView({
           <ToolHeader tool={tool} serverName={serverName} />
           <ToolRequestPanel
             tool={tool}
+            serverId={serverId}
             activeTab={activeTab}
             onTabChange={setActiveTab}
             prefill={effectivePrefill}

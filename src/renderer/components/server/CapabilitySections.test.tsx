@@ -106,4 +106,20 @@ describe('CapabilitySections', () => {
     expect(promptsHeader).toBeDisabled()
     expect(screen.getByText('create_repository')).toBeInTheDocument()
   })
+
+  describe('initialFilter', () => {
+    it('expands only the filtered category, collapsing the others', () => {
+      render(<CapabilitySections server={base} initialFilter="resources" />)
+      expect(screen.queryByText('create_repository')).not.toBeInTheDocument()
+      expect(screen.getByText('repo://octocat/hello-world/tree')).toBeInTheDocument()
+      expect(screen.queryByText('open_pr_review')).not.toBeInTheDocument()
+    })
+
+    it('expands all three when no filter is given', () => {
+      render(<CapabilitySections server={base} />)
+      expect(screen.getByText('create_repository')).toBeInTheDocument()
+      expect(screen.getByText('repo://octocat/hello-world/tree')).toBeInTheDocument()
+      expect(screen.getByText('open_pr_review')).toBeInTheDocument()
+    })
+  })
 })

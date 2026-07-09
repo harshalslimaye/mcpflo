@@ -17,8 +17,12 @@ import type {
   SamplingClosedEvent,
   SamplingResult,
   AuthEvent,
-  AuthDetails
+  AuthDetails,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult
 } from '../shared/mcp.types'
+import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
 const api = {
   mcp: {
@@ -116,6 +120,33 @@ const api = {
         ipcRenderer.removeListener('mcp:authEvent', listener)
       }
     }
+  },
+  testing: {
+    getScript: (id: string, kind: TestKind, name: string): Promise<string | null> =>
+      ipcRenderer.invoke('testing:getScript', id, kind, name),
+    saveScript: (id: string, kind: TestKind, name: string, content: string): Promise<void> =>
+      ipcRenderer.invoke('testing:saveScript', id, kind, name, content),
+    getRequests: (id: string, kind: TestKind, name: string): Promise<RequestsFile | null> =>
+      ipcRenderer.invoke('testing:getRequests', id, kind, name),
+    saveRequests: (id: string, kind: TestKind, name: string, file: RequestsFile): Promise<void> =>
+      ipcRenderer.invoke('testing:saveRequests', id, kind, name, file),
+    listScripts: (id: string): Promise<{ kind: TestKind; name: string }[]> =>
+      ipcRenderer.invoke('testing:listScripts', id),
+    run: (input: {
+      script: string
+      kind?: TestKind
+      result: ToolCallResult | GetPromptResult | ResourceReadResult
+      callDurationMs?: number
+    }): Promise<TestRunSummary> => ipcRenderer.invoke('testing:run', input),
+    // Opens a native folder-picker; resolves to the picked path, or null if
+    // cancelled. Persisting the choice is a separate mcp:updateServer call
+    // (see TestsFolderCard) — this only asks the OS for a folder.
+    chooseTestsFolder: (id: string): Promise<string | null> =>
+      ipcRenderer.invoke('testing:chooseTestsFolder', id),
+    getTestsFolderStatus: (
+      id: string
+    ): Promise<{ path: string; isCustom: boolean; exists: boolean }> =>
+      ipcRenderer.invoke('testing:getTestsFolderStatus', id)
   }
 }
 

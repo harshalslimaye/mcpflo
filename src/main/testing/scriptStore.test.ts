@@ -1,0 +1,200 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createScriptStore, escapesRoot, type ScriptStore } from './scriptStore'
+
+let root: string
+let store: ScriptStore
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'mcpflo-scriptstore-test-'))
+  store = createScriptStore(root)
+})
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true })
+})
+
+describe('readScript / writeScript', () => {
+  it('returns null when no script has been written', async () => {
+    expect(await store.readScript('tool', 'get_weather')).toBeNull()
+  })
+
+  it('round-trips a written script', async () => {
+    await store.writeScript('tool', 'get_weather', 'test("a", function () {})')
+    expect(await store.readScript('tool', 'get_weather')).toBe('test("a", function () {})')
+  })
+
+  it('creates the kind subdirectory on first write', async () => {
+    await store.writeScript('prompt', 'greeting', 'test("a", function () {})')
+    expect(await store.readScript('prompt', 'greeting')).toBe('test("a", function () {})')
+  })
+
+  it('an empty script deletes the file rather than writing a blank one', async () => {
+    await store.writeScript('tool', 'get_weather', 'test("a", function () {})')
+    await store.writeScript('tool', 'get_weather', '')
+    expect(await store.readScript('tool', 'get_weather')).toBeNull()
+  })
+
+  it('a whitespace-only script also deletes the file', async () => {
+    await store.writeScript('tool', 'get_weather', 'test("a", function () {})')
+    await store.writeScript('tool', 'get_weather', '   \n  ')
+    expect(await store.readScript('tool', 'get_weather')).toBeNull()
+  })
+
+  it('deleting a script that was never written is a no-op, not an error', async () => {
+    await expect(store.writeScript('tool', 'never_written', '')).resolves.toBeUndefined()
+  })
+
+  it('keeps different kinds of the same name independent', async () => {
+    await store.writeScript('tool', 'shared_name', 'tool script')
+    await store.writeScript('prompt', 'shared_name', 'prompt script')
+    expect(await store.readScript('tool', 'shared_name')).toBe('tool script')
+    expect(await store.readScript('prompt', 'shared_name')).toBe('prompt script')
+  })
+
+  it('round-trips a name with characters that need encoding (slashes, spaces)', async () => {
+    const name = 'weird/name with spaces'
+    await store.writeScript('resource', name, 'test("a", function () {})')
+    expect(await store.readScript('resource', name)).toBe('test("a", function () {})')
+  })
+})
+
+describe('readRequests / writeRequests', () => {
+  it('returns null when no requests have been written', async () => {
+    expect(await store.readRequests('tool', 'get_weather')).toBeNull()
+  })
+
+  it('round-trips a written requests file', async () => {
+    const file = {
+      requests: [
+        { id: '1', name: 'Happy path', args: { city: 'Lisbon' }, createdAt: 1, updatedAt: 1 }
+      ]
+    }
+    await store.writeRequests('tool', 'get_weather', file)
+    expect(await store.readRequests('tool', 'get_weather')).toEqual(file)
+  })
+
+  it('treats a corrupt requests file as absent rather than throwing', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    const path = join(root, 'tool', `${encodeURIComponent('get_weather')}.requests.json`)
+    await writeFile(path, '{ not json', 'utf-8')
+    expect(await store.readRequests('tool', 'get_weather')).toBeNull()
+  })
+
+  it('writes the requests file with 0o600 permissions', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    const path = join(root, 'tool', `${encodeURIComponent('get_weather')}.requests.json`)
+    const mode = statSync(path).mode & 0o777
+    expect(mode).toBe(0o600)
+  })
+
+  it('an empty requests list deletes the file rather than writing an empty one', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    await store.writeRequests('tool', 'get_weather', { requests: [] })
+    expect(await store.readRequests('tool', 'get_weather')).toBeNull()
+  })
+
+  it('deleting requests that were never written is a no-op, not an error', async () => {
+    await expect(
+      store.writeRequests('tool', 'never_written', { requests: [] })
+    ).resolves.toBeUndefined()
+  })
+
+  it('keeps requests independent from the script file for the same name', async () => {
+    await store.writeScript('tool', 'get_weather', 'test("a", function () {})')
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    await store.writeScript('tool', 'get_weather', '')
+    expect(await store.readScript('tool', 'get_weather')).toBeNull()
+    expect(await store.readRequests('tool', 'get_weather')).not.toBeNull()
+  })
+
+  it('round-trips a name with characters that need encoding (slashes, spaces)', async () => {
+    const name = 'weird/name with spaces'
+    const file = { requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }] }
+    await store.writeRequests('resource', name, file)
+    expect(await store.readRequests('resource', name)).toEqual(file)
+  })
+})
+
+describe('listScripts', () => {
+  it('returns an empty list when nothing has been written', async () => {
+    expect(await store.listScripts()).toEqual([])
+  })
+
+  it('lists every written script across all three kinds, decoding names', async () => {
+    await store.writeScript('tool', 'get_weather', 'a')
+    await store.writeScript('prompt', 'greeting', 'b')
+    await store.writeScript('resource', 'weird/name', 'c')
+
+    const results = await store.listScripts()
+    expect(results).toHaveLength(3)
+    expect(results).toEqual(
+      expect.arrayContaining([
+        { kind: 'tool', name: 'get_weather' },
+        { kind: 'prompt', name: 'greeting' },
+        { kind: 'resource', name: 'weird/name' }
+      ])
+    )
+  })
+
+  it('does not list a script after it was deleted via an empty write', async () => {
+    await store.writeScript('tool', 'get_weather', 'a')
+    await store.writeScript('tool', 'get_weather', '')
+    expect(await store.listScripts()).toEqual([])
+  })
+
+  it('does not treat a .requests.json file as a script', async () => {
+    await store.writeRequests('tool', 'get_weather', {
+      requests: [{ id: '1', name: 'a', args: {}, createdAt: 1, updatedAt: 1 }]
+    })
+    expect(await store.listScripts()).toEqual([])
+  })
+})
+
+describe('path safety', () => {
+  it('refuses to read outside the tests root even if a caller bypasses the TestKind type', async () => {
+    const maliciousKind = '../../etc' as Parameters<ScriptStore['readScript']>[0]
+    await expect(store.readScript(maliciousKind, 'passwd')).rejects.toThrow(
+      /outside the tests root/
+    )
+  })
+
+  describe('escapesRoot', () => {
+    it('flags a POSIX-style escape', () => {
+      expect(escapesRoot('..')).toBe(true)
+      expect(escapesRoot('../evil')).toBe(true)
+    })
+
+    it('flags a Windows-style escape (backslash-joined, as path.relative returns on Windows)', () => {
+      // Regression: a forward-slash-only `startsWith('../')` check misses
+      // this — path.relative joins with `\` on Windows, so the exact same
+      // escape that's caught on POSIX would previously slip through there.
+      expect(escapesRoot('..\\evil')).toBe(true)
+      expect(escapesRoot('..\\..\\evil')).toBe(true)
+    })
+
+    it('flags an absolute path', () => {
+      // `isAbsolute` is platform-native — on POSIX (where this test runs)
+      // that means a leading `/`. A Windows drive-absolute path (`C:\...`)
+      // isn't reachable from `path.relative` on POSIX, and testing it here
+      // would just assert POSIX `isAbsolute`'s own (unrelated) behavior.
+      expect(escapesRoot('/etc/passwd')).toBe(true)
+    })
+
+    it('does not flag a path that stays inside the root', () => {
+      expect(escapesRoot('tool/name.test.js')).toBe(false)
+      expect(escapesRoot('tool\\name.test.js')).toBe(false)
+    })
+  })
+})

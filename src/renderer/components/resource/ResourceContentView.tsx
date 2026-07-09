@@ -5,8 +5,9 @@ import { ResultPanel, type DockChrome } from '../shared/ResultPanel'
 import { PrettyJson } from '../shared/json/PrettyJson'
 import { CopyButton } from '../shared/json/CopyButton'
 import { ResponseFootprintTab } from '../shared/ResponseFootprintTab'
+import { TestResultsView } from '../shared/TestResultsView'
 
-export type ResourceResultTab = 'preview' | 'raw' | 'pretty' | 'tokens'
+export type ResourceResultTab = 'preview' | 'raw' | 'pretty' | 'tokens' | 'tests'
 
 interface ResourceContentViewProps extends DockChrome {
   // Absent while a read is in flight — the view then renders its reading state.
@@ -130,11 +131,12 @@ export function ResourceContentView({
   onTabChange,
   ...dock
 }: ResourceContentViewProps): React.JSX.Element {
-  const tabs: { key: ResourceResultTab; label: string }[] = [
+  const tabs: { key: ResourceResultTab; label: string; count?: number }[] = [
     { key: 'preview', label: 'Preview' },
     { key: 'raw', label: 'Raw' },
     { key: 'pretty', label: 'Pretty' },
-    { key: 'tokens', label: 'Tokens' }
+    { key: 'tokens', label: 'Tokens' },
+    { key: 'tests', label: 'Tests', count: record?.testRun?.total }
   ]
 
   return (
@@ -147,7 +149,9 @@ export function ResourceContentView({
       onTabChange={onTabChange}
       {...dock}
     >
-      {record ? (
+      {tab === 'tests' ? (
+        <TestResultsView summary={record?.testRun} />
+      ) : record ? (
         <ResponseBody record={record} tab={tab} />
       ) : busy ? (
         <p className="py-6 text-center text-sm text-text-muted">Reading…</p>
@@ -168,7 +172,7 @@ function ResponseBody({
   tab
 }: {
   record: ResourceReadRecord
-  tab: ResourceResultTab
+  tab: Exclude<ResourceResultTab, 'tests'>
 }): React.JSX.Element {
   if (record.responseTruncated) {
     return (

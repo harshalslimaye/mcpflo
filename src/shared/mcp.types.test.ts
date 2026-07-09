@@ -276,8 +276,8 @@ describe('ServerConfig', () => {
   })
 
   it('does not carry runtime state', () => {
-    expect((serverConfig as Record<string, unknown>).status).toBeUndefined()
-    expect((serverConfig as Record<string, unknown>).tools).toBeUndefined()
+    expect((serverConfig as unknown as Record<string, unknown>).status).toBeUndefined()
+    expect((serverConfig as unknown as Record<string, unknown>).tools).toBeUndefined()
   })
 
   it('accepts an optional overrides.timeoutMs', () => {

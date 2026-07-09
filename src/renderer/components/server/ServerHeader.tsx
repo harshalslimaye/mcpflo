@@ -69,13 +69,17 @@ export function ServerHeader({ server }: ServerHeaderProps): React.JSX.Element {
         </span>
       </div>
 
-      <div className="flex items-center gap-2 text-[12.5px] text-text-muted">
+      {/* min-w-0 on the row is required for the truncating span below to
+          actually shrink below its content width — a flex item's default
+          min-width is its content size, which silently defeats `truncate`
+          without this. */}
+      <div className="flex min-w-0 items-center gap-2 text-[12.5px] text-text-muted">
         <span className="shrink-0 text-fg-faint">{transport.icon}</span>
-        <span className="rounded-[5px] border border-border bg-bg-elevated px-1.5 py-px text-[11px] uppercase tracking-wide">
+        <span className="shrink-0 rounded-[5px] border border-border bg-bg-elevated px-1.5 py-px text-[11px] uppercase tracking-wide">
           {transport.label}
         </span>
-        <span className="text-fg-faint">·</span>
-        <span className="truncate font-mono text-[12px]">{transport.target}</span>
+        <span className="shrink-0 text-fg-faint">·</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{transport.target}</span>
       </div>
 
       {server.status === 'error' && server.error ? (

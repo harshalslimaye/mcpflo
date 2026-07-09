@@ -8,6 +8,9 @@ import type {
   ResourceReadOutcome,
   PromptGetOutcome,
   ToolCallNotification,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult,
   ElicitationRequestEvent,
   ElicitationResult,
   SamplingRequestEvent,
@@ -16,8 +19,11 @@ import type {
   AuthEvent
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
+import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
+import type { TestKind, TestRunSummary } from '../../shared/testing.types'
+import { resolveToolArgs, resolvePromptArgs } from '../lib/autoArgs'
 
 // Routes an MCPFlo operational failure to the toast surface. Used by actions
 // that talk to the main process, where a rejection has no other home (unlike
@@ -46,6 +52,12 @@ export interface ToolCallRecord {
   notifications: ToolCallNotification[]
   durationMs: number
   at: number
+  // Result of running this tool's saved test script against this call's
+  // result, when one exists. Undefined (not "empty") whenever no test run was
+  // attempted at all — a protocol-level failure (no result to test against)
+  // or a tool with no saved script — so the Tests tab can tell "never ran"
+  // apart from "ran zero tests".
+  testRun?: TestRunSummary
 }
 
 // A single recorded resource read, kept in memory for the session. Mirrors
@@ -64,6 +76,9 @@ export interface ResourceReadRecord {
   error?: string
   durationMs: number
   at: number
+  // See ToolCallRecord.testRun. A resource read has no arguments, so there's
+  // no saved-inputs concept here — only the saved script matters.
+  testRun?: TestRunSummary
 }
 
 // A single recorded prompt get, kept in memory for the session. Like a resource
@@ -84,6 +99,8 @@ export interface PromptGetRecord {
   error?: string
   durationMs: number
   at: number
+  // See ToolCallRecord.testRun.
+  testRun?: TestRunSummary
 }
 
 // An outcome counts as an error when the connection failed, the server returned
@@ -102,6 +119,42 @@ function outcomeStatus(
   return result?.isError === true ? 'error' : 'success'
 }
 
+// Attempts to run this item's saved test script against a just-completed
+// call's result, returning the summary (or undefined if none was run).
+// Deliberately returns rather than mutating a record in place: the caller
+// commits the call's own response to the store first — so the Response panel
+// never waits on this — then, once this resolves, patches `testRun` into a
+// *new* record object via a second `set()` (Zustand/React only re-render on a
+// changed reference, so mutating the already-committed record wouldn't
+// actually update anything on screen).
+//
+// A no-op whenever there's nothing to test against: a protocol-level failure
+// with no well-formed result, no `window.api.testing` (real Electron always
+// has it via preload), or no saved script. Never throws: a failure running
+// tests must not affect the call's own recorded outcome, so it's reported as
+// a toast instead.
+async function runTestForCall(
+  serverId: string,
+  kind: TestKind,
+  name: string,
+  response: unknown,
+  callDurationMs: number
+): Promise<TestRunSummary | undefined> {
+  if (!window.api?.testing) return undefined
+  const result = extractEnvelopeResult<ToolCallResult | GetPromptResult | ResourceReadResult>(
+    response
+  )
+  if (!result) return undefined
+  try {
+    const script = await window.api.testing.getScript(serverId, kind, name)
+    if (!script || script.trim() === '') return undefined
+    return await window.api.testing.run({ script, kind, result, callDurationMs })
+  } catch (err) {
+    reportError(err)
+    return undefined
+  }
+}
+
 // History is keyed per tool; names are only unique within a server.
 export function toolKey(serverId: string, toolName: string): string {
   return `${serverId}::${toolName}`
@@ -115,6 +168,23 @@ export function resourceKey(serverId: string, uri: string): string {
 // Get history is keyed per prompt; names are only unique within a server.
 export function promptKey(serverId: string, promptName: string): string {
   return `${serverId}::${promptName}`
+}
+
+// A capability's last Tests-tab-triggered run. `skipped` means the capability
+// has a saved script but couldn't be auto-invoked — a required tool/prompt
+// argument had no value even after layering its marked Saved Request (if any)
+// over schema defaults, see lib/autoArgs — distinct from a real pass/fail, so
+// the server-level Tests tab doesn't report a false result.
+export type TestsTabRunState =
+  | { state: 'running' }
+  | { state: 'skipped' }
+  | { state: 'done'; summary: TestRunSummary }
+
+// Keyed per capability across all three kinds — unlike history's three
+// separate maps, a single map is simpler here since callers already have
+// `kind` in hand (from listScripts) rather than branching on call type.
+export function testsTabKey(serverId: string, kind: TestKind, name: string): string {
+  return `${serverId}::${kind}::${name}`
 }
 
 // Identifies a selected tool. Tool names are only unique within a server, so
@@ -174,6 +244,13 @@ interface ServerStore {
   // Sampling requests awaiting a user answer, in arrival order. Same queueing
   // behaviour as elicitations.
   pendingSamplings: SamplingRequestEvent[]
+  // Last Tests-tab-triggered run per capability, keyed by testsTabKey.
+  // Session-only (never persisted) and deliberately separate from the per-call
+  // `testRun` fields above: those are "this one call's result scored against
+  // the script", this is "the Tests tab's own last aggregate run" — a
+  // Tests-tab run shouldn't synthesize a fake history entry to hang its result
+  // off of.
+  testsTabRuns: Record<string, TestsTabRunState>
 
   hydrate: () => Promise<void>
   selectServer: (id: string | null) => void
@@ -217,6 +294,14 @@ interface ServerStore {
   // Applies an OAuth flow event (pushed over mcp:authEvent via AuthHost) to the
   // owning server's `auth` field. Status is never touched here.
   handleAuthEvent: (event: AuthEvent) => void
+  // Runs one capability's saved script via a real invocation (best-effort
+  // auto-args — see lib/autoArgs) and records the outcome in `testsTabRuns`.
+  // A no-op if the capability has no saved script.
+  runCapabilityTests: (serverId: string, kind: TestKind, name: string) => Promise<void>
+  // Runs every capability with a saved script, sequentially (a manual, once-
+  // in-a-while bulk action, not a hot path — no need to parallelize calls
+  // against the same server).
+  runAllTests: (serverId: string) => Promise<void>
 }
 
 function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = false): MCPServer {
@@ -254,6 +339,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   liveNotifications: {},
   pendingElicitations: [],
   pendingSamplings: [],
+  testsTabRuns: {},
 
   hydrate: async () => {
     try {
@@ -402,6 +488,33 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         liveNotifications: live
       }
     })
+
+    // Auto-run this tool's saved test script against the result, if any —
+    // after the response above is already committed and visible, so a slow
+    // first-ever run (QuickJS's WASM cold-compile) never delays the Response
+    // panel. See runTestForCall: no-ops on a transport/protocol failure with
+    // no result; a tool result reporting `isError: true` is still a real
+    // result, the whole point of `res.getIsError()`, so that case still runs.
+    if (record) {
+      const recordId = record.id
+      const testRun = await runTestForCall(
+        serverId,
+        'tool',
+        toolName,
+        record.response,
+        record.durationMs
+      )
+      if (testRun) {
+        set((state) => ({
+          history: {
+            ...state.history,
+            [key]: (state.history[key] ?? []).map((r) =>
+              r.id === recordId ? { ...r, testRun } : r
+            )
+          }
+        }))
+      }
+    }
   },
 
   clearHistory: (serverId, toolName) => {
@@ -459,6 +572,27 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         [key]: pushCapped(state.resourceHistory[key], committed)
       }
     }))
+
+    // Resources have no arguments, so there's nothing to save inputs for —
+    // just the saved script, if any. Run after the read above is already
+    // committed — see executeTool's runTestForCall comment.
+    const testRun = await runTestForCall(
+      serverId,
+      'resource',
+      uri,
+      committed.response,
+      committed.durationMs
+    )
+    if (testRun) {
+      set((state) => ({
+        resourceHistory: {
+          ...state.resourceHistory,
+          [key]: (state.resourceHistory[key] ?? []).map((r) =>
+            r.id === committed.id ? { ...r, testRun } : r
+          )
+        }
+      }))
+    }
   },
 
   clearResourceHistory: (serverId, uri) => {
@@ -518,6 +652,26 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         [key]: pushCapped(state.promptHistory[key], committed)
       }
     }))
+
+    // Run after the get above is already committed — see executeTool's
+    // runTestForCall comment.
+    const testRun = await runTestForCall(
+      serverId,
+      'prompt',
+      promptName,
+      committed.response,
+      committed.durationMs
+    )
+    if (testRun) {
+      set((state) => ({
+        promptHistory: {
+          ...state.promptHistory,
+          [key]: (state.promptHistory[key] ?? []).map((r) =>
+            r.id === committed.id ? { ...r, testRun } : r
+          )
+        }
+      }))
+    }
   },
 
   clearPromptHistory: (serverId, promptName) => {
@@ -527,6 +681,119 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       delete next[key]
       return { promptHistory: next }
     })
+  },
+
+  runCapabilityTests: async (serverId, kind, name) => {
+    const server = get().servers.find((s) => s.id === serverId)
+    if (!server) return
+    const key = testsTabKey(serverId, kind, name)
+
+    function clearRun(): void {
+      set((state) => {
+        const next = { ...state.testsTabRuns }
+        delete next[key]
+        return { testsTabRuns: next }
+      })
+    }
+
+    const script = await window.api.testing.getScript(serverId, kind, name)
+    if (!script || script.trim() === '') {
+      clearRun()
+      return
+    }
+
+    // Args per kind — a resource read takes none at all. The single source
+    // for tools/prompts is whichever Saved Request is marked "use for tests"
+    // on that capability's own Saved tab, layered over schema defaults;
+    // there is no other fallback (e.g. no last-executed-args cache). `ok:
+    // false` means a required field is still unset after that, so the
+    // capability is marked "skipped" rather than invoked with guessed args.
+    let toolArgs: Record<string, unknown> = {}
+    let promptArgs: Record<string, string> = {}
+    if (kind === 'tool' || kind === 'prompt') {
+      // Best-effort — a failed read here must not abort the rest of a bulk
+      // "Run all tests" pass over one capability's metadata.
+      const requestsFile = await window.api.testing
+        .getRequests(serverId, kind, name)
+        .catch(() => null)
+      const marked = requestsFile?.requests.find((r) => r.id === requestsFile.testRequestId)
+      const testArgs = marked?.args ?? null
+
+      if (kind === 'tool') {
+        const tool = server.tools.find((t) => t.name === name)
+        if (!tool) return
+        const resolved = resolveToolArgs(tool, testArgs)
+        if (!resolved.ok) {
+          set((state) => ({
+            testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } }
+          }))
+          return
+        }
+        toolArgs = resolved.args
+      } else {
+        const prompt = server.prompts.find((p) => p.name === name)
+        if (!prompt) return
+        const resolved = resolvePromptArgs(prompt, testArgs)
+        if (!resolved.ok) {
+          set((state) => ({
+            testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'skipped' } }
+          }))
+          return
+        }
+        promptArgs = resolved.args as Record<string, string>
+      }
+    }
+
+    set((state) => ({ testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'running' } } }))
+
+    const at = Date.now()
+    try {
+      const outcome =
+        kind === 'tool'
+          ? await window.api.mcp.callTool(serverId, name, toolArgs)
+          : kind === 'resource'
+            ? await window.api.mcp.readResource(serverId, name)
+            : await window.api.mcp.getPrompt(serverId, name, promptArgs)
+
+      if (outcome.authRequired) {
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+        clearRun()
+        return
+      }
+
+      const result = extractEnvelopeResult<ToolCallResult | GetPromptResult | ResourceReadResult>(
+        outcome.response
+      )
+      if (!result) {
+        // Transport/protocol failure — nothing well-formed to score against a
+        // script, so this capability goes back to "not tested" rather than a
+        // misleading pass/fail.
+        clearRun()
+        return
+      }
+
+      const summary = await window.api.testing.run({
+        script,
+        kind,
+        result,
+        callDurationMs: Date.now() - at
+      })
+      set((state) => ({
+        testsTabRuns: { ...state.testsTabRuns, [key]: { state: 'done', summary } }
+      }))
+    } catch (err) {
+      reportError(err)
+      clearRun()
+    }
+  },
+
+  runAllTests: async (serverId) => {
+    const scripts = await window.api.testing.listScripts(serverId)
+    // Sequential: this is a manual, occasional bulk action against one
+    // server, not a hot path — no need to fire every call concurrently.
+    for (const { kind, name } of scripts) {
+      await get().runCapabilityTests(serverId, kind, name)
+    }
   },
 
   clearAllActivity: () =>

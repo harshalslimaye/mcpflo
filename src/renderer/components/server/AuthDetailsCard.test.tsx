@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { AuthDetailsCard } from './AuthDetailsCard'
 import type { MCPServer, AuthDetails, ServerAuthState } from '../../../shared/mcp.types'
 
@@ -120,5 +120,39 @@ describe('AuthDetailsCard', () => {
     expect(await screen.findByText('No session details available.')).toBeInTheDocument()
     // The header stays put — only the body swapped to the fallback message.
     expect(screen.getByText('Authentication')).toBeInTheDocument()
+  })
+
+  describe('auth_required', () => {
+    it('shows a minimal needs-re-auth message instead of vanishing, and never fetches', () => {
+      render(<AuthDetailsCard server={server({ status: 'auth_required' })} />)
+      expect(screen.getByText('Needs re-auth')).toBeInTheDocument()
+      expect(screen.getByText(/Sign-in has expired or was revoked/)).toBeInTheDocument()
+      expect(mockGetAuthDetails).not.toHaveBeenCalled()
+    })
+
+    it('includes the reason when one is reported', () => {
+      render(<AuthDetailsCard server={server({ status: 'auth_required', reason: 'expired' })} />)
+      expect(screen.getByText(/\(expired\)/)).toBeInTheDocument()
+    })
+  })
+
+  describe('Scopes', () => {
+    it('shows all scopes with no toggle when there are 6 or fewer', async () => {
+      mockGetAuthDetails.mockResolvedValue({ ...details, scope: 'a b c d e f' })
+      render(<AuthDetailsCard server={server({ status: 'authenticated' })} />)
+      expect(await screen.findByText('a')).toBeInTheDocument()
+      expect(screen.getByText('f')).toBeInTheDocument()
+      expect(screen.queryByText(/Show all/)).not.toBeInTheDocument()
+    })
+
+    it('caps and offers a toggle beyond 6 scopes', async () => {
+      mockGetAuthDetails.mockResolvedValue({ ...details, scope: 'a b c d e f g h' })
+      render(<AuthDetailsCard server={server({ status: 'authenticated' })} />)
+      expect(await screen.findByText('Show all (8)')).toBeInTheDocument()
+      // All scopes are still in the DOM (just height-capped), not truncated away.
+      expect(screen.getByText('h')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('Show all (8)'))
+      expect(screen.getByText('Show less')).toBeInTheDocument()
+    })
   })
 })

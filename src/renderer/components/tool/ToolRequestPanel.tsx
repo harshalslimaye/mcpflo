@@ -2,21 +2,30 @@ import { useCallback, useMemo, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Tool } from '../../../shared/mcp.types'
+import type { SavedRequest } from '../../../shared/testing.types'
 import { Toggle } from '../ui/Toggle'
+import { Tabs, type TabItem } from '../ui/Tabs'
 import { RequestPanel } from '../shared/RequestPanel'
 import { TokenFootprintView } from '../shared/TokenFootprintView'
+import { TestScriptEditor } from '../shared/TestScriptEditor'
+import { useTestScript } from '../shared/useTestScript'
+import { useSavedRequests } from '../shared/useSavedRequests'
+import { SavedRequestRow } from '../shared/SavedRequestRow'
+import { SaveRequestButton } from '../shared/SaveRequestButton'
 import { SchemaTab } from './SchemaTab'
 import { RjsfForm } from './rjsf/RjsfForm'
 import { validator } from './rjsf/validator'
 import { buildUiSchema } from './rjsf/layout'
 import { requiredSummary } from './rjsf/formStatus'
 import { estimateToolDefinitionPayload } from '../../lib/contextBudget'
+import { seedToolDefaults } from '../../lib/autoArgs'
 
-export type RequestTab = 'params' | 'schema' | 'tokens'
+export type RequestTab = 'params' | 'saved' | 'schema' | 'tokens' | 'tests'
 type Mode = 'form' | 'json'
 
 interface ToolRequestPanelProps {
   tool: Tool
+  serverId: string
   // The tab toggle is owned by the parent so the panel header and the body stay
   // in sync; the form state itself lives here.
   activeTab: RequestTab
@@ -33,8 +42,10 @@ interface ToolRequestPanelProps {
 
 const TABS: { key: RequestTab; label: string }[] = [
   { key: 'params', label: 'Params' },
+  { key: 'saved', label: 'Saved' },
   { key: 'schema', label: 'Schema' },
-  { key: 'tokens', label: 'Tokens' }
+  { key: 'tokens', label: 'Tokens' },
+  { key: 'tests', label: 'Tests' }
 ]
 
 function parseJsonObject(
@@ -54,12 +65,23 @@ function parseJsonObject(
 
 export function ToolRequestPanel({
   tool,
+  serverId,
   activeTab,
   onTabChange,
   prefill,
   running,
   onExecute
 }: ToolRequestPanelProps): React.JSX.Element {
+  // Load/autosave/flush-on-unmount for the Tests tab — see useTestScript.
+  const {
+    script,
+    hasScript,
+    onChange: handleScriptChange
+  } = useTestScript(serverId, 'tool', tool.name)
+
+  // Named, reusable argument sets for the Saved tab — see useSavedRequests.
+  const savedRequests = useSavedRequests(serverId, 'tool', tool.name)
+
   const schema = tool.inputSchema as RJSFSchema
   // A schema with no declared properties has no form to render.
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
@@ -70,18 +92,9 @@ export function ToolRequestPanel({
   const definitionEstimate = useMemo(() => estimateToolDefinitionPayload(tool), [tool])
 
   // Seed the form with schema-declared defaults so our validity check matches
-  // what RJSF renders. Required booleans are seeded to `false`: a toggle always
-  // has a value, so an untouched required boolean would otherwise read as
-  // "missing" and wedge Execute even though the UI shows a valid (off) state.
-  const initialData = useMemo<Record<string, unknown>>(() => {
-    const seeded =
-      (getDefaultFormState(validator, schema, {}, schema) as Record<string, unknown>) ?? {}
-    const props = (schema.properties ?? {}) as Record<string, { type?: unknown }>
-    for (const key of Array.isArray(schema.required) ? schema.required : []) {
-      if (props[key]?.type === 'boolean' && seeded[key] === undefined) seeded[key] = false
-    }
-    return seeded
-  }, [schema])
+  // what RJSF renders — see seedToolDefaults for why required booleans are a
+  // special case.
+  const initialData = useMemo<Record<string, unknown>>(() => seedToolDefaults(schema), [schema])
 
   const [mode, setMode] = useState<Mode>('form')
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
@@ -135,6 +148,32 @@ export function ToolRequestPanel({
     setMode('form')
   }
 
+  // Load copies a saved request into the live Params form (seeded through
+  // schema defaults the same way the History-prefill path does, so a request
+  // saved before the schema gained a field still gets a sensible value for
+  // it) and switches to the Params tab — a one-way copy, not a live binding,
+  // so later form edits never mutate the saved entry.
+  function handleLoadSavedRequest(request: SavedRequest): void {
+    setFormData(
+      getDefaultFormState(validator, schema, request.args, schema) as Record<string, unknown>
+    )
+    setMode('form')
+    setTouched(new Set())
+    onTabChange('params')
+  }
+
+  // Snapshots whatever the live Params form currently holds — the parsed Raw
+  // JSON object in JSON mode, or the form state in form mode — under the
+  // given name (from the footer Save button's popover; SaveRequestButton
+  // itself already defaults an empty name to "Request N"). The button is
+  // disabled by its caller when Raw JSON mode doesn't currently parse, so
+  // `raw` is only null in a state the button should never have allowed.
+  function handleSaveCurrentAs(name: string): void {
+    const raw = mode === 'json' ? (jsonParse.ok ? jsonParse.value : null) : formData
+    if (raw === null) return
+    savedRequests.add(name, raw)
+  }
+
   const executeDisabled = running || (mode === 'json' ? !jsonValid : !formValid)
 
   // Footer hint: required/missing counts in form mode, JSON validity in JSON mode.
@@ -152,24 +191,17 @@ export function ToolRequestPanel({
     onExecute(payload)
   }
 
+  const tabItems: TabItem<RequestTab>[] = TABS.map((tab) => {
+    if (tab.key === 'tests' && hasScript) return { ...tab, dotLabel: 'Has a saved test script' }
+    if (tab.key === 'saved' && savedRequests.requests.length > 0) {
+      return { ...tab, count: savedRequests.requests.length }
+    }
+    return tab
+  })
+
   const headerEnd = (
     <>
-      <div className="flex gap-0.5">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => onTabChange(tab.key)}
-            className={`rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-              activeTab === tab.key
-                ? 'bg-accent-soft text-accent'
-                : 'text-text-muted hover:text-text-primary'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <Tabs tabs={tabItems} activeTab={activeTab} onTabChange={onTabChange} />
       <div className="flex-1" />
       {activeTab === 'params' && !isEmpty && (
         <div className="flex items-center gap-2">
@@ -195,8 +227,66 @@ export function ToolRequestPanel({
         disabled: executeDisabled,
         onRun: handleExecute
       }}
+      footerExtra={
+        !isEmpty && (
+          <SaveRequestButton
+            // Also disabled until the mount fetch resolves — saving earlier
+            // would persist just the new entry over whatever's already on
+            // disk, since `savedRequests.requests` still reads as empty.
+            disabled={(mode === 'json' && !jsonValid) || !savedRequests.loaded}
+            requestCount={savedRequests.requests.length}
+            onSave={handleSaveCurrentAs}
+          />
+        )
+      }
     >
-      {activeTab === 'schema' ? (
+      {activeTab === 'saved' ? (
+        <div className="flex flex-col gap-3">
+          {!savedRequests.loaded ? (
+            <p className="text-sm text-text-muted">Loading…</p>
+          ) : savedRequests.requests.length === 0 ? (
+            <p className="text-sm text-text-muted">
+              No saved requests yet. Fill in the Params tab, then save it here as a reusable
+              request.
+            </p>
+          ) : (
+            <>
+              {savedRequests.testRequestId && (
+                <p className="text-[12.5px] text-text-muted">
+                  {`Automated test runs use "${
+                    savedRequests.requests.find((r) => r.id === savedRequests.testRequestId)?.name
+                  }" for this capability.`}
+                </p>
+              )}
+              {/* Bounded + internally scrollable, same pattern as the object-params
+                  editor's row list (AddServerModal.tsx) — scrollbar-gutter keeps
+                  the border from shifting when the bar appears; the themed
+                  scrollbar itself is global (base.css), no extra class needed. */}
+              <div className="flex max-h-96 flex-col overflow-y-auto rounded-[8px] border border-border-soft [scrollbar-gutter:stable]">
+                {savedRequests.requests.map((r) => (
+                  <SavedRequestRow
+                    key={r.id}
+                    request={r}
+                    schema={schema}
+                    uiSchema={uiSchema}
+                    editable={!isEmpty}
+                    isTestDefault={savedRequests.testRequestId === r.id}
+                    onLoad={() => handleLoadSavedRequest(r)}
+                    onUpdateArgs={(args) => savedRequests.updateArgs(r.id, args)}
+                    onRename={(newName) => savedRequests.rename(r.id, newName)}
+                    onRemove={() => savedRequests.remove(r.id)}
+                    onSetTestDefault={() =>
+                      savedRequests.setTestRequestId(
+                        savedRequests.testRequestId === r.id ? undefined : r.id
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      ) : activeTab === 'schema' ? (
         <SchemaTab schema={tool.inputSchema} />
       ) : activeTab === 'tokens' ? (
         <TokenFootprintView
@@ -205,6 +295,14 @@ export function ToolRequestPanel({
           tokens={definitionEstimate.tokens}
           characters={definitionEstimate.characters}
           rawBytes={definitionEstimate.rawBytes}
+        />
+      ) : activeTab === 'tests' ? (
+        <TestScriptEditor
+          value={script}
+          onChange={handleScriptChange}
+          placeholder={
+            'test("returns ok", function () {\n  expect(res.getIsError()).to.equal(false)\n})'
+          }
         />
       ) : (
         <div className="flex flex-col gap-4">

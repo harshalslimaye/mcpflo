@@ -12,6 +12,14 @@ export default defineConfig(
   {
     ignores: ['**/node_modules', '**/dist', '**/out', 'scripts/**', 'build/**', 'vitest.config.ts']
   },
+  // bootstrap.js is never run by Node/tsc — it's evaluated as source text
+  // inside the QuickJS test sandbox (src/main/testing/sandbox.ts), where
+  // `chai`, `console`, etc. are globals the bootstrap itself defines or
+  // expects the host to have injected. TS-aware rules like `no-undef` and
+  // `explicit-function-return-type` don't apply to that runtime.
+  {
+    ignores: ['src/main/testing/bootstrap.js']
+  },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

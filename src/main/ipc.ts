@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { promises as fs } from 'node:fs'
 import { getServers, getServerById, addServer, updateServer, removeServer } from './store'
 import {
   fetchCapabilities,
@@ -12,6 +13,7 @@ import {
 import { clearOAuthTokens, hasValidOAuthTokens, readAuthDetails } from './oauthStore'
 import { isSecretStorageAvailable } from './secrets'
 import { assertValidServerId } from './serverId'
+import { assertValidTestKind } from './testing/testKind'
 import {
   createPending as createPendingElicitation,
   resolvePending as resolvePendingElicitation,
@@ -28,13 +30,20 @@ import {
   clearCapabilities,
   removeServerDir
 } from './capabilitiesCache'
+import { createScriptStore } from './testing/scriptStore'
+import { resolveTestsRoot } from './testing/testsRoot'
+import { runTests } from './testing/engine'
 import type {
   ServerConfig,
   TaskSupport,
   ElicitationResult,
   SamplingResult,
-  AuthEvent
+  AuthEvent,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult
 } from '../shared/mcp.types'
+import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
 export function registerIpcHandlers(): void {
   // In-flight capability fetches, keyed by server id, so a later
@@ -303,4 +312,112 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('mcp:respondToSampling', (_event, samplingId: string, result: SamplingResult) => {
     resolvePendingSampling(samplingId, result)
   })
+
+  // Testing (Bruno-style test() + expect() scripts). A separate `testing:`
+  // namespace, deliberately apart from `mcp:` — it's a local file-store +
+  // sandbox concern, not an MCP protocol operation. Each handler resolves the
+  // server's tests root fresh (resolveTestsRoot), so a future custom-folder
+  // override only has to change that one function.
+  ipcMain.handle(
+    'testing:getScript',
+    (_event, id: string, kind: string, name: string): Promise<string | null> => {
+      assertValidServerId(id)
+      assertValidTestKind(kind)
+      return createScriptStore(resolveTestsRoot(id)).readScript(kind, name)
+    }
+  )
+
+  ipcMain.handle(
+    'testing:saveScript',
+    (_event, id: string, kind: string, name: string, content: string): Promise<void> => {
+      assertValidServerId(id)
+      assertValidTestKind(kind)
+      return createScriptStore(resolveTestsRoot(id)).writeScript(kind, name, content)
+    }
+  )
+
+  // Saved Requests — a named list of reusable argument sets per capability,
+  // managed from that capability's own "Saved" tab. The renderer always
+  // sends the whole file on any edit; there's no per-request IPC method.
+  ipcMain.handle(
+    'testing:getRequests',
+    (_event, id: string, kind: string, name: string): Promise<RequestsFile | null> => {
+      assertValidServerId(id)
+      assertValidTestKind(kind)
+      return createScriptStore(resolveTestsRoot(id)).readRequests(kind, name)
+    }
+  )
+
+  ipcMain.handle(
+    'testing:saveRequests',
+    (_event, id: string, kind: string, name: string, file: RequestsFile): Promise<void> => {
+      assertValidServerId(id)
+      assertValidTestKind(kind)
+      return createScriptStore(resolveTestsRoot(id)).writeRequests(kind, name, file)
+    }
+  )
+
+  // Every saved script across a server's tools/resources/prompts, so the
+  // server-level Tests tab can show not-tested/tested status per capability
+  // without loading each script's body up front.
+  ipcMain.handle(
+    'testing:listScripts',
+    (_event, id: string): Promise<{ kind: TestKind; name: string }[]> => {
+      assertValidServerId(id)
+      return createScriptStore(resolveTestsRoot(id)).listScripts()
+    }
+  )
+
+  // Runs a test script against an already-unwrapped call result (the renderer
+  // extracts the result from the JSON-RPC envelope before calling this — see
+  // ToolCallOutcome/PromptGetOutcome/ResourceReadOutcome). No server id or
+  // script-store lookup involved: the renderer already holds the script text
+  // it's editing/autosaving, so this is a pure pass-through to the engine.
+  ipcMain.handle(
+    'testing:run',
+    (
+      _event,
+      input: {
+        script: string
+        kind?: TestKind
+        result: ToolCallResult | GetPromptResult | ResourceReadResult
+        callDurationMs?: number
+      }
+    ): Promise<TestRunSummary> => runTests(input)
+  )
+
+  // Custom tests folder (Step 2b). Picking is a pure "ask the OS for a
+  // folder" operation — persisting the choice reuses the existing
+  // mcp:updateServer channel (renderer calls it with { testsPath: folder }
+  // after this resolves), so there's no separate "set" handler here. Clearing
+  // needs no handler at all: the renderer calls mcp:updateServer with
+  // { testsPath: undefined } directly.
+  ipcMain.handle('testing:chooseTestsFolder', async (event, id: string): Promise<string | null> => {
+    assertValidServerId(id)
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const result = parent
+      ? await dialog.showOpenDialog(parent, { properties: ['openDirectory', 'createDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  // Read-only: whether the server's configured tests folder (custom or
+  // default) currently exists on disk, so the UI can warn instead of letting
+  // a write silently recreate a folder the user deleted intentionally.
+  ipcMain.handle(
+    'testing:getTestsFolderStatus',
+    async (_event, id: string): Promise<{ path: string; isCustom: boolean; exists: boolean }> => {
+      assertValidServerId(id)
+      const server = getServerById(id)
+      const path = resolveTestsRoot(id)
+      const exists = server.testsPath
+        ? await fs
+            .stat(path)
+            .then(() => true)
+            .catch(() => false)
+        : true
+      return { path, isCustom: server.testsPath !== undefined, exists }
+    }
+  )
 }

@@ -57,27 +57,33 @@ export function ServerActionBar({
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {server.status === 'connected' && (
-        <ActionButton icon={<Unplug size={13} />} label="Disconnect" onClick={onDisconnect} />
-      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        {server.status === 'connected' && (
+          <ActionButton icon={<Unplug size={13} />} label="Disconnect" onClick={onDisconnect} />
+        )}
 
-      <ActionButton
-        icon={<RotateCw size={13} className={fetching ? 'animate-spin' : ''} />}
-        label="Reload capabilities"
-        onClick={onReload}
-        disabled={fetching}
-      />
+        <ActionButton
+          icon={<RotateCw size={13} className={fetching ? 'animate-spin' : ''} />}
+          label="Reload capabilities"
+          onClick={onReload}
+          disabled={fetching}
+        />
 
-      {/* Only shown while a fetch is in flight, to cancel it. */}
-      {fetching && <ActionButton icon={<X size={13} />} label="Cancel" onClick={onCancel} />}
+        {/* Only shown while a fetch is in flight, to cancel it. */}
+        {fetching && <ActionButton icon={<X size={13} />} label="Cancel" onClick={onCancel} />}
 
-      {canSignOut && (
-        <ActionButton icon={<LogOut size={13} />} label="Sign out" onClick={onSignOut} />
-      )}
+        {canSignOut && (
+          <ActionButton icon={<LogOut size={13} />} label="Sign out" onClick={onSignOut} />
+        )}
+      </div>
 
       <div className="flex-1" />
 
-      <ActionButton icon={<Trash2 size={13} />} label="Delete server" onClick={onDelete} danger />
+      {/* Separated from the safe-action cluster above so the destructive
+          action doesn't read as just another item in the row. */}
+      <div className="flex items-center border-l border-border pl-3">
+        <ActionButton icon={<Trash2 size={13} />} label="Delete server" onClick={onDelete} danger />
+      </div>
     </div>
   )
 }

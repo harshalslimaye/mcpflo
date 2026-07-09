@@ -382,6 +382,10 @@ export interface ServerConfig {
   name: string
   transport: TransportConfig
   overrides?: ServerOverrides
+  // A user-picked folder this server's test scripts are read from/written to,
+  // in place of the default `<userData>/tests/<serverId>` (see
+  // src/main/testing/testsRoot.ts). Undefined ⇒ use the default.
+  testsPath?: string
 }
 
 // What getServers hands back: the stored config plus a read-time flag set when

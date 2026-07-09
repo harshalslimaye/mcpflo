@@ -95,6 +95,7 @@ export function PromptDetailView({
           <PromptHeader prompt={prompt} serverName={serverName} />
           <PromptRequestPanel
             prompt={prompt}
+            serverId={serverId}
             activeTab={activeTab}
             onTabChange={setActiveTab}
             prefill={effectivePrefill}

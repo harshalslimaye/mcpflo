@@ -1,4 +1,5 @@
 import { AlertCircle, ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react'
+import { Tabs, type TabItem } from '../ui/Tabs'
 
 // 24×24 icon button, same visual language as the array-item toolbar buttons.
 const DOCK_BTN =
@@ -32,8 +33,7 @@ interface ResultPanelProps<T extends string> extends DockChrome {
   // A call is in flight: the header shows the busy spinner + `busyLabel`.
   // `busy` false with no `record` is the idle state (nothing run yet).
   busy?: boolean
-  // `count`, when > 0, renders a parenthesised badge after the label.
-  tabs: { key: T; label: string; count?: number }[]
+  tabs: TabItem<T>[]
   activeTab: T
   onTabChange: (tab: T) => void
   // The tab-resolved body, dropped into the scroll container.
@@ -129,34 +129,12 @@ export function ResultPanel<T extends string>({
 
         <div className="flex-1" />
 
-        <div
+        <Tabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={onTabChange}
           className={`flex gap-0.5 ${docked ? 'no-scrollbar min-w-0 shrink overflow-x-auto' : ''}`}
-        >
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => onTabChange(t.key)}
-              className={`shrink-0 whitespace-nowrap rounded-[6px] px-[11px] py-[5px] text-[12.5px] transition-colors ${
-                activeTab === t.key
-                  ? 'bg-accent-soft text-accent'
-                  : 'text-text-muted hover:text-text-primary'
-              }`}
-            >
-              {t.label}
-              {t.count !== undefined && t.count > 0 && (
-                <>
-                  {' '}
-                  <span
-                    className={`text-[11px] ${activeTab === t.key ? 'text-accent' : 'text-fg-faint'}`}
-                  >
-                    ({t.count})
-                  </span>
-                </>
-              )}
-            </button>
-          ))}
-        </div>
+        />
 
         {onToggleMax && (
           <button

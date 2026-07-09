@@ -16,8 +16,12 @@ import type {
   SamplingClosedEvent,
   SamplingResult,
   AuthEvent,
-  AuthDetails
+  AuthDetails,
+  ToolCallResult,
+  GetPromptResult,
+  ResourceReadResult
 } from '../shared/mcp.types'
+import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
 declare global {
   interface Window {
@@ -62,6 +66,28 @@ declare global {
         getAuthDetails: (id: string) => Promise<AuthDetails | null>
         isEncryptionAvailable: () => Promise<boolean>
         onAuthEvent: (callback: (event: AuthEvent) => void) => () => void
+      }
+      testing: {
+        getScript: (id: string, kind: TestKind, name: string) => Promise<string | null>
+        saveScript: (id: string, kind: TestKind, name: string, content: string) => Promise<void>
+        getRequests: (id: string, kind: TestKind, name: string) => Promise<RequestsFile | null>
+        saveRequests: (
+          id: string,
+          kind: TestKind,
+          name: string,
+          file: RequestsFile
+        ) => Promise<void>
+        listScripts: (id: string) => Promise<{ kind: TestKind; name: string }[]>
+        run: (input: {
+          script: string
+          kind?: TestKind
+          result: ToolCallResult | GetPromptResult | ResourceReadResult
+          callDurationMs?: number
+        }) => Promise<TestRunSummary>
+        chooseTestsFolder: (id: string) => Promise<string | null>
+        getTestsFolderStatus: (
+          id: string
+        ) => Promise<{ path: string; isCustom: boolean; exists: boolean }>
       }
     }
   }

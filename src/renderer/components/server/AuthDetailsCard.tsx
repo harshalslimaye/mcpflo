@@ -26,11 +26,50 @@ function Field({
   )
 }
 
+// Beyond ~6 scopes the pill list is likely to exceed two rows at this card's
+// width — cap it and offer a toggle rather than letting an OAuth grant with a
+// dozen scopes push every sibling field down by an unpredictable amount.
+function ScopesList({ scope }: { scope: string }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false)
+  const scopes = scope.split(/\s+/)
+  const overflowing = scopes.length > 6
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span
+        className={`flex flex-wrap gap-1.5 ${
+          overflowing && !expanded ? 'max-h-[72px] overflow-hidden' : ''
+        }`}
+      >
+        {scopes.map((s) => (
+          <span
+            key={s}
+            className="max-w-full break-all rounded-full border border-border-soft bg-bg-elevated px-[9px] py-px font-mono text-[11px] text-text-muted"
+          >
+            {s}
+          </span>
+        ))}
+      </span>
+      {overflowing && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="self-start font-mono text-[11px] text-fg-faint transition-colors hover:text-accent"
+        >
+          {expanded ? 'Show less' : `Show all (${scopes.length})`}
+        </button>
+      )}
+    </div>
+  )
+}
+
 // Redacted OAuth session summary for a signed-in server: client identity, how
 // it was registered, granted scopes, and token expiry. Everything shown is
 // derived metadata fetched over mcp:getAuthDetails — the tokens themselves
-// never reach the renderer. Hidden entirely for non-OAuth servers and until
-// the server is actually signed in (an empty card would just be noise).
+// never reach the renderer. Hidden entirely for non-OAuth servers and while
+// never signed in (idle/authenticating) — an empty card would just be noise —
+// but shown in a minimal form once tokens have expired/been revoked
+// (auth_required), since that's the one place in the app that says so at all.
 //
 // The header renders the instant `authenticated` is true (that comes from
 // server.auth.status, no IPC round trip needed); only the field grid below it
@@ -38,13 +77,17 @@ function Field({
 // the two-column grid it shares with ContextBudgetCard in ServerDetailView —
 // stable from the first paint, instead of popping in and shifting layout.
 export function AuthDetailsCard({ server }: AuthDetailsCardProps): React.JSX.Element | null {
-  const authenticated = server.auth?.status === 'authenticated'
+  const authState = server.auth?.status
+  const authenticated = authState === 'authenticated'
+  const needsReauth = authState === 'auth_required'
   // undefined = not yet fetched, null = fetched but main reported no session.
   const [details, setDetails] = useState<AuthDetails | null | undefined>(undefined)
 
   // No reset on sign-out: the render guard below already hides the card
   // whenever `authenticated` is false, so stale `details` from a prior
-  // session never actually renders.
+  // session never actually renders. Never fetched for `needsReauth` either —
+  // the tokens are invalid, so there's nothing worth showing beyond the
+  // short message below.
   useEffect(() => {
     if (!authenticated) return
     let active = true
@@ -69,7 +112,7 @@ export function AuthDetailsCard({ server }: AuthDetailsCardProps): React.JSX.Ele
     return () => clearInterval(id)
   }, [])
 
-  if (!authenticated) return null
+  if (!authenticated && !needsReauth) return null
 
   return (
     <div className="flex shrink-0 flex-col overflow-hidden rounded-[10px] border border-border bg-bg-surface">
@@ -79,13 +122,28 @@ export function AuthDetailsCard({ server }: AuthDetailsCardProps): React.JSX.Ele
           Authentication
         </span>
         <div className="flex-1" />
-        <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-green">
-          <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-green" />
-          Signed in
-        </span>
+        {needsReauth ? (
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-red-500">
+            <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-red-500" />
+            Needs re-auth
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-green">
+            <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-green" />
+            Signed in
+          </span>
+        )}
       </div>
 
-      {details === undefined ? (
+      {needsReauth ? (
+        <div className="p-4 text-[12.5px] text-text-muted">
+          Sign-in has expired or was revoked
+          {server.auth?.status === 'auth_required' && server.auth.reason
+            ? ` (${server.auth.reason})`
+            : ''}
+          . Sign in again from the server list to restore access.
+        </div>
+      ) : details === undefined ? (
         <div className="p-4 text-[12.5px] text-text-muted">Loading session details…</div>
       ) : details === null ? (
         <div className="p-4 text-[12.5px] text-text-muted">No session details available.</div>
@@ -133,16 +191,7 @@ export function AuthDetailsCard({ server }: AuthDetailsCardProps): React.JSX.Ele
           </Field>
           <Field label="Scopes" full>
             {details.scope ? (
-              <span className="flex flex-wrap gap-1.5">
-                {details.scope.split(/\s+/).map((s) => (
-                  <span
-                    key={s}
-                    className="max-w-full break-all rounded-full border border-border-soft bg-bg-elevated px-[9px] py-px font-mono text-[11px] text-text-muted"
-                  >
-                    {s}
-                  </span>
-                ))}
-              </span>
+              <ScopesList scope={details.scope} />
             ) : (
               <span className="text-text-muted">Not reported</span>
             )}

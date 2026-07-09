@@ -52,3 +52,37 @@ export async function openEverythingGroup(
   await expect(groupButton).toBeEnabled({ timeout: 30_000 })
   await groupButton.click()
 }
+
+// Opens the seeded "Everything" server's own detail view (Overview /
+// Capabilities / Tests tabs), as opposed to openEverythingGroup's sidebar
+// drill-down into an individual tool/resource/prompt. Expanding the row
+// (same lazy-fetch as openEverythingGroup) populates server.tools/resources/
+// prompts, which the Tests tab reads directly — selecting the row alone
+// never fetches (see SecondarySidebar's selectServerRow comment), so the
+// expand step is required even though this helper doesn't drill into the
+// tree past it. Only expands if not already expanded (e.g. a prior
+// openEverythingGroup call in the same test) — the chevron toggles, so
+// clicking it unconditionally would collapse an already-expanded row instead.
+export async function openEverythingDetails(page: Page): Promise<void> {
+  const row = page.getByRole('group', { name: 'Everything' })
+  const expandButton = row.getByRole('button', { name: 'Expand' })
+  if (await expandButton.isVisible()) {
+    await expandButton.click()
+    await expect(page.getByRole('button', { name: /^Tools/ })).toBeEnabled({ timeout: 30_000 })
+  }
+  await row.getByRole('button', { name: 'Everything', exact: true }).click()
+}
+
+// Types a test script into the Tests tab's CodeMirror editor. Uses
+// `insertText` rather than `type`: CodeMirror's closeBrackets extension
+// auto-inserts a matching `)`/`}`/quote on every keypress, so typing a script
+// that already includes its own closing characters key-by-key double-inserts
+// them (confirmed by hand: `type()` produced a mangled, unbalanced script).
+// `insertText` delivers the whole string as one input event, which
+// closeBrackets' single-character heuristic doesn't intercept.
+export async function fillTestScript(page: Page, script: string): Promise<void> {
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A')
+  await page.keyboard.insertText(script)
+}
