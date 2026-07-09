@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.2.0](https://github.com/harshalslimaye/mcpflo/compare/v0.1.0...v0.2.0) (2026-07-09)
+
+
+### Features
+
+* add custom tests folder per server (Step 2b) ([9a07e1b](https://github.com/harshalslimaye/mcpflo/commit/9a07e1bc0b9ca3ada07b5927bd8f51cc4ded0a69))
+* add sandboxed test engine for tool-call assertions ([21f1036](https://github.com/harshalslimaye/mcpflo/commit/21f10362c4521ae4a7f274c0cf8adce88a2a5336))
+* add Saved Requests to Tool/Prompt panels and use them for auto test runs ([5e954c8](https://github.com/harshalslimaye/mcpflo/commit/5e954c8d0f54956daf760d77083488b5866fee3f))
+* add Tests tab + auto-run results across tools, prompts, and resources ([e2f4621](https://github.com/harshalslimaye/mcpflo/commit/e2f4621762277bdf2fbbc5d182d46de3f5541722))
+* redesign Server Details into tabbed Overview/Capabilities/Tests ([3d948d9](https://github.com/harshalslimaye/mcpflo/commit/3d948d9e5134a767d02c383d5163bc64cdefc63d))
+* **server-everything:** add complex schema fixture tools for form coverage ([282719b](https://github.com/harshalslimaye/mcpflo/commit/282719b15bb5ede9b2e4b60e2dfa08bff0a874b3))
+
+
+### Bug Fixes
+
+* close Windows path-traversal gap in scriptStore's safeJoin ([9214c47](https://github.com/harshalslimaye/mcpflo/commit/9214c47eed6284b2486a47b5d04303d3a3e3de09))
+* flush unsaved Tests-tab edits on unmount instead of dropping them ([6ff1fd4](https://github.com/harshalslimaye/mcpflo/commit/6ff1fd41c96ab5d342b4594a66542b21f3bd6633))
+* harden Saved Requests against corrupt files, races, and silent failures ([16a9c60](https://github.com/harshalslimaye/mcpflo/commit/16a9c60f1b52d7aa60663f498939ce4427ec98ee))
+* show the call result immediately instead of waiting on the test run ([9c4518c](https://github.com/harshalslimaye/mcpflo/commit/9c4518cbe92d2f13aaebed1b367d03036918747e))
+
 ## [0.1.0](https://github.com/harshalslimaye/mcpflo/compare/v0.0.6...v0.1.0) (2026-07-03)
 
 
