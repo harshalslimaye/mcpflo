@@ -1,8 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
-export function registerPrintEnv(server: McpServer): void {
+export function registerGetEnv(server: McpServer): void {
   server.registerTool(
-    'print-env',
+    'get-env',
     {
       description: 'Dumps the server process environment variables. Demo/test fixture.'
     },

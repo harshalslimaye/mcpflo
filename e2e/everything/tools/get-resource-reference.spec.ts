@@ -16,6 +16,6 @@ test('executes the Everything server\'s get-resource-reference tool', async ({ p
     timeout: 10_000
   })
   await expect(
-    page.getByText('You can access this resource using the URI: demo://resource/dynamic/text/1')
+    page.getByText('You can access this resource using the URI: mcpflo://static/resource/text/1')
   ).toBeVisible()
 })

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { connectTestClient, type TestClient } from '../test/harness'
 
-describe('annotated-message', () => {
+describe('get-annotated-message', () => {
   let testClient: TestClient
 
   afterEach(async () => {
@@ -11,7 +11,7 @@ describe('annotated-message', () => {
   it('returns a high-priority error message for both user and assistant', async () => {
     testClient = await connectTestClient()
     const result = await testClient.client.callTool({
-      name: 'annotated-message',
+      name: 'get-annotated-message',
       arguments: { messageType: 'error' }
     })
     expect(result.content).toEqual([
@@ -26,7 +26,7 @@ describe('annotated-message', () => {
   it('returns a user-facing success message', async () => {
     testClient = await connectTestClient()
     const result = await testClient.client.callTool({
-      name: 'annotated-message',
+      name: 'get-annotated-message',
       arguments: { messageType: 'success' }
     })
     expect(result.content).toEqual([
@@ -41,7 +41,7 @@ describe('annotated-message', () => {
   it('returns an assistant-facing debug message', async () => {
     testClient = await connectTestClient()
     const result = await testClient.client.callTool({
-      name: 'annotated-message',
+      name: 'get-annotated-message',
       arguments: { messageType: 'debug' }
     })
     expect(result.content).toEqual([
@@ -56,7 +56,7 @@ describe('annotated-message', () => {
   it('includes an image block when includeImage is true', async () => {
     testClient = await connectTestClient()
     const result = await testClient.client.callTool({
-      name: 'annotated-message',
+      name: 'get-annotated-message',
       arguments: { messageType: 'success', includeImage: true }
     })
     const blocks = result.content as Array<{ type: string }>

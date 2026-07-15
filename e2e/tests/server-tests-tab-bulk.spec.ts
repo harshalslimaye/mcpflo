@@ -105,7 +105,7 @@ test('scripts every non-interactive tool and runs them all at once', async ({ pa
       '  expect(res.getIsError()).to.equal(false)',
       '})',
       'test("mentions the MCP logo", function () {',
-      '  expect(res.getText()).to.include("MCP logo")',
+      '  expect(res.getText()).to.include("hummingbird logo")',
       '})'
     ].join('\n')
   )

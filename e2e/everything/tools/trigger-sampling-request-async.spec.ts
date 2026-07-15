@@ -18,9 +18,7 @@ test('responds to a server sampling request from trigger-sampling-request-async'
   const dialog = page.getByRole('dialog')
   await expect(dialog.getByText('Sampling request')).toBeVisible({ timeout: 10_000 })
   await expect(dialog.getByText(/during trigger-sampling-request-async/)).toBeVisible()
-  await expect(
-    dialog.getByText('Resource trigger-sampling-request-async context: octopus facts async')
-  ).toBeVisible()
+  await expect(dialog.getByText('octopus facts async')).toBeVisible()
 
   await dialog.getByLabel('Assistant reply', { exact: true }).fill('This is the async AI response.')
   await dialog.getByRole('button', { name: 'Accept', exact: true }).click()

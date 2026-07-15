@@ -12,6 +12,6 @@ test('executes the Everything server\'s gzip-file-as-resource tool', async ({ pa
   await page.getByRole('button', { name: 'Execute', exact: true }).click()
 
   await expect(page.getByText('README.md.gz', { exact: true })).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByText('demo://resource/session/README.md.gz')).toBeVisible()
+  await expect(page.getByText('mcpflo://session/resource/1/README.md.gz')).toBeVisible()
   await expect(page.getByText('application/gzip')).toBeVisible()
 })

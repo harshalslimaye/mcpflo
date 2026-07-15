@@ -18,13 +18,13 @@ test('runs a resource read against its saved test script', async ({ page, electr
   await page.getByRole('button', { name: 'Tests', exact: true }).first().click()
   await fillTestScript(
     page,
-    'test("reads as text", function () {\n  expect(res.getText()).to.include("Everything Server")\n})'
+    'test("reads as text", function () {\n  expect(res.getText()).to.include("Architecture")\n})'
   )
   await page.waitForTimeout(600)
 
   await page.getByRole('button', { name: 'Details', exact: true }).click()
   await page.getByRole('button', { name: 'Read', exact: true }).click()
-  await expect(page.getByText('# Everything Server – Architecture')).toBeVisible({
+  await expect(page.getByText('# Architecture')).toBeVisible({
     timeout: 10_000
   })
 
