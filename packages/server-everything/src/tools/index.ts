@@ -1,9 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerEcho } from './echo'
-import { registerAdd } from './add'
-import { registerPrintEnv } from './print-env'
+import { registerGetSum } from './get-sum'
+import { registerGetEnv } from './get-env'
 import { registerGetTinyImage } from './get-tiny-image'
-import { registerAnnotatedMessage } from './annotated-message'
+import { registerGetAnnotatedMessage } from './get-annotated-message'
 import { registerGetResourceReference } from './get-resource-reference'
 import { registerGetStructuredContent } from './get-structured-content'
 import { registerGetResourceLinks } from './get-resource-links'
@@ -29,10 +29,10 @@ import { registerDeepNestingCutoff } from './deep-nesting-cutoff'
 // server construction, before any client has connected.
 const registerFns: Array<(server: McpServer) => void> = [
   registerEcho,
-  registerAdd,
-  registerPrintEnv,
+  registerGetSum,
+  registerGetEnv,
   registerGetTinyImage,
-  registerAnnotatedMessage,
+  registerGetAnnotatedMessage,
   registerGetResourceReference,
   registerGetStructuredContent,
   registerGetResourceLinks,

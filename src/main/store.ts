@@ -114,8 +114,9 @@ function fromStored(stored: StoredServer): LoadedServer {
   return { ...config, transport }
 }
 
-// The MCP reference "everything" server exercises every capability MCPFlo
-// supports, so it's a useful ready-to-run example for a brand-new install.
+// MCPFlo's own "everything" fixture server exercises every capability
+// MCPFlo supports, so it's a useful ready-to-run example for a brand-new
+// install.
 function defaultServers(): ServerConfig[] {
   return [
     {
@@ -124,7 +125,7 @@ function defaultServers(): ServerConfig[] {
       transport: {
         type: 'stdio',
         command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-everything']
+        args: ['-y', '@mcpflo/server-everything']
       }
     }
   ]

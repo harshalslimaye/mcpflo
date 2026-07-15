@@ -8,12 +8,12 @@ test('reads the Everything server\'s architecture.md resource', async ({ page })
   // Resources have no input form — just a fixed URI and a Read action.
   await page.getByRole('button', { name: 'architecture.md', exact: true }).click()
   await expect(page.getByLabel('Resource URI', { exact: true })).toHaveValue(
-    'demo://resource/static/document/architecture.md'
+    'mcpflo://static/document/architecture.md'
   )
 
   await page.getByRole('button', { name: 'Read', exact: true }).click()
 
-  await expect(page.getByText('# Everything Server – Architecture')).toBeVisible({
+  await expect(page.getByText('# Architecture')).toBeVisible({
     timeout: 10_000
   })
 })

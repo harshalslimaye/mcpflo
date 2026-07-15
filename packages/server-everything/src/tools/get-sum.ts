@@ -1,15 +1,15 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
-export function registerAdd(server: McpServer): void {
+export function registerGetSum(server: McpServer): void {
   server.registerTool(
-    'add',
+    'get-sum',
     {
       description: 'Adds two numbers. Demo/test fixture.',
       inputSchema: { a: z.number(), b: z.number() }
     },
     async ({ a, b }) => ({
-      content: [{ type: 'text', text: `${a} + ${b} = ${a + b}` }]
+      content: [{ type: 'text', text: `The sum of ${a} and ${b} is ${a + b}.` }]
     })
   )
 }

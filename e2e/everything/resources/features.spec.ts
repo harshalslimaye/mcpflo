@@ -7,12 +7,12 @@ test('reads the Everything server\'s features.md resource', async ({ page }) => 
 
   await page.getByRole('button', { name: 'features.md', exact: true }).click()
   await expect(page.getByLabel('Resource URI', { exact: true })).toHaveValue(
-    'demo://resource/static/document/features.md'
+    'mcpflo://static/document/features.md'
   )
 
   await page.getByRole('button', { name: 'Read', exact: true }).click()
 
-  await expect(page.getByText('# Everything Server - Features')).toBeVisible({
+  await expect(page.getByText('# Features')).toBeVisible({
     timeout: 10_000
   })
 })

@@ -16,5 +16,5 @@ test('executes the Everything server\'s get-resource-links tool', async ({ page 
   await expect(page.getByText('Blob Resource 1')).toBeVisible()
   await expect(page.getByText('Text Resource 2')).toBeVisible()
   await expect(page.getByText('Blob Resource 3')).toBeVisible()
-  await expect(page.getByText('demo://resource/dynamic/blob/1')).toBeVisible()
+  await expect(page.getByText('mcpflo://static/resource/blob/1')).toBeVisible()
 })

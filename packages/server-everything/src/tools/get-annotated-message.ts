@@ -10,9 +10,9 @@ const AnnotatedMessageSchema = {
   includeImage: z.boolean().default(false).describe('Whether to include an example image')
 }
 
-export function registerAnnotatedMessage(server: McpServer): void {
+export function registerGetAnnotatedMessage(server: McpServer): void {
   server.registerTool(
-    'annotated-message',
+    'get-annotated-message',
     {
       description: 'Returns content with audience/priority annotations. Demo/test fixture.',
       inputSchema: AnnotatedMessageSchema,

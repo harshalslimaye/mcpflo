@@ -20,7 +20,7 @@ test('the server Tests tab runs resource and prompt rows', async ({ page }) => {
   await page.getByRole('button', { name: 'Tests', exact: true }).first().click()
   await fillTestScript(
     page,
-    'test("reads as text", function () {\n  expect(res.getText()).to.include("Everything Server")\n})'
+    'test("reads as text", function () {\n  expect(res.getText()).to.include("Architecture")\n})'
   )
   await page.waitForTimeout(600)
 

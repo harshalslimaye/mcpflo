@@ -453,7 +453,7 @@ describe('store', () => {
       expect(servers[0].transport).toEqual({
         type: 'stdio',
         command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-everything']
+        args: ['-y', '@mcpflo/server-everything']
       })
     })
 

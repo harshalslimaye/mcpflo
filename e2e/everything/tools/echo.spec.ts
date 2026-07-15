@@ -4,8 +4,8 @@ test('executes the Everything server\'s echo tool', async ({ page }) => {
   test.setTimeout(60_000)
 
   // Expand the seeded "Everything" server — this lazy-fetches its capabilities,
-  // spawning the real reference server (`npx @modelcontextprotocol/server-everything`)
-  // over stdio, so the first connect can take a few seconds.
+  // spawning @mcpflo/server-everything (`npx @mcpflo/server-everything`) over
+  // stdio, so the first connect can take a few seconds.
   await openEverythingGroup(page, 'Tools')
 
   await page.getByRole('button', { name: 'echo', exact: true }).click()

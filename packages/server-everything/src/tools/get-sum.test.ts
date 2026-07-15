@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { connectTestClient, type TestClient } from '../test/harness'
 
-describe('add', () => {
+describe('get-sum', () => {
   let testClient: TestClient
 
   afterEach(async () => {
@@ -10,7 +10,10 @@ describe('add', () => {
 
   it('adds two numbers', async () => {
     testClient = await connectTestClient()
-    const result = await testClient.client.callTool({ name: 'add', arguments: { a: 4, b: 5 } })
-    expect(result.content).toEqual([{ type: 'text', text: '4 + 5 = 9' }])
+    const result = await testClient.client.callTool({
+      name: 'get-sum',
+      arguments: { a: 4, b: 5 }
+    })
+    expect(result.content).toEqual([{ type: 'text', text: 'The sum of 4 and 5 is 9.' }])
   })
 })

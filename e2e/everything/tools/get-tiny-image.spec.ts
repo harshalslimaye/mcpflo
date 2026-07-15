@@ -13,5 +13,5 @@ test('executes the Everything server\'s get-tiny-image tool', async ({ page }) =
 
   await expect(page.getByText("Here's the image you requested:")).toBeVisible({ timeout: 10_000 })
   await expect(page.getByAltText('Tool result image')).toBeVisible()
-  await expect(page.getByText('The image above is the MCP logo.')).toBeVisible()
+  await expect(page.getByText('The image above is the MCPFlo hummingbird logo.')).toBeVisible()
 })
