@@ -1,0 +1,7 @@
+# Update source for dev-mode smoke testing only (MCPFLO_TEST_UPDATES=1 sets
+# forceDevUpdateConfig, which makes electron-updater read this file instead of
+# the packaged app-update.yml). Excluded from packaged builds via the `files`
+# glob in electron-builder.yml.
+provider: github
+owner: harshalslimaye
+repo: mcpflo

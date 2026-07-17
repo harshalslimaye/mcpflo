@@ -2,7 +2,6 @@ appId: com.harshalslimaye.mcpflo
 productName: MCPFlo
 directories:
   buildResources: build
-afterSign: build/afterSign.cjs
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -36,9 +35,18 @@ mac:
   target:
     - target: dmg
       arch: arm64
+    # electron-updater on macOS downloads and applies the zip; the dmg is
+    # only the human-download artifact on the releases page.
+    - target: zip
+      arch: arm64
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
 npmRebuild: false
+# Read at build time to upload artifacts + latest-mac.yml/latest.yml to a
+# draft GitHub release, and baked into the app (app-update.yml) so
+# electron-updater knows where to check at runtime. Publishing the draft
+# release is the "go live" switch for updates.
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: harshalslimaye
+  repo: mcpflo

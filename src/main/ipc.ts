@@ -33,6 +33,7 @@ import {
 import { createScriptStore } from './testing/scriptStore'
 import { resolveTestsRoot } from './testing/testsRoot'
 import { runTests } from './testing/engine'
+import { getUpdateStatus, checkForUpdatesNow, installUpdateNow } from './autoUpdater'
 import type {
   ServerConfig,
   TaskSupport,
@@ -420,4 +421,12 @@ export function registerIpcHandlers(): void {
       return { path, isCustom: server.testsPath !== undefined, exists }
     }
   )
+
+  // App update lifecycle — a separate namespace from `mcp:`/`testing:` since
+  // it has nothing to do with MCP servers. Handlers are registered
+  // unconditionally so dev/e2e renderer calls answer harmlessly; only
+  // network activity is gated inside autoUpdater.ts (app.isPackaged check).
+  ipcMain.handle('updater:getStatus', () => getUpdateStatus())
+  ipcMain.handle('updater:check', () => checkForUpdatesNow())
+  ipcMain.handle('updater:install', () => installUpdateNow())
 }

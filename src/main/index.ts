@@ -3,6 +3,7 @@ import { registerIpcHandlers } from './ipc'
 import { fixPath } from './fixPath'
 import { seedDefaultServers } from './store'
 import { disconnectAll } from './mcpClient'
+import { initAutoUpdater, isInstallingUpdate } from './autoUpdater'
 import { openExternalSafely } from './openExternal'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -94,6 +95,7 @@ app.whenReady().then(() => {
   registerIpcHandlers()
 
   createWindow()
+  initAutoUpdater()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -115,7 +117,11 @@ app.on('window-all-closed', () => {
 // preempted once to await cleanup, then quit is re-triggered to actually exit.
 let isQuitting = false
 app.on('before-quit', (event) => {
-  if (isQuitting) return
+  // Update install path: autoUpdater's installUpdateNow() already ran
+  // disconnectAll() before calling quitAndInstall(), so this guard must let
+  // that quit proceed untouched — cancelling it here would leave
+  // Squirrel.Mac/NSIS mid-sequence outside their own controlled quit.
+  if (isQuitting || isInstallingUpdate()) return
   isQuitting = true
   event.preventDefault()
   disconnectAll().finally(() => app.quit())

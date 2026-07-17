@@ -22,6 +22,7 @@ import type {
   ResourceReadResult
 } from '../shared/mcp.types'
 import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
+import type { UpdateStatus } from '../shared/updater.types'
 
 declare global {
   interface Window {
@@ -88,6 +89,12 @@ declare global {
         getTestsFolderStatus: (
           id: string
         ) => Promise<{ path: string; isCustom: boolean; exists: boolean }>
+      }
+      updater: {
+        getStatus: () => Promise<UpdateStatus>
+        check: () => Promise<UpdateStatus>
+        install: () => Promise<void>
+        onUpdateEvent: (callback: (status: UpdateStatus) => void) => () => void
       }
     }
   }
