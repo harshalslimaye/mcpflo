@@ -8,15 +8,19 @@ import { AuthHost } from '../components/auth/AuthHost'
 import { ErrorBoundary } from '../components/ui/ErrorBoundary'
 import { Toaster } from '../components/ui/Toaster'
 import { useServerStore } from '../stores/serverStore'
+import { useUpdaterStore } from '../stores/updaterStore'
 
 function App(): React.JSX.Element {
   const hydrate = useServerStore((s) => s.hydrate)
+  const hydrateUpdater = useUpdaterStore((s) => s.hydrate)
 
   useEffect(() => {
     // hydrate() catches its own failures and toasts them; the void guards
     // against an unhandled rejection if that contract ever changes.
     void hydrate()
   }, [hydrate])
+
+  useEffect(() => hydrateUpdater(), [hydrateUpdater])
 
   return (
     <ErrorBoundary>

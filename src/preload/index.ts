@@ -23,6 +23,7 @@ import type {
   ResourceReadResult
 } from '../shared/mcp.types'
 import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
+import type { UpdateStatus } from '../shared/updater.types'
 
 const api = {
   mcp: {
@@ -147,6 +148,19 @@ const api = {
       id: string
     ): Promise<{ path: string; isCustom: boolean; exists: boolean }> =>
       ipcRenderer.invoke('testing:getTestsFolderStatus', id)
+  },
+  updater: {
+    getStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('updater:getStatus'),
+    check: (): Promise<UpdateStatus> => ipcRenderer.invoke('updater:check'),
+    install: (): Promise<void> => ipcRenderer.invoke('updater:install'),
+    // Subscribes to update lifecycle pushes; returns an unsubscribe function.
+    onUpdateEvent: (callback: (status: UpdateStatus) => void): (() => void) => {
+      const listener = (_: unknown, payload: UpdateStatus): void => callback(payload)
+      ipcRenderer.on('updater:event', listener)
+      return () => {
+        ipcRenderer.removeListener('updater:event', listener)
+      }
+    }
   }
 }
 
