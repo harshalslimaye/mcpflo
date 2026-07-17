@@ -38,4 +38,63 @@ test.describe('server management', () => {
     await expect(dialog).not.toBeVisible()
     await expect(page.getByText('Everything', { exact: true })).not.toBeVisible()
   })
+
+  test('adds a streamable-http server via the manual form', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Name').fill('Test HTTP Server')
+    await dialog.getByRole('button', { name: 'streamable-http', exact: true }).click()
+    await dialog.getByLabel('URL').fill('https://mcp.example.com/mcp')
+
+    await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    await expect(dialog).not.toBeVisible()
+    await expect(page.getByText('Test HTTP Server')).toBeVisible()
+  })
+
+  test('imports every server from a pasted multi-entry JSON config', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Paste JSON config', exact: true }).click()
+    await dialog.getByLabel('JSON config').fill(
+      JSON.stringify({
+        mcpServers: {
+          'Imported Server A': { command: 'node' },
+          'Imported Server B': { command: 'node' }
+        }
+      })
+    )
+
+    await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    await expect(dialog).not.toBeVisible()
+    await expect(page.getByText('Imported Server A')).toBeVisible()
+    await expect(page.getByText('Imported Server B')).toBeVisible()
+  })
+
+  test('shows an inline error for invalid pasted JSON and adds nothing', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Paste JSON config', exact: true }).click()
+    await dialog.getByLabel('JSON config').fill('{ this is not valid json')
+
+    await dialog.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    await expect(dialog.getByText('Invalid JSON')).toBeVisible()
+    await expect(dialog).toBeVisible()
+  })
+
+  test('Cancel closes the dialog without adding a server', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add Server', exact: true }).click()
+
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Name').fill('Should Not Be Added')
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    await expect(dialog).not.toBeVisible()
+    await expect(page.getByText('Should Not Be Added')).not.toBeVisible()
+  })
 })
