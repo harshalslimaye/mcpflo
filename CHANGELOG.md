@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.3.0](https://github.com/harshalslimaye/mcpflo/compare/v0.2.0...v0.3.0) (2026-07-18)
+
+
+### Features
+
+* add in-app auto-update via electron-updater ([971f5d2](https://github.com/harshalslimaye/mcpflo/commit/971f5d21d37435971f6e7e27a4ef44181c381c55))
+* **server-everything:** seed fresh installs with @mcpflo/server-everything ([9df1ebf](https://github.com/harshalslimaye/mcpflo/commit/9df1ebf86a5f0014621053b066b5047424de0d0f))
+
 ## [0.2.0](https://github.com/harshalslimaye/mcpflo/compare/v0.1.0...v0.2.0) (2026-07-09)
 
 
