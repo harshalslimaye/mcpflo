@@ -77,6 +77,23 @@ describe('ServerHeader', () => {
     })
   })
 
+  describe('completions line', () => {
+    it('shows "supported" when the server declared the capability', () => {
+      render(<ServerHeader server={server({ features: { completions: true } })} />)
+      expect(screen.getByText('Completions supported')).toBeInTheDocument()
+    })
+
+    it('shows "not advertised" when the server declared no completions support', () => {
+      render(<ServerHeader server={server({ features: { completions: false } })} />)
+      expect(screen.getByText('Completions not advertised')).toBeInTheDocument()
+    })
+
+    it('omits the line when features are unknown (never fetched, or cached from before this flag existed)', () => {
+      render(<ServerHeader server={server({ features: undefined })} />)
+      expect(screen.queryByText(/Completions/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('error state', () => {
     it('shows the error message instead of the fetched-at line', () => {
       render(<ServerHeader server={server({ status: 'error', error: 'Connection refused' })} />)

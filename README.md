@@ -100,6 +100,9 @@ Everything below is implemented and working today.
 - **Resource reading and prompt rendering.** Read a resource and view its text
   or binary contents; render a prompt with named arguments and see the expanded
   message turns.
+- **Argument completion.** Prompt arguments autocomplete from the server's own
+  `completion/complete` handler, including dependent arguments whose options
+  narrow based on what you already filled in.
 - **Live notifications.** Progress notifications and log messages emitted by a
   server while a tool call is in flight are captured and shown in a
   notifications tab alongside the call.
@@ -125,6 +128,9 @@ These are deliberate limitations, called out so there are no surprises:
 
 - **No SSE transport.** Only stdio and Streamable HTTP are supported. The
   deprecated HTTP+SSE transport is intentionally omitted.
+- **No resource templates.** Resources with URI templates (`resources/templates/list`)
+  aren't surfaced yet — only static, listed resources are. Argument completion
+  is limited to prompt arguments for the same reason.
 - **History does not persist.** Call history is cleared when the app closes.
 - **macOS releases are Apple Silicon (arm64) only.**
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Globe, TerminalSquare, Clock } from 'lucide-react'
+import { Globe, TerminalSquare, Clock, Sparkles } from 'lucide-react'
 import type { MCPServer, ServerStatus, TransportConfig } from '../../../shared/mcp.types'
 
 interface ServerHeaderProps {
@@ -91,6 +91,16 @@ export function ServerHeader({ server }: ServerHeaderProps): React.JSX.Element {
             Capabilities fetched {fetched}
           </div>
         )
+      )}
+
+      {/* Undefined means either never fetched or cached from before this flag
+          existed (see ServerFeatures) — silent in both cases rather than
+          guessing "not advertised" for a server we don't actually know about. */}
+      {server.features?.completions !== undefined && (
+        <div className="flex items-center gap-1.5 text-[12px] text-fg-faint">
+          <Sparkles size={12} />
+          Completions {server.features.completions ? 'supported' : 'not advertised'}
+        </div>
       )}
     </div>
   )
