@@ -15,11 +15,12 @@ import {
   disconnectAll
 } from './mcp/session'
 import { callTool } from './mcp/toolCalls'
+import { completeArgument } from './mcp/completions'
 import { onAuthEvent, DcrRegistrationRequiredError } from './mcp/oauthHandshake'
 import type { ElicitationHandler, SamplingHandler } from './mcp/types'
 
 export type { ElicitationHandler, SamplingHandler }
-export { onAuthEvent, callTool, disconnectServer, disconnectAll }
+export { onAuthEvent, callTool, completeArgument, disconnectServer, disconnectAll }
 
 export interface ConnectResult {
   tools: Tool[]

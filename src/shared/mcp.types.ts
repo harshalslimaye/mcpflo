@@ -362,6 +362,28 @@ export interface ResourceReadOutcome {
   authRequired?: boolean
 }
 
+// What a completion/complete request is asking about — the only two ref types
+// the MCP spec defines. There is no tool-argument completion in the protocol.
+export type CompletionRef =
+  | { type: 'ref/prompt'; name: string }
+  | { type: 'ref/resource'; uri: string }
+
+// Outcome of a completion/complete request as surfaced to the renderer. Unlike
+// ToolCallOutcome/ResourceReadOutcome this never carries a raw JSON-RPC
+// envelope — completions are advisory typeahead data, not a result to inspect
+// as Raw JSON, so `values` (already unwrapped) is all callers need.
+export interface CompletionOutcome {
+  values: string[]
+  total?: number
+  hasMore?: boolean
+  // The server doesn't declare the `completions` capability — a benign no-op,
+  // not a failure.
+  unsupported?: boolean
+  // See ToolCallOutcome.authRequired.
+  authRequired?: boolean
+  error?: string
+}
+
 // Capabilities persisted to disk (servers/<id>/capabilities.json) so they're
 // available before fetching and across app restarts.
 export interface CachedCapabilities {

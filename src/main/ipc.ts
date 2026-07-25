@@ -7,6 +7,7 @@ import {
   callTool,
   readResource,
   getPrompt,
+  completeArgument,
   authorizeServer,
   onAuthEvent
 } from './mcpClient'
@@ -42,7 +43,8 @@ import type {
   AuthEvent,
   ToolCallResult,
   GetPromptResult,
-  ResourceReadResult
+  ResourceReadResult,
+  CompletionRef
 } from '../shared/mcp.types'
 import type { TestKind, TestRunSummary, RequestsFile } from '../shared/testing.types'
 
@@ -300,6 +302,24 @@ export function registerIpcHandlers(): void {
     (_event, id: string, name: string, args: Record<string, string>) => {
       assertValidServerId(id)
       return getPrompt(getServerById(id), name, args)
+    }
+  )
+
+  // Argument completion (completion/complete) — background typeahead traffic
+  // fired on keystrokes, not a user-initiated call. Deliberately not recorded
+  // as a protocol event / history entry (see D9 in the completion plan): at
+  // keystroke frequency it would drown out the real Activity log.
+  ipcMain.handle(
+    'mcp:complete',
+    (
+      _event,
+      id: string,
+      ref: CompletionRef,
+      argument: { name: string; value: string },
+      context?: { arguments?: Record<string, string> }
+    ) => {
+      assertValidServerId(id)
+      return completeArgument(getServerById(id), ref, argument, context)
     }
   )
 

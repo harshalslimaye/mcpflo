@@ -8,6 +8,8 @@ import type {
   ToolCallOutcome,
   ResourceReadOutcome,
   PromptGetOutcome,
+  CompletionRef,
+  CompletionOutcome,
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
@@ -55,6 +57,12 @@ declare global {
           name: string,
           args: Record<string, string>
         ) => Promise<PromptGetOutcome>
+        complete: (
+          id: string,
+          ref: CompletionRef,
+          argument: { name: string; value: string },
+          context?: { arguments?: Record<string, string> }
+        ) => Promise<CompletionOutcome>
         onToolNotification: (callback: (event: ToolCallNotificationEvent) => void) => () => void
         onElicitationRequest: (callback: (event: ElicitationRequestEvent) => void) => () => void
         onElicitationClosed: (callback: (event: ElicitationClosedEvent) => void) => () => void
