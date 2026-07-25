@@ -36,7 +36,12 @@ function successRecord(over: Partial<PromptGetRecord> = {}): PromptGetRecord {
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetPrompt.mockResolvedValue(undefined)
-  useServerStore.setState({ promptHistory: {}, pendingPrefill: null, getPrompt: mockGetPrompt })
+  useServerStore.setState({
+    promptHistory: {},
+    pendingPrefill: null,
+    getPrompt: mockGetPrompt,
+    servers: []
+  })
 })
 
 describe('PromptDetailView — history selection', () => {
@@ -169,5 +174,53 @@ describe('PromptDetailView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'This prompt' }))
     fireEvent.click(screen.getByRole('button', { name: 'clear' }))
     expect(screen.getByText('No gets yet.')).toBeInTheDocument()
+  })
+})
+
+describe('PromptDetailView — completion prop threading', () => {
+  it('passes completionsSupported=true down when the matching server declares it', () => {
+    useServerStore.setState({
+      servers: [
+        {
+          id: 'srv',
+          name: 'Everything',
+          transport: { type: 'stdio', command: 'npx' },
+          status: 'connected',
+          tools: [],
+          resources: [],
+          prompts: [],
+          features: { completions: true }
+        }
+      ]
+    })
+    renderView()
+    expect(screen.getByRole('combobox', { name: 'topic' })).toBeInTheDocument()
+  })
+
+  it('defaults to plain inputs when no server row matches (or has no features yet)', () => {
+    // beforeEach already seeds servers: [] — no row matches serverId "srv".
+    renderView()
+    expect(screen.getByRole('textbox', { name: 'topic' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it("does not enable completion for a different server's id", () => {
+    useServerStore.setState({
+      servers: [
+        {
+          id: 'some-other-server',
+          name: 'Other',
+          transport: { type: 'stdio', command: 'npx' },
+          status: 'connected',
+          tools: [],
+          resources: [],
+          prompts: [],
+          features: { completions: true }
+        }
+      ]
+    })
+    renderView()
+    expect(screen.getByRole('textbox', { name: 'topic' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })

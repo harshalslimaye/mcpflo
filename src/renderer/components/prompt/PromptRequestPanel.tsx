@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getDefaultFormState, type RJSFSchema } from '@rjsf/utils'
 import type { IChangeEvent } from '@rjsf/core'
 import type { Prompt } from '../../../shared/mcp.types'
@@ -15,9 +15,8 @@ import { SaveRequestButton } from '../shared/SaveRequestButton'
 import { SchemaTab } from '../tool/SchemaTab'
 import { RjsfForm } from '../tool/rjsf/RjsfForm'
 import { validator } from '../tool/rjsf/validator'
-import { buildUiSchema } from '../tool/rjsf/layout'
 import { requiredSummary } from '../tool/rjsf/formStatus'
-import { buildPromptSchema } from '../../lib/promptSchema'
+import { buildPromptSchema, buildPromptUiSchema } from '../../lib/promptSchema'
 import { estimatePromptDefinitionPayload } from '../../lib/contextBudget'
 
 export type RequestTab = 'params' | 'saved' | 'schema' | 'tokens' | 'tests'
@@ -38,6 +37,11 @@ interface PromptRequestPanelProps {
   // here it only drives the button label/disabled state.
   running: boolean
   onExecute: (payload: Record<string, string>) => void
+  // Whether the server declared the `completions` capability — gates whether
+  // args get the typeahead widget at all. A prop rather than a store lookup:
+  // this panel is otherwise store-light, and it keeps unit tests trivial.
+  // Defaults to false so existing callers (and tests) don't have to change.
+  completionsSupported?: boolean
 }
 
 const TABS: { key: RequestTab; label: string }[] = [
@@ -83,7 +87,8 @@ export function PromptRequestPanel({
   onTabChange,
   prefill,
   running,
-  onExecute
+  onExecute,
+  completionsSupported = false
 }: PromptRequestPanelProps): React.JSX.Element {
   // Load/autosave/flush-on-unmount for the Tests tab — see useTestScript.
   const {
@@ -99,8 +104,12 @@ export function PromptRequestPanel({
   const rjsfSchema = schema as RJSFSchema
   // A prompt with no declared arguments has no form to render.
   const isEmpty = Object.keys(schema.properties ?? {}).length === 0
-  // Drives multi-line (textarea) detection; the layout grid lives in the templates.
-  const uiSchema = useMemo(() => buildUiSchema(rjsfSchema), [rjsfSchema])
+  // Drives multi-line (textarea) detection, and — when the server supports
+  // it — assigns the completion typeahead to every other string arg.
+  const uiSchema = useMemo(
+    () => buildPromptUiSchema(prompt, { completions: completionsSupported }),
+    [prompt, completionsSupported]
+  )
   // The prompt's own definition cost — static, independent of any get having
   // been made, unlike the Response panel's per-call Tokens tab.
   const definitionEstimate = useMemo(() => estimatePromptDefinitionPayload(prompt), [prompt])
@@ -118,13 +127,44 @@ export function PromptRequestPanel({
   const [jsonText, setJsonText] = useState<string>(() => JSON.stringify(initialData, null, 2))
   const [switchError, setSwitchError] = useState<string | null>(null)
 
+  // Mirrors `formData` so getContextArgs (below) can read sibling values
+  // live, without needing `formContext` to depend on `formData` — that would
+  // rebuild it (and re-render every field) on every keystroke. A ref can't be
+  // written during render, so this is an effect rather than an inline
+  // assignment. See CompletionContext.getContextArgs.
+  const formDataRef = useRef(formData)
+  useEffect(() => {
+    formDataRef.current = formData
+  }, [formData])
+
   // Track which fields have been blurred so errors surface one field at a time
   // instead of all at once on an untouched form.
   const [touched, setTouched] = useState<Set<string>>(() => new Set())
   const markTouched = useCallback((id: string) => {
     setTouched((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
   }, [])
-  const formContext = useMemo(() => ({ touched, markTouched }), [touched, markTouched])
+  // Stable identity (empty deps, reads the ref) so it never forces
+  // `formContext` to be rebuilt.
+  const getContextArgs = useCallback((excludeArgName: string): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const [key, val] of Object.entries(formDataRef.current)) {
+      if (key === excludeArgName) continue
+      if (typeof val === 'string' && val !== '') out[key] = val
+    }
+    return out
+  }, [])
+  const formContext = useMemo(
+    () => ({
+      touched,
+      markTouched,
+      completion: {
+        serverId,
+        ref: { type: 'ref/prompt' as const, name: prompt.name },
+        getContextArgs
+      }
+    }),
+    [touched, markTouched, serverId, prompt.name, getContextArgs]
+  )
 
   // RJSF validates the whole schema; empty schemas are trivially valid.
   const formValid = useMemo(

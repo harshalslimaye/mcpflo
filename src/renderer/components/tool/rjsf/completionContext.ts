@@ -15,11 +15,14 @@ export interface CompletionContext {
   getContextArgs: (excludeArgName: string) => Record<string, string>
 }
 
-// Reads the completion context off RJSF's untyped `formContext`, returning
-// undefined when it isn't wired (the widget then falls back to a plain
-// input — e.g. a tool-call form, or a server with no completions support).
+// Reads the completion context off RJSF's untyped `formContext` — nested
+// under a `completion` key, alongside touched-tracking's own top-level
+// fields (see PromptRequestPanel's formContext). Returns undefined when it
+// isn't wired (the widget then falls back to a plain input — e.g. a
+// tool-call form, or a server with no completions support).
 export function readCompletion(formContext: unknown): CompletionContext | undefined {
-  const ctx = formContext as Partial<CompletionContext> | undefined
+  const outer = formContext as { completion?: Partial<CompletionContext> } | undefined
+  const ctx = outer?.completion
   if (
     ctx &&
     typeof ctx.serverId === 'string' &&

@@ -4,9 +4,23 @@ import userEvent from '@testing-library/user-event'
 import { PromptRequestPanel } from './PromptRequestPanel'
 import type { Prompt } from '../../../shared/mcp.types'
 
+// Only the completion describe block below exercises this — every other
+// test in this file renders with completionsSupported defaulted to false,
+// so CompletionWidget (and this call) is never reached.
+vi.mock('../../lib/completion', () => ({
+  requestCompletion: vi.fn(),
+  COMPLETION_DEBOUNCE_MS: 20
+}))
+import { requestCompletion } from '../../lib/completion'
+
 const argPrompt: Prompt = {
   name: 'summarize',
   arguments: [{ name: 'topic', description: 'What to summarize', required: true }, { name: 'tone' }]
+}
+
+const completablePrompt: Prompt = {
+  name: 'completable-prompt',
+  arguments: [{ name: 'department' }, { name: 'name' }]
 }
 
 const emptyPrompt: Prompt = { name: 'ping' }
@@ -68,6 +82,46 @@ describe('PromptRequestPanel — form rendering', () => {
     renderPanel(argPrompt)
     fireEvent.click(screen.getByRole('button', { name: 'Schema' }))
     expect(mockOnTabChange).toHaveBeenCalledWith('schema')
+  })
+})
+
+describe('PromptRequestPanel — completion', () => {
+  it('renders plain inputs when completionsSupported is false (the default)', () => {
+    renderPanel(completablePrompt)
+    expect(screen.getByRole('textbox', { name: 'department' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(requestCompletion).not.toHaveBeenCalled()
+  })
+
+  it('renders comboboxes when completionsSupported is true', () => {
+    renderPanel(completablePrompt, { completionsSupported: true })
+    expect(screen.getByRole('combobox', { name: 'department' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'name' })).toBeInTheDocument()
+  })
+
+  it('getContextArgs excludes the field being completed and drops empty siblings', async () => {
+    vi.mocked(requestCompletion).mockResolvedValue({ values: ['Alice'] })
+    renderPanel(completablePrompt, { completionsSupported: true })
+
+    // "tone" has no value entered — it must not appear in the context sent
+    // for "name"'s completion. "department" does have a value and must.
+    fireEvent.change(screen.getByRole('combobox', { name: 'department' }), {
+      target: { value: 'Engineering' }
+    })
+    fireEvent.focus(screen.getByRole('combobox', { name: 'name' }))
+
+    await waitFor(() => expect(requestCompletion).toHaveBeenCalled())
+    const call = vi.mocked(requestCompletion).mock.calls[0][0]
+    expect(call.argName).toBe('name')
+    expect(call.contextArgs).toEqual({ department: 'Engineering' })
+  })
+
+  it('does not touch Raw JSON mode', () => {
+    renderPanel(completablePrompt, { completionsSupported: true })
+    fireEvent.click(screen.getByRole('switch', { name: 'Edit as raw JSON' }))
+    expect(screen.getByRole('textbox', { name: 'Params JSON' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+    expect(requestCompletion).not.toHaveBeenCalled()
   })
 })
 
