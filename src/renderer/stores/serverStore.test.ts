@@ -153,6 +153,32 @@ describe('serverStore', () => {
       expect(server.tools[0].name).toBe('list_issues')
     })
 
+    it('hydrates features from a cache entry that has them', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': {
+          tools: [],
+          resources: [],
+          prompts: [],
+          fetchedAt: 1000,
+          features: { completions: true }
+        }
+      })
+      await useServerStore.getState().hydrate()
+      const server = useServerStore.getState().servers[0]
+      expect(server.features).toEqual({ completions: true })
+    })
+
+    it('leaves features undefined for a cache entry written before the flag existed', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': { tools: [], resources: [], prompts: [], fetchedAt: 1000 }
+      })
+      await useServerStore.getState().hydrate()
+      const server = useServerStore.getState().servers[0]
+      expect(server.features).toBeUndefined()
+    })
+
     it('replays cached capabilities as cache-sourced list events', async () => {
       mockApi.mcp.getServers.mockResolvedValue([githubConfig])
       mockApi.mcp.getCachedCapabilities.mockResolvedValue({
@@ -1394,6 +1420,29 @@ describe('serverStore', () => {
       expect(server?.tools).toEqual(tools)
       expect(server?.resources).toEqual([])
       expect(server?.prompts).toEqual([])
+    })
+
+    it('overwrites a stale cached features flag with the fresh fetch result', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': {
+          tools: [],
+          resources: [],
+          prompts: [],
+          fetchedAt: 1000,
+          features: { completions: true }
+        }
+      })
+      await useServerStore.getState().hydrate()
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [],
+        resources: [],
+        prompts: [],
+        features: { completions: false }
+      })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const server = useServerStore.getState().servers.find((s) => s.id === 'github-mcp')
+      expect(server?.features).toEqual({ completions: false })
     })
 
     it('drops to a neutral disconnected state (not error) when sign-in is needed', async () => {

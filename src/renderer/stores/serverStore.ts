@@ -319,6 +319,7 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = f
     resources: cached?.resources ?? [],
     prompts: cached?.prompts ?? [],
     fetchedAt: cached?.fetchedAt,
+    features: cached?.features,
     ...(isOAuth
       ? { auth: { status: authed ? ('authenticated' as const) : ('idle' as const) } }
       : {})
@@ -968,12 +969,20 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         }))
         return
       }
-      const { tools, resources, prompts } = result
+      const { tools, resources, prompts, features } = result
       const finishedAt = Date.now()
       set((state) => ({
         servers: state.servers.map((s) =>
           s.id === id
-            ? { ...s, status: 'connected', tools, resources, prompts, fetchedAt: finishedAt }
+            ? {
+                ...s,
+                status: 'connected',
+                tools,
+                resources,
+                prompts,
+                fetchedAt: finishedAt,
+                features
+              }
             : s
         ),
         // The handshake precedes the listings (earlier `at`); all four land here.

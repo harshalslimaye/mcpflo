@@ -5,7 +5,8 @@ import type {
   Resource,
   Prompt,
   ResourceReadOutcome,
-  PromptGetOutcome
+  PromptGetOutcome,
+  ServerFeatures
 } from '../shared/mcp.types'
 import {
   getSession,
@@ -27,6 +28,7 @@ export interface ConnectResult {
   // Set (with empty listings) when the connect couldn't proceed because the
   // server needs (re-)authorization — see the shared ConnectResult for details.
   authRequired?: boolean
+  features?: ServerFeatures
 }
 
 export async function connectServer(
@@ -44,10 +46,15 @@ export async function connectServer(
     client.listPrompts(undefined, opts).catch(() => ({ prompts: [] }))
   ])
 
+  // Read live off the negotiated handshake rather than caching it — this is the
+  // one moment per connect where the SDK exposes it.
+  const serverCapabilities = client.getServerCapabilities()
+
   return {
     tools: toolsResult.tools as Tool[],
     resources: resourcesResult.resources as Resource[],
-    prompts: promptsResult.prompts as Prompt[]
+    prompts: promptsResult.prompts as Prompt[],
+    features: { completions: serverCapabilities?.completions !== undefined }
   }
 }
 

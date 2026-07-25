@@ -175,6 +175,13 @@ export interface PromptGetOutcome {
   authRequired?: boolean
 }
 
+// The server's *declared* capabilities from the initialize handshake — distinct
+// from the tools/resources/prompts listings this codebase calls "capabilities".
+// Only the flags MCPFlo acts on are lifted out; add more as features need them.
+export interface ServerFeatures {
+  completions: boolean
+}
+
 // Capabilities returned after a successful server connection. `authRequired` is
 // set instead of the listings when the fetch couldn't proceed because the server
 // needs (re-)authorization — an expired/rejected token, or an OAuth server that
@@ -186,6 +193,7 @@ export interface ConnectResult {
   resources: Resource[]
   prompts: Prompt[]
   authRequired?: boolean
+  features?: ServerFeatures
 }
 
 // A single content block in a tool-call result (text, image, resource, …).
@@ -361,6 +369,7 @@ export interface CachedCapabilities {
   resources: Resource[]
   prompts: Prompt[]
   fetchedAt: number
+  features?: ServerFeatures
 }
 
 // Advanced, rarely-changed connection knobs — layered on top of the transport
@@ -419,4 +428,8 @@ export interface MCPServer extends ServerConfig {
   // LoadedServer). The server is usable for non-secret operations but its
   // credentials are missing until re-entered.
   credentialsUnavailable?: boolean
+  // The server's declared capabilities from the initialize handshake (e.g.
+  // completions). Undefined = not yet known (never connected, or cached from
+  // before this field existed).
+  features?: ServerFeatures
 }

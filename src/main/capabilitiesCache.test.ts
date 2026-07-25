@@ -42,6 +42,12 @@ describe('capabilitiesCache', () => {
     expect(read?.fetchedAt).toEqual(expect.any(Number))
   })
 
+  it('round-trips features', async () => {
+    await writeCapabilities('srv-1', { ...caps, features: { completions: true } })
+    const read = await readCapabilities('srv-1')
+    expect(read?.features).toEqual({ completions: true })
+  })
+
   it('leaves no temp file behind after a write', async () => {
     await writeCapabilities('srv-1', caps)
     const files = await fs.readdir(join(h.userData, 'servers', 'srv-1'))
