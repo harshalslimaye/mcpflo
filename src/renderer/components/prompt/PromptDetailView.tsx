@@ -47,6 +47,12 @@ export function PromptDetailView({
 
   const key = promptKey(serverId, prompt.name)
   const history = useServerStore((s) => s.promptHistory[key]) ?? []
+  // Gates the completion typeahead in the Request form's Params tab — only
+  // true once a live/cached connect reported the server's `completions`
+  // capability (see ServerFeatures).
+  const completionsSupported = useServerStore(
+    (s) => s.servers.find((srv) => srv.id === serverId)?.features?.completions ?? false
+  )
   // Explicit selection wins; otherwise the latest get. `find` returning
   // undefined (record capped/cleared away) also falls back to the latest.
   const displayed =
@@ -101,6 +107,7 @@ export function PromptDetailView({
             prefill={effectivePrefill}
             running={running}
             onExecute={handleExecute}
+            completionsSupported={completionsSupported}
           />
         </div>
 

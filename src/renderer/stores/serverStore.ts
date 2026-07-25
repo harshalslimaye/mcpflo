@@ -19,6 +19,7 @@ import type {
   AuthEvent
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
+import { clearCompletionCache } from '../lib/completion'
 import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
@@ -319,6 +320,7 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = f
     resources: cached?.resources ?? [],
     prompts: cached?.prompts ?? [],
     fetchedAt: cached?.fetchedAt,
+    features: cached?.features,
     ...(isOAuth
       ? { auth: { status: authed ? ('authenticated' as const) : ('idle' as const) } }
       : {})
@@ -968,12 +970,20 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         }))
         return
       }
-      const { tools, resources, prompts } = result
+      const { tools, resources, prompts, features } = result
       const finishedAt = Date.now()
       set((state) => ({
         servers: state.servers.map((s) =>
           s.id === id
-            ? { ...s, status: 'connected', tools, resources, prompts, fetchedAt: finishedAt }
+            ? {
+                ...s,
+                status: 'connected',
+                tools,
+                resources,
+                prompts,
+                fetchedAt: finishedAt,
+                features
+              }
             : s
         ),
         // The handshake precedes the listings (earlier `at`); all four land here.
@@ -1015,6 +1025,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   // Clears the cache and fetches again — the manual "refresh" action.
   refreshCapabilities: async (id) => {
+    // A cached completion answered under the old capabilities/data must not
+    // survive into the refreshed connection.
+    clearCompletionCache(id)
     try {
       await window.api.mcp.clearCapabilities(id)
     } catch (err) {
@@ -1029,6 +1042,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   // config), resetting the server to its never-fetched (grey) state so the next
   // expand reconnects and refetches via the existing lazy-fetch path.
   disconnectServer: async (id) => {
+    // The connection is going away — any cached/in-flight completion for it
+    // is now unreachable and must not be served if the server reconnects.
+    clearCompletionCache(id)
     try {
       await window.api.mcp.disconnectServer(id)
       await window.api.mcp.clearCapabilities(id)
@@ -1069,6 +1085,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   },
 
   clearAuth: async (id) => {
+    // Same reasoning as disconnectServer — the session is torn down here too.
+    clearCompletionCache(id)
     try {
       // Main disconnects the session, clears tokens, clears cached capabilities,
       // then pushes an 'idle' auth event which resets the auth field. Since the

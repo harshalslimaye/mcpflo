@@ -175,6 +175,13 @@ export interface PromptGetOutcome {
   authRequired?: boolean
 }
 
+// The server's *declared* capabilities from the initialize handshake — distinct
+// from the tools/resources/prompts listings this codebase calls "capabilities".
+// Only the flags MCPFlo acts on are lifted out; add more as features need them.
+export interface ServerFeatures {
+  completions: boolean
+}
+
 // Capabilities returned after a successful server connection. `authRequired` is
 // set instead of the listings when the fetch couldn't proceed because the server
 // needs (re-)authorization — an expired/rejected token, or an OAuth server that
@@ -186,6 +193,7 @@ export interface ConnectResult {
   resources: Resource[]
   prompts: Prompt[]
   authRequired?: boolean
+  features?: ServerFeatures
 }
 
 // A single content block in a tool-call result (text, image, resource, …).
@@ -354,6 +362,28 @@ export interface ResourceReadOutcome {
   authRequired?: boolean
 }
 
+// What a completion/complete request is asking about — the only two ref types
+// the MCP spec defines. There is no tool-argument completion in the protocol.
+export type CompletionRef =
+  | { type: 'ref/prompt'; name: string }
+  | { type: 'ref/resource'; uri: string }
+
+// Outcome of a completion/complete request as surfaced to the renderer. Unlike
+// ToolCallOutcome/ResourceReadOutcome this never carries a raw JSON-RPC
+// envelope — completions are advisory typeahead data, not a result to inspect
+// as Raw JSON, so `values` (already unwrapped) is all callers need.
+export interface CompletionOutcome {
+  values: string[]
+  total?: number
+  hasMore?: boolean
+  // The server doesn't declare the `completions` capability — a benign no-op,
+  // not a failure.
+  unsupported?: boolean
+  // See ToolCallOutcome.authRequired.
+  authRequired?: boolean
+  error?: string
+}
+
 // Capabilities persisted to disk (servers/<id>/capabilities.json) so they're
 // available before fetching and across app restarts.
 export interface CachedCapabilities {
@@ -361,6 +391,7 @@ export interface CachedCapabilities {
   resources: Resource[]
   prompts: Prompt[]
   fetchedAt: number
+  features?: ServerFeatures
 }
 
 // Advanced, rarely-changed connection knobs — layered on top of the transport
@@ -419,4 +450,8 @@ export interface MCPServer extends ServerConfig {
   // LoadedServer). The server is usable for non-secret operations but its
   // credentials are missing until re-entered.
   credentialsUnavailable?: boolean
+  // The server's declared capabilities from the initialize handshake (e.g.
+  // completions). Undefined = not yet known (never connected, or cached from
+  // before this field existed).
+  features?: ServerFeatures
 }

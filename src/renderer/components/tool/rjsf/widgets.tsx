@@ -12,6 +12,7 @@ import {
 import { ChevronDown } from 'lucide-react'
 import { Toggle } from '../../ui/Toggle'
 import { readTouched } from './touched'
+import { CompletionWidget } from './CompletionWidget'
 
 // Widgets/templates that map RJSF's inputs onto MCPFlo's existing dark Tailwind
 // look. They mirror the markup the hand-rolled Params form used (see the retired
@@ -217,9 +218,10 @@ function CheckboxWidget({
 export const widgets: RegistryWidgetsType = {
   TextareaWidget,
   SelectWidget,
-  CheckboxWidget
+  CheckboxWidget,
+  CompletionWidget
 }
 
 // Registered as a template (not a widget) so every input-based widget that
 // delegates to it — text, number, integer, email, url, … — picks up the styling.
-export { BaseInputTemplate }
+export { BaseInputTemplate, INPUT_CLASS }

@@ -9,6 +9,8 @@ import type {
   ToolCallOutcome,
   ResourceReadOutcome,
   PromptGetOutcome,
+  CompletionRef,
+  CompletionOutcome,
   ToolCallNotificationEvent,
   ElicitationRequestEvent,
   ElicitationClosedEvent,
@@ -58,6 +60,14 @@ const api = {
       name: string,
       args: Record<string, string>
     ): Promise<PromptGetOutcome> => ipcRenderer.invoke('mcp:getPrompt', id, name, args),
+    // Argument completion (completion/complete) — see D9 in the completion
+    // plan: deliberately not logged to History/Activity.
+    complete: (
+      id: string,
+      ref: CompletionRef,
+      argument: { name: string; value: string },
+      context?: { arguments?: Record<string, string> }
+    ): Promise<CompletionOutcome> => ipcRenderer.invoke('mcp:complete', id, ref, argument, context),
     // Subscribes to mid-call notifications; returns an unsubscribe function.
     onToolNotification: (callback: (event: ToolCallNotificationEvent) => void): (() => void) => {
       const listener = (_: unknown, payload: ToolCallNotificationEvent): void => callback(payload)

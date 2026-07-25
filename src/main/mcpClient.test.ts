@@ -32,7 +32,7 @@ const config: ServerConfig = {
   transport: { type: 'stdio', command: 'npx', args: [] }
 }
 
-function makeFakeSession(): Session {
+function makeFakeSession(serverCapabilities?: Record<string, unknown>): Session {
   return {
     client: {
       listTools: vi
@@ -41,7 +41,8 @@ function makeFakeSession(): Session {
       listResources: vi.fn().mockResolvedValue({ resources: [{ uri: 'mem://x' }] }),
       listPrompts: vi.fn().mockResolvedValue({ prompts: [] }),
       readResource: vi.fn().mockResolvedValue({ contents: [] }),
-      getPrompt: vi.fn().mockResolvedValue({ messages: [] })
+      getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
+      getServerCapabilities: vi.fn().mockReturnValue(serverCapabilities)
     } as unknown as Session['client'],
     transport: {} as Session['transport'],
     active: null,
@@ -61,8 +62,21 @@ describe('mcpClient', () => {
       expect(result).toEqual({
         tools: [{ name: 'echo', inputSchema: { type: 'object' } }],
         resources: [{ uri: 'mem://x' }],
-        prompts: []
+        prompts: [],
+        features: { completions: false }
       })
+    })
+
+    it('reports features.completions true when the server declares the capability', async () => {
+      h.getSession.mockResolvedValue(makeFakeSession({ completions: {} }))
+      const result = await mod.connectServer(config)
+      expect(result.features).toEqual({ completions: true })
+    })
+
+    it('reports features.completions false when the server capability is absent', async () => {
+      h.getSession.mockResolvedValue(makeFakeSession(undefined))
+      const result = await mod.connectServer(config)
+      expect(result.features).toEqual({ completions: false })
     })
 
     it('forwards the abort signal to getSession and every capability listing', async () => {
@@ -105,7 +119,12 @@ describe('mcpClient', () => {
       )
       h.getSession.mockResolvedValue(session)
       const result = await mod.connectServer(config)
-      expect(result).toEqual({ tools: [], resources: [], prompts: [] })
+      expect(result).toEqual({
+        tools: [],
+        resources: [],
+        prompts: [],
+        features: { completions: false }
+      })
     })
   })
 
