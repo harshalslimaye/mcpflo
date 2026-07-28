@@ -212,6 +212,18 @@ describe('serverStore', () => {
       expect(useServerStore.getState().servers).toHaveLength(0)
     })
 
+    it('still loads the servers when building their activity events throws', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      // A cache entry that parses but holds the wrong shape — `.length` on it
+      // throws while the events are being built.
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': { tools: null, resources: [], prompts: [], fetchedAt: 1000 }
+      })
+      await useServerStore.getState().hydrate()
+      expect(useServerStore.getState().servers).toHaveLength(1)
+      expect(useServerStore.getState().protocolEvents).toEqual([])
+    })
+
     it('swallows a read failure instead of rejecting', async () => {
       mockApi.mcp.getServers.mockRejectedValue(new Error('disk error'))
       // hydrate is fired from an effect with no catch, so it must not reject.

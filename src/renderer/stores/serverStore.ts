@@ -351,37 +351,44 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         window.api.mcp.getAuthedServerIds()
       ])
       const authed = new Set(authedIds)
-      // Replay each cached server's capability listing into the activity log so
-      // the "All" tab isn't empty on a cached startup. These are badged `cache`
-      // (and stamped at the cache's own fetch time, so their age is honest) —
-      // and deliberately carry no `connect` event, since no handshake happened.
-      const cachedEvents: ProtocolEvent[] = configs.flatMap((c) => {
-        const cached = cache[c.id]
-        if (!cached) return []
-        const list = (
-          kind: 'list-tools' | 'list-resources' | 'list-prompts',
-          detail: string
-        ): ProtocolEvent => ({
-          id: crypto.randomUUID(),
-          kind,
-          serverId: c.id,
-          serverName: c.name,
-          status: 'success',
-          detail,
-          source: 'cache',
-          durationMs: 0,
-          at: cached.fetchedAt
+      // The server list lands first, on its own. Everything below it is a
+      // nicety built from the same cache, and a nicety must never be able to
+      // take the list down with it — a user who sees no servers assumes their
+      // data is gone.
+      set({ servers: configs.map((c) => toRuntime(c, cache[c.id], authed.has(c.id))) })
+      try {
+        // Replay each cached server's capability listing into the activity log so
+        // the "All" tab isn't empty on a cached startup. These are badged `cache`
+        // (and stamped at the cache's own fetch time, so their age is honest) —
+        // and deliberately carry no `connect` event, since no handshake happened.
+        const cachedEvents: ProtocolEvent[] = configs.flatMap((c) => {
+          const cached = cache[c.id]
+          if (!cached) return []
+          const list = (
+            kind: 'list-tools' | 'list-resources' | 'list-prompts',
+            detail: string
+          ): ProtocolEvent => ({
+            id: crypto.randomUUID(),
+            kind,
+            serverId: c.id,
+            serverName: c.name,
+            status: 'success',
+            detail,
+            source: 'cache',
+            durationMs: 0,
+            at: cached.fetchedAt
+          })
+          return [
+            list('list-tools', `${cached.tools.length} tools`),
+            list('list-resources', `${cached.resources.length} resources`),
+            list('list-prompts', `${cached.prompts.length} prompts`)
+          ]
         })
-        return [
-          list('list-tools', `${cached.tools.length} tools`),
-          list('list-resources', `${cached.resources.length} resources`),
-          list('list-prompts', `${cached.prompts.length} prompts`)
-        ]
-      })
-      set({
-        servers: configs.map((c) => toRuntime(c, cache[c.id], authed.has(c.id))),
-        protocolEvents: cachedEvents
-      })
+        set({ protocolEvents: cachedEvents })
+      } catch (err) {
+        // Worst case the timeline starts empty; the servers are already in.
+        reportError(err)
+      }
     } catch (err) {
       // A startup read failure would otherwise leave the app blank with no
       // explanation; surface it instead.
