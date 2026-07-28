@@ -23,10 +23,37 @@ function capabilitiesFile(id: string): string {
   return join(serverDir(id), 'capabilities.json')
 }
 
+// Anything on disk is untrusted: an older MCPFlo may not have written a field
+// that today's code reads, and a crash or a full disk can leave a file that
+// parses but holds the wrong shapes. Casting the parse result would push those
+// problems into the renderer, where a missing array shows up as a blank sidebar
+// far from its cause. So shape the object once, here at the read boundary, and
+// let every caller treat the result as sound.
+//
+// Unknown keys are kept rather than dropped: a newer version of the app may
+// have written fields this build doesn't know about, and preserving them means
+// downgrading and upgrading again doesn't silently discard the cache.
+function normalizeCapabilities(parsed: unknown): CachedCapabilities | undefined {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
+  const raw = parsed as Record<string, unknown>
+  const list = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : [])
+  return {
+    ...raw,
+    tools: list(raw.tools),
+    resources: list(raw.resources),
+    prompts: list(raw.prompts),
+    fetchedAt: typeof raw.fetchedAt === 'number' ? raw.fetchedAt : 0,
+    features:
+      typeof raw.features === 'object' && raw.features !== null && !Array.isArray(raw.features)
+        ? (raw.features as CachedCapabilities['features'])
+        : undefined
+  }
+}
+
 export async function readCapabilities(id: string): Promise<CachedCapabilities | undefined> {
   try {
     const raw = await fs.readFile(capabilitiesFile(id), 'utf-8')
-    return JSON.parse(raw) as CachedCapabilities
+    return normalizeCapabilities(JSON.parse(raw))
   } catch {
     return undefined
   }
