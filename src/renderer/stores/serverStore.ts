@@ -362,6 +362,29 @@ function clearedSession(): Pick<
   }
 }
 
+// The content area shows exactly one detail view, so a server selection and the
+// four leaf selections are mutually exclusive. Every selector spreads this first
+// and sets its own field on top, rather than each one listing the others it must
+// null — that version only held together as long as five call sites agreed, and
+// a sixth selection kind would have to be threaded through all of them by hand.
+//
+// Safe to share (unlike clearedSession below) because every value is null: there
+// is no mutable array here for two servers to end up pointing at.
+const NO_SELECTION = {
+  selectedServerId: null,
+  selectedTool: null,
+  selectedResource: null,
+  selectedResourceTemplate: null,
+  selectedPrompt: null
+} satisfies Pick<
+  ServerStore,
+  | 'selectedServerId'
+  | 'selectedTool'
+  | 'selectedResource'
+  | 'selectedResourceTemplate'
+  | 'selectedPrompt'
+>
+
 export const useServerStore = create<ServerStore>((set, get) => ({
   servers: [],
   selectedServerId: null,
@@ -436,55 +459,20 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
   },
 
-  // Server selection and leaf selection are mutually exclusive with each other —
-  // the content area shows exactly one detail view — so selecting a server
-  // clears any selected leaf, and selecting a leaf clears the server and the
-  // other three leaves. Every selector below must null every other selection:
-  // miss one and two detail views render at once.
-  selectServer: (id) =>
-    set({
-      selectedServerId: id,
-      selectedTool: null,
-      selectedResource: null,
-      selectedResourceTemplate: null,
-      selectedPrompt: null
-    }),
+  // Each selector clears everything, then names the one thing it selects — see
+  // NO_SELECTION for why the clearing isn't spelled out per selector.
+  selectServer: (id) => set({ ...NO_SELECTION, selectedServerId: id }),
 
   selectTool: (serverId, toolName) =>
-    set({
-      selectedTool: { serverId, toolName },
-      selectedResource: null,
-      selectedResourceTemplate: null,
-      selectedPrompt: null,
-      selectedServerId: null
-    }),
+    set({ ...NO_SELECTION, selectedTool: { serverId, toolName } }),
 
-  selectResource: (serverId, uri) =>
-    set({
-      selectedResource: { serverId, uri },
-      selectedTool: null,
-      selectedResourceTemplate: null,
-      selectedPrompt: null,
-      selectedServerId: null
-    }),
+  selectResource: (serverId, uri) => set({ ...NO_SELECTION, selectedResource: { serverId, uri } }),
 
   selectResourceTemplate: (serverId, uriTemplate) =>
-    set({
-      selectedResourceTemplate: { serverId, uriTemplate },
-      selectedTool: null,
-      selectedResource: null,
-      selectedPrompt: null,
-      selectedServerId: null
-    }),
+    set({ ...NO_SELECTION, selectedResourceTemplate: { serverId, uriTemplate } }),
 
   selectPrompt: (serverId, promptName) =>
-    set({
-      selectedPrompt: { serverId, promptName },
-      selectedTool: null,
-      selectedResource: null,
-      selectedResourceTemplate: null,
-      selectedServerId: null
-    }),
+    set({ ...NO_SELECTION, selectedPrompt: { serverId, promptName } }),
 
   executeTool: async (serverId, toolName, args) => {
     const server = get().servers.find((s) => s.id === serverId)

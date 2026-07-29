@@ -33,21 +33,28 @@ function capabilitiesFile(id: string): string {
 // Unknown keys are kept rather than dropped: a newer version of the app may
 // have written fields this build doesn't know about, and preserving them means
 // downgrading and upgrading again doesn't silently discard the cache.
+// `typeof null` is 'object' and so is an array, so a bare typeof check isn't
+// enough to conclude "a record of fields".
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function normalizeCapabilities(parsed: unknown): CachedCapabilities | undefined {
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
-  const raw = parsed as Record<string, unknown>
+  if (!isPlainObject(parsed)) return undefined
   const list = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : [])
   return {
-    ...raw,
-    tools: list(raw.tools),
-    resources: list(raw.resources),
-    prompts: list(raw.prompts),
-    resourceTemplates: list(raw.resourceTemplates),
-    fetchedAt: typeof raw.fetchedAt === 'number' ? raw.fetchedAt : 0,
-    features:
-      typeof raw.features === 'object' && raw.features !== null && !Array.isArray(raw.features)
-        ? (raw.features as CachedCapabilities['features'])
-        : undefined
+    ...parsed,
+    tools: list(parsed.tools),
+    resources: list(parsed.resources),
+    prompts: list(parsed.prompts),
+    resourceTemplates: list(parsed.resourceTemplates),
+    fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : 0,
+    // Only the outer shape is checked; the flags inside are left as written,
+    // since the renderer reads each one defensively anyway. Hence the assertion
+    // through unknown — it's a claim about the contents, not a proof.
+    features: isPlainObject(parsed.features)
+      ? (parsed.features as unknown as CachedCapabilities['features'])
+      : undefined
   }
 }
 
