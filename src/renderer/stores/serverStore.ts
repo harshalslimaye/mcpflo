@@ -338,6 +338,30 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = f
   }
 }
 
+// The state a server drops back to when its session is torn down — disconnect
+// and sign-out both land here, and main clears the on-disk cache to match.
+// Every capability listing belongs in this one object: one left out survives
+// the teardown and keeps rendering as though the server were still connected,
+// which also holds the context budget above zero and so keeps the cards that
+// hide themselves on an empty server on screen.
+//
+// A function rather than a constant so each call gets its own arrays — a shared
+// literal would hand the same array instance to every torn-down server.
+function clearedSession(): Pick<
+  MCPServer,
+  'status' | 'error' | 'tools' | 'resources' | 'resourceTemplates' | 'prompts' | 'fetchedAt'
+> {
+  return {
+    status: 'disconnected',
+    error: undefined,
+    tools: [],
+    resources: [],
+    resourceTemplates: [],
+    prompts: [],
+    fetchedAt: undefined
+  }
+}
+
 export const useServerStore = create<ServerStore>((set, get) => ({
   servers: [],
   selectedServerId: null,
@@ -943,6 +967,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       selectedServerId: state.selectedServerId === id ? null : state.selectedServerId,
       selectedTool: state.selectedTool?.serverId === id ? null : state.selectedTool,
       selectedResource: state.selectedResource?.serverId === id ? null : state.selectedResource,
+      selectedResourceTemplate:
+        state.selectedResourceTemplate?.serverId === id ? null : state.selectedResourceTemplate,
       selectedPrompt: state.selectedPrompt?.serverId === id ? null : state.selectedPrompt,
       history: Object.fromEntries(
         Object.entries(state.history).filter(([key]) => !key.startsWith(`${id}::`))
@@ -1103,19 +1129,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       reportError(err)
     }
     set((state) => ({
-      servers: state.servers.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              status: 'disconnected',
-              error: undefined,
-              tools: [],
-              resources: [],
-              prompts: [],
-              fetchedAt: undefined
-            }
-          : s
-      )
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...clearedSession() } : s))
     }))
   },
 
@@ -1143,25 +1157,13 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       // then pushes an 'idle' auth event which resets the auth field. Since the
       // live session is genuinely torn down, mirror disconnectServer's local
       // reset here too — otherwise the row would keep rendering green with its
-      // (now unreachable) tools/resources/prompts still listed.
+      // (now unreachable) capabilities still listed.
       await window.api.mcp.clearAuth(id)
     } catch (err) {
       reportError(err)
     }
     set((state) => ({
-      servers: state.servers.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              status: 'disconnected',
-              error: undefined,
-              tools: [],
-              resources: [],
-              prompts: [],
-              fetchedAt: undefined
-            }
-          : s
-      )
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...clearedSession() } : s))
     }))
   },
 

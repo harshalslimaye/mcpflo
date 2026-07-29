@@ -1392,6 +1392,21 @@ describe('serverStore', () => {
       expect(useServerStore.getState().selectedTool?.serverId).toBe('github-mcp')
     })
 
+    it('clears selectedResourceTemplate if it belonged to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().selectedResourceTemplate).toBeNull()
+    })
+
+    it('preserves selectedResourceTemplate if a different server is removed', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      await useServerStore.getState().removeServer('slack-mcp')
+      expect(useServerStore.getState().selectedResourceTemplate?.serverId).toBe('github-mcp')
+    })
+
     it('prunes call history belonging to the removed server', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().addServer(slackConfig)
@@ -1720,6 +1735,13 @@ describe('serverStore', () => {
   describe('disconnectServer', () => {
     it('disconnects, clears cached capabilities, and resets the server to disconnected (grey)', async () => {
       await useServerStore.getState().addServer(githubConfig)
+      // Every listing populated, so the reset has something to clear in each.
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [{ name: 'create_issue', inputSchema: { type: 'object' as const } }],
+        resources: [{ uri: 'repo://tree' }],
+        resourceTemplates: [{ uriTemplate: 'repo://{owner}/tree' }],
+        prompts: [{ name: 'summarize' }]
+      })
       await useServerStore.getState().fetchCapabilities('github-mcp')
       expect(useServerStore.getState().servers[0].status).toBe('connected')
 
@@ -1731,6 +1753,7 @@ describe('serverStore', () => {
       expect(server?.status).toBe('disconnected')
       expect(server?.tools).toEqual([])
       expect(server?.resources).toEqual([])
+      expect(server?.resourceTemplates).toEqual([])
       expect(server?.prompts).toEqual([])
       expect(server?.fetchedAt).toBeUndefined()
     })
@@ -1843,6 +1866,7 @@ describe('serverStore', () => {
           'oauth-mcp': {
             tools: [{ name: 'echo', inputSchema: { type: 'object' } }],
             resources: [{ uri: 'file://x', name: 'x' }],
+            resourceTemplates: [{ uriTemplate: 'file://{name}' }],
             prompts: [{ name: 'greet' }],
             fetchedAt: 1000
           }
@@ -1856,6 +1880,7 @@ describe('serverStore', () => {
         expect(server.status).toBe('disconnected')
         expect(server.tools).toEqual([])
         expect(server.resources).toEqual([])
+        expect(server.resourceTemplates).toEqual([])
         expect(server.prompts).toEqual([])
         expect(server.fetchedAt).toBeUndefined()
       })
