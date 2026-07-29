@@ -42,6 +42,7 @@ function normalizeCapabilities(parsed: unknown): CachedCapabilities | undefined 
     tools: list(raw.tools),
     resources: list(raw.resources),
     prompts: list(raw.prompts),
+    resourceTemplates: list(raw.resourceTemplates),
     fetchedAt: typeof raw.fetchedAt === 'number' ? raw.fetchedAt : 0,
     features:
       typeof raw.features === 'object' && raw.features !== null && !Array.isArray(raw.features)

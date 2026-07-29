@@ -4,6 +4,7 @@ import type {
   ServerConfig,
   Tool,
   Resource,
+  ResourceTemplate,
   Prompt,
   TransportConfig,
   StdioTransportConfig,
@@ -48,6 +49,13 @@ const resource: Resource = {
   mimeType: 'application/json'
 }
 
+const resourceTemplate: ResourceTemplate = {
+  uriTemplate: 'github://repos/{owner}/{repo}',
+  name: 'Repository',
+  description: 'A GitHub repository by owner and name',
+  mimeType: 'application/json'
+}
+
 const prompt: Prompt = {
   name: 'summarize_pr',
   description: 'Summarize a pull request',
@@ -68,6 +76,7 @@ const server: MCPServer = {
   status: 'connected',
   tools: [tool],
   resources: [resource],
+  resourceTemplates: [resourceTemplate],
   prompts: [prompt]
 }
 
@@ -243,6 +252,25 @@ describe('Resource', () => {
   })
 })
 
+// ── ResourceTemplate ─────────────────────────────────────────────────────────
+
+describe('ResourceTemplate', () => {
+  it('has required uriTemplate field', () => {
+    expect(resourceTemplate.uriTemplate).toBe('github://repos/{owner}/{repo}')
+  })
+
+  it('accepts optional name, description, mimeType', () => {
+    expect(resourceTemplate.name).toBe('Repository')
+    expect(resourceTemplate.mimeType).toBe('application/json')
+  })
+
+  it('works with uriTemplate only', () => {
+    const minimal: ResourceTemplate = { uriTemplate: 'file:///{path}' }
+    expect(minimal.name).toBeUndefined()
+    expect(minimal.mimeType).toBeUndefined()
+  })
+})
+
 // ── Prompt ───────────────────────────────────────────────────────────────────
 
 describe('Prompt', () => {
@@ -317,6 +345,7 @@ describe('MCPServer', () => {
       status: 'disconnected',
       tools: [],
       resources: [],
+      resourceTemplates: [],
       prompts: []
     }
     expect(empty.tools).toHaveLength(0)
@@ -337,6 +366,7 @@ describe('MCPServer', () => {
       status: 'disconnected',
       tools: [],
       resources: [],
+      resourceTemplates: [],
       prompts: []
     }
     expect(minimal.error).toBeUndefined()

@@ -4,6 +4,7 @@ import type {
   Tool,
   Resource,
   Prompt,
+  ResourceTemplate,
   ResourceReadOutcome,
   PromptGetOutcome,
   ServerFeatures
@@ -26,6 +27,7 @@ export interface ConnectResult {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
+  resourceTemplates?: ResourceTemplate[]
   // Set (with empty listings) when the connect couldn't proceed because the
   // server needs (re-)authorization — see the shared ConnectResult for details.
   authRequired?: boolean
@@ -41,10 +43,14 @@ export async function connectServer(
   // Forward the abort signal into each listing too, so a cancel during the
   // capability fetch (not just the connect) interrupts the in-flight requests.
   const opts = { signal }
-  const [toolsResult, resourcesResult, promptsResult] = await Promise.all([
+  // Each listing swallows its own failure so one unsupported method can't cost
+  // us the other three — a server that never declared resources/templates/list
+  // answers MethodNotFound, which is a normal answer, not a broken server.
+  const [toolsResult, resourcesResult, promptsResult, templatesResult] = await Promise.all([
     client.listTools(undefined, opts).catch(() => ({ tools: [] })),
     client.listResources(undefined, opts).catch(() => ({ resources: [] })),
-    client.listPrompts(undefined, opts).catch(() => ({ prompts: [] }))
+    client.listPrompts(undefined, opts).catch(() => ({ prompts: [] })),
+    client.listResourceTemplates(undefined, opts).catch(() => ({ resourceTemplates: [] }))
   ])
 
   // Read live off the negotiated handshake rather than caching it — this is the
@@ -55,6 +61,7 @@ export async function connectServer(
     tools: toolsResult.tools as Tool[],
     resources: resourcesResult.resources as Resource[],
     prompts: promptsResult.prompts as Prompt[],
+    resourceTemplates: templatesResult.resourceTemplates as ResourceTemplate[],
     features: { completions: serverCapabilities?.completions !== undefined }
   }
 }
@@ -160,10 +167,10 @@ export async function fetchCapabilities(
     // instead of a red error, and the IPC handler doesn't log a raw rejection.
     if (err instanceof UnauthorizedError) {
       handleOperationAuthError(config.id)
-      return { tools: [], resources: [], prompts: [], authRequired: true }
+      return { tools: [], resources: [], prompts: [], resourceTemplates: [], authRequired: true }
     }
     if (err instanceof DcrRegistrationRequiredError) {
-      return { tools: [], resources: [], prompts: [], authRequired: true }
+      return { tools: [], resources: [], prompts: [], resourceTemplates: [], authRequired: true }
     }
     throw err
   }

@@ -42,6 +42,15 @@ describe('capabilitiesCache', () => {
     expect(read?.fetchedAt).toEqual(expect.any(Number))
   })
 
+  it('round-trips resource templates', async () => {
+    await writeCapabilities('srv-1', {
+      ...caps,
+      resourceTemplates: [{ uriTemplate: 'file:///{path}', name: 'file' }]
+    })
+    const read = await readCapabilities('srv-1')
+    expect(read?.resourceTemplates).toEqual([{ uriTemplate: 'file:///{path}', name: 'file' }])
+  })
+
   it('round-trips features', async () => {
     await writeCapabilities('srv-1', { ...caps, features: { completions: true } })
     const read = await readCapabilities('srv-1')
@@ -77,6 +86,9 @@ describe('capabilitiesCache', () => {
       const read = await readCapabilities('srv-1')
       expect(read?.resources).toEqual([])
       expect(read?.prompts).toEqual([])
+      // Written long before templates existed — reads back as an empty list,
+      // not undefined, so callers need no guard.
+      expect(read?.resourceTemplates).toEqual([])
     })
 
     it('replaces a null listing with an empty array', async () => {

@@ -318,6 +318,7 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = f
     status: cached ? 'connected' : 'disconnected',
     tools: cached?.tools ?? [],
     resources: cached?.resources ?? [],
+    resourceTemplates: cached?.resourceTemplates ?? [],
     prompts: cached?.prompts ?? [],
     fetchedAt: cached?.fetchedAt,
     features: cached?.features,
