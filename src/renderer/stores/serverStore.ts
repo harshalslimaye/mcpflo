@@ -202,6 +202,14 @@ export interface SelectedResource {
   uri: string
 }
 
+// Identifies a selected resource template. Keyed by the template rather than by
+// any URI it expands to: the template is what the server lists and what stays
+// put while the user tries different variable values.
+export interface SelectedResourceTemplate {
+  serverId: string
+  uriTemplate: string
+}
+
 // Identifies a selected prompt. Prompt names are only unique within a server, so
 // the owning server id is part of the key.
 export interface SelectedPrompt {
@@ -214,6 +222,7 @@ interface ServerStore {
   selectedServerId: string | null
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
+  selectedResourceTemplate: SelectedResourceTemplate | null
   selectedPrompt: SelectedPrompt | null
   // Per-tool call history (newest first), keyed by `toolKey(serverId, toolName)`.
   history: Record<string, ToolCallRecord[]>
@@ -257,6 +266,7 @@ interface ServerStore {
   selectServer: (id: string | null) => void
   selectTool: (serverId: string, toolName: string) => void
   selectResource: (serverId: string, uri: string) => void
+  selectResourceTemplate: (serverId: string, uriTemplate: string) => void
   selectPrompt: (serverId: string, promptName: string) => void
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
   clearHistory: (serverId: string, toolName: string) => void
@@ -333,6 +343,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   selectedServerId: null,
   selectedTool: null,
   selectedResource: null,
+  selectedResourceTemplate: null,
   selectedPrompt: null,
   history: {},
   resourceHistory: {},
@@ -366,7 +377,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
           const cached = cache[c.id]
           if (!cached) return []
           const list = (
-            kind: 'list-tools' | 'list-resources' | 'list-prompts',
+            kind: 'list-tools' | 'list-resources' | 'list-resource-templates' | 'list-prompts',
             detail: string
           ): ProtocolEvent => ({
             id: crypto.randomUUID(),
@@ -382,6 +393,10 @@ export const useServerStore = create<ServerStore>((set, get) => ({
           return [
             list('list-tools', `${cached.tools.length} tools`),
             list('list-resources', `${cached.resources.length} resources`),
+            list(
+              'list-resource-templates',
+              `${cached.resourceTemplates?.length ?? 0} resource templates`
+            ),
             list('list-prompts', `${cached.prompts.length} prompts`)
           ]
         })
@@ -397,18 +412,25 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
   },
 
-  // Server selection and tool/resource/prompt selection are mutually
-  // exclusive with each other — the content area shows exactly one detail
-  // view — so selecting a server clears any selected leaf.
+  // Server selection and leaf selection are mutually exclusive with each other —
+  // the content area shows exactly one detail view — so selecting a server
+  // clears any selected leaf, and selecting a leaf clears the server and the
+  // other three leaves. Every selector below must null every other selection:
+  // miss one and two detail views render at once.
   selectServer: (id) =>
-    set({ selectedServerId: id, selectedTool: null, selectedResource: null, selectedPrompt: null }),
+    set({
+      selectedServerId: id,
+      selectedTool: null,
+      selectedResource: null,
+      selectedResourceTemplate: null,
+      selectedPrompt: null
+    }),
 
-  // Tool, resource and prompt selection are mutually exclusive with each
-  // other and with the server selection — selecting one clears the rest.
   selectTool: (serverId, toolName) =>
     set({
       selectedTool: { serverId, toolName },
       selectedResource: null,
+      selectedResourceTemplate: null,
       selectedPrompt: null,
       selectedServerId: null
     }),
@@ -417,6 +439,16 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     set({
       selectedResource: { serverId, uri },
       selectedTool: null,
+      selectedResourceTemplate: null,
+      selectedPrompt: null,
+      selectedServerId: null
+    }),
+
+  selectResourceTemplate: (serverId, uriTemplate) =>
+    set({
+      selectedResourceTemplate: { serverId, uriTemplate },
+      selectedTool: null,
+      selectedResource: null,
       selectedPrompt: null,
       selectedServerId: null
     }),
@@ -426,6 +458,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       selectedPrompt: { serverId, promptName },
       selectedTool: null,
       selectedResource: null,
+      selectedResourceTemplate: null,
       selectedServerId: null
     }),
 
@@ -979,6 +1012,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         return
       }
       const { tools, resources, prompts, features } = result
+      // Optional over the wire (a server that doesn't support the method yields
+      // nothing), required on the runtime server.
+      const resourceTemplates = result.resourceTemplates ?? []
       const finishedAt = Date.now()
       set((state) => ({
         servers: state.servers.map((s) =>
@@ -988,15 +1024,22 @@ export const useServerStore = create<ServerStore>((set, get) => ({
                 status: 'connected',
                 tools,
                 resources,
+                resourceTemplates,
                 prompts,
                 fetchedAt: finishedAt,
                 features
               }
             : s
         ),
-        // The handshake precedes the listings (earlier `at`); all four land here.
+        // The handshake precedes the listings (earlier `at`); all five land here.
         protocolEvents: [
           proto('list-prompts', 'success', `${prompts.length} prompts`, finishedAt),
+          proto(
+            'list-resource-templates',
+            'success',
+            `${resourceTemplates.length} resource templates`,
+            finishedAt
+          ),
           proto('list-resources', 'success', `${resources.length} resources`, finishedAt),
           proto('list-tools', 'success', `${tools.length} tools`, finishedAt),
           proto('connect', 'success', 'initialized', startedAt),

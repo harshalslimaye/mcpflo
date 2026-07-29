@@ -39,6 +39,13 @@ const base: MCPServer = {
       description: 'File tree of the default branch.'
     }
   ],
+  resourceTemplates: [
+    {
+      uriTemplate: 'repo://{owner}/{repo}/tree/{ref}',
+      name: 'tree at ref',
+      description: 'File tree of any branch, tag or commit.'
+    }
+  ],
   prompts: [
     {
       name: 'open_pr_review',
@@ -51,7 +58,9 @@ const base: MCPServer = {
 // Helper: a server's exact expected formatting, derived from the same utility
 // the component uses — keeps assertions correct even if token estimates shift
 // with the tokenizer, since both sides compute from the same input.
-function expected(server: Pick<MCPServer, 'tools' | 'resources' | 'prompts'>): {
+function expected(
+  server: Pick<MCPServer, 'tools' | 'resources' | 'resourceTemplates' | 'prompts'>
+): {
   budget: ReturnType<typeof computeContextBudget>
   totalTokens: string
   windowPercent: string
@@ -67,7 +76,9 @@ function expected(server: Pick<MCPServer, 'tools' | 'resources' | 'prompts'>): {
 describe('ContextBudgetCard', () => {
   it('renders nothing when the server has no capabilities', () => {
     const { container } = render(
-      <ContextBudgetCard server={{ ...base, tools: [], resources: [], prompts: [] }} />
+      <ContextBudgetCard
+        server={{ ...base, tools: [], resources: [], resourceTemplates: [], prompts: [] }}
+      />
     )
     expect(container).toBeEmptyDOMElement()
   })
@@ -84,6 +95,7 @@ describe('ContextBudgetCard', () => {
     const rows = [
       ['Tools', '2'],
       ['Resources', '1'],
+      ['Resource Templates', '1'],
       ['Prompts', '1']
     ]
     for (const [label, count] of rows) {
@@ -117,13 +129,13 @@ describe('ContextBudgetCard', () => {
   it('renders one bar segment per non-empty category', () => {
     const { container } = render(<ContextBudgetCard server={base} />)
     const bar = container.querySelector('.rounded-full.bg-bg-elevated') as HTMLElement
-    expect(bar.children).toHaveLength(3)
+    expect(bar.children).toHaveLength(4)
   })
 
   it('omits a bar segment for an empty category', () => {
     const { container } = render(<ContextBudgetCard server={{ ...base, prompts: [] }} />)
     const bar = container.querySelector('.rounded-full.bg-bg-elevated') as HTMLElement
-    expect(bar.children).toHaveLength(2)
+    expect(bar.children).toHaveLength(3)
   })
 
   describe('bar segment tooltip', () => {

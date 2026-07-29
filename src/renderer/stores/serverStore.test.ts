@@ -112,6 +112,7 @@ describe('serverStore', () => {
       selectedServerId: null,
       selectedTool: null,
       selectedResource: null,
+      selectedResourceTemplate: null,
       selectedPrompt: null,
       history: {},
       resourceHistory: {},
@@ -193,6 +194,7 @@ describe('serverStore', () => {
       const events = useServerStore.getState().protocolEvents
       expect(events.map((e) => e.kind).sort()).toEqual([
         'list-prompts',
+        'list-resource-templates',
         'list-resources',
         'list-tools'
       ])
@@ -340,6 +342,75 @@ describe('serverStore', () => {
       useServerStore.getState().selectPrompt('github-mcp', 'summarize')
       expect(useServerStore.getState().selectedServerId).toBeNull()
     })
+  })
+
+  describe('selectResourceTemplate', () => {
+    it('sets the selected template with its owning server id', () => {
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      expect(useServerStore.getState().selectedResourceTemplate).toEqual({
+        serverId: 'github-mcp',
+        uriTemplate: 'mem://{id}'
+      })
+    })
+
+    it('clears a selected tool, resource and prompt', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      expect(useServerStore.getState().selectedTool).toBeNull()
+      expect(useServerStore.getState().selectedResource).toBeNull()
+      expect(useServerStore.getState().selectedPrompt).toBeNull()
+      expect(useServerStore.getState().selectedResourceTemplate?.uriTemplate).toBe('mem://{id}')
+    })
+
+    it('clears a selected server (mutually exclusive with the server view)', () => {
+      useServerStore.getState().selectServer('github-mcp')
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      expect(useServerStore.getState().selectedServerId).toBeNull()
+    })
+  })
+
+  // The content area renders whichever selection is non-null, so two live at
+  // once means two detail views at once. Each new leaf kind adds a row *and* a
+  // column here, and missing a single cell is easy — hence the exhaustive sweep
+  // rather than a few hand-picked pairs.
+  describe('leaf selection is mutually exclusive', () => {
+    const select = {
+      selectedTool: () => useServerStore.getState().selectTool('github-mcp', 'create_issue'),
+      selectedResource: () => useServerStore.getState().selectResource('github-mcp', 'mem://x'),
+      selectedResourceTemplate: () =>
+        useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}'),
+      selectedPrompt: () => useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+    }
+    const kinds = Object.keys(select) as (keyof typeof select)[]
+
+    for (const first of kinds) {
+      for (const second of kinds) {
+        if (first === second) continue
+        it(`selecting a ${second} clears a ${first}`, () => {
+          select[first]()
+          select[second]()
+          for (const kind of kinds) {
+            if (kind === second) expect(useServerStore.getState()[kind]).not.toBeNull()
+            else expect(useServerStore.getState()[kind]).toBeNull()
+          }
+        })
+      }
+
+      it(`selecting a server clears a ${first}`, () => {
+        select[first]()
+        useServerStore.getState().selectServer('github-mcp')
+        expect(useServerStore.getState()[first]).toBeNull()
+        expect(useServerStore.getState().selectedServerId).toBe('github-mcp')
+      })
+
+      it(`selecting a ${first} clears the selected server`, () => {
+        useServerStore.getState().selectServer('github-mcp')
+        select[first]()
+        expect(useServerStore.getState().selectedServerId).toBeNull()
+      })
+    }
   })
 
   describe('executeTool', () => {
@@ -1528,11 +1599,41 @@ describe('serverStore', () => {
       expect(events.map((e) => e.kind).sort()).toEqual([
         'connect',
         'list-prompts',
+        'list-resource-templates',
         'list-resources',
         'list-tools'
       ])
       expect(events.every((e) => e.serverId === 'github-mcp' && e.status === 'success')).toBe(true)
       expect(events.find((e) => e.kind === 'list-tools')?.detail).toBe('1 tools')
+    })
+
+    it('reports zero templates when the server listed none', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const events = useServerStore.getState().protocolEvents
+      expect(events.find((e) => e.kind === 'list-resource-templates')?.detail).toBe(
+        '0 resource templates'
+      )
+      expect(useServerStore.getState().servers[0].resourceTemplates).toEqual([])
+    })
+
+    it('stores the listed resource templates on the server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [],
+        resources: [],
+        prompts: [],
+        resourceTemplates: [{ uriTemplate: 'mem://{id}' }]
+      })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      expect(useServerStore.getState().servers[0].resourceTemplates).toEqual([
+        { uriTemplate: 'mem://{id}' }
+      ])
+      const events = useServerStore.getState().protocolEvents
+      expect(events.find((e) => e.kind === 'list-resource-templates')?.detail).toBe(
+        '1 resource templates'
+      )
     })
 
     it('records a single connect error protocol event on failure', async () => {

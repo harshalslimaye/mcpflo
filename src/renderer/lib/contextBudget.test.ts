@@ -8,13 +8,14 @@ import {
   estimatePromptDefinitionPayload,
   estimatePromptTokens,
   estimateResourceDefinitionPayload,
+  estimateResourceTemplateTokens,
   estimateResourceTokens,
   estimateResponseTokens,
   estimateToolDefinitionPayload,
   estimateToolTokens,
   footprintStatus
 } from './contextBudget'
-import type { Prompt, Resource, Tool } from '../../shared/mcp.types'
+import type { Prompt, Resource, ResourceTemplate, Tool } from '../../shared/mcp.types'
 
 const tool = (over: Partial<Tool> = {}): Tool => ({
   name: 'create_repository',
@@ -31,6 +32,14 @@ const resource = (over: Partial<Resource> = {}): Resource => ({
   uri: 'repo://octocat/hello-world/tree',
   name: 'tree',
   description: 'File tree of the default branch.',
+  mimeType: 'application/json',
+  ...over
+})
+
+const resourceTemplate = (over: Partial<ResourceTemplate> = {}): ResourceTemplate => ({
+  uriTemplate: 'repo://{owner}/{repo}/tree/{ref}',
+  name: 'tree at ref',
+  description: 'File tree of any branch, tag or commit.',
   mimeType: 'application/json',
   ...over
 })
@@ -105,22 +114,56 @@ describe('definition payload estimators', () => {
   })
 })
 
+describe('estimateResourceTemplateTokens', () => {
+  it('counts a template definition as tokens', () => {
+    expect(estimateResourceTemplateTokens(resourceTemplate())).toBeGreaterThan(0)
+  })
+
+  it('grows with a longer description', () => {
+    const short = estimateResourceTemplateTokens(resourceTemplate({ description: 'Tree.' }))
+    const long = estimateResourceTemplateTokens(
+      resourceTemplate({ description: 'Tree. '.repeat(50) })
+    )
+    expect(long).toBeGreaterThan(short)
+  })
+})
+
 describe('computeContextBudget', () => {
   it('reports counts matching the input lengths', () => {
     const budget = computeContextBudget({
       tools: [tool(), tool({ name: 'b' })],
       resources: [resource()],
+      resourceTemplates: [resourceTemplate(), resourceTemplate({ uriTemplate: 'repo://{a}' })],
       prompts: [prompt(), prompt({ name: 'c' }), prompt({ name: 'd' })]
     })
     expect(budget.tools.count).toBe(2)
     expect(budget.resources.count).toBe(1)
+    expect(budget.resourceTemplates.count).toBe(2)
     expect(budget.prompts.count).toBe(3)
-    expect(budget.total.count).toBe(6)
+    expect(budget.total.count).toBe(8)
+  })
+
+  it('sums resource templates into the grand total', () => {
+    const templates = [resourceTemplate(), resourceTemplate({ uriTemplate: 'repo://{a}' })]
+    const budget = computeContextBudget({
+      tools: [],
+      resources: [],
+      resourceTemplates: templates,
+      prompts: []
+    })
+    const expected = templates.reduce((s, t) => s + estimateResourceTemplateTokens(t), 0)
+    expect(budget.resourceTemplates.tokens).toBe(expected)
+    expect(budget.total.tokens).toBe(expected)
   })
 
   it('sums each category to the total of its per-item estimates', () => {
     const tools = [tool(), tool({ name: 'b', description: 'Another tool.' })]
-    const budget = computeContextBudget({ tools, resources: [], prompts: [] })
+    const budget = computeContextBudget({
+      tools,
+      resources: [],
+      resourceTemplates: [],
+      prompts: []
+    })
     const expected = tools.reduce((s, t) => s + estimateToolTokens(t), 0)
     expect(budget.tools.tokens).toBe(expected)
     expect(budget.total.tokens).toBe(expected)
@@ -128,12 +171,22 @@ describe('computeContextBudget', () => {
 
   it('averages tokens per item (rounded)', () => {
     const tools = [tool(), tool({ name: 'b' })]
-    const budget = computeContextBudget({ tools, resources: [], prompts: [] })
+    const budget = computeContextBudget({
+      tools,
+      resources: [],
+      resourceTemplates: [],
+      prompts: []
+    })
     expect(budget.tools.avg).toBe(Math.round(budget.tools.tokens / 2))
   })
 
   it('derives windowFraction from the total over the reference window', () => {
-    const budget = computeContextBudget({ tools: [tool()], resources: [], prompts: [] })
+    const budget = computeContextBudget({
+      tools: [tool()],
+      resources: [],
+      resourceTemplates: [],
+      prompts: []
+    })
     expect(budget.windowFraction).toBeCloseTo(budget.total.tokens / CONTEXT_WINDOW_TOKENS, 10)
   })
 
@@ -141,24 +194,37 @@ describe('computeContextBudget', () => {
     const budget = computeContextBudget({
       tools: [tool()],
       resources: [resource()],
+      resourceTemplates: [resourceTemplate()],
       prompts: [prompt()]
     })
     const sum =
       budget.tools.fractionOfTotal +
       budget.resources.fractionOfTotal +
+      budget.resourceTemplates.fractionOfTotal +
       budget.prompts.fractionOfTotal
     expect(sum).toBeCloseTo(1, 10)
   })
 
   it('assigns the whole fraction to the only populated category', () => {
-    const budget = computeContextBudget({ tools: [tool()], resources: [], prompts: [] })
+    const budget = computeContextBudget({
+      tools: [tool()],
+      resources: [],
+      resourceTemplates: [],
+      prompts: []
+    })
     expect(budget.tools.fractionOfTotal).toBeCloseTo(1, 10)
     expect(budget.resources.fractionOfTotal).toBe(0)
+    expect(budget.resourceTemplates.fractionOfTotal).toBe(0)
     expect(budget.prompts.fractionOfTotal).toBe(0)
   })
 
   describe('empty server', () => {
-    const budget = computeContextBudget({ tools: [], resources: [], prompts: [] })
+    const budget = computeContextBudget({
+      tools: [],
+      resources: [],
+      resourceTemplates: [],
+      prompts: []
+    })
 
     it('zeroes every count and token total', () => {
       expect(budget.total.count).toBe(0)
@@ -178,7 +244,12 @@ describe('computeContextBudget', () => {
   })
 
   it('is deterministic for the same server', () => {
-    const server = { tools: [tool()], resources: [resource()], prompts: [prompt()] }
+    const server = {
+      tools: [tool()],
+      resources: [resource()],
+      resourceTemplates: [resourceTemplate()],
+      prompts: [prompt()]
+    }
     expect(computeContextBudget(server)).toEqual(computeContextBudget(server))
   })
 })

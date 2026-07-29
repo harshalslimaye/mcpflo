@@ -11,6 +11,7 @@ const oauthServer: MCPServer = {
   status: 'disconnected',
   tools: [],
   resources: [],
+  resourceTemplates: [],
   prompts: [],
   auth: { status: 'idle' }
 }

@@ -12,6 +12,7 @@ const base: MCPServer = {
   fetchedAt: Date.now() - 60 * 1000,
   tools: [],
   resources: [],
+  resourceTemplates: [],
   prompts: []
 }
 
@@ -74,19 +75,20 @@ describe('ServerDetailView', () => {
     const multi = server({
       tools: [{ name: 'x', inputSchema: { type: 'object' } }],
       resources: [{ uri: 'r://one' }],
+      resourceTemplates: [{ uriTemplate: 't://{id}' }],
       prompts: []
     })
 
     it('shows a tile per category with its count', () => {
       render(<ServerDetailView server={multi} />)
-      expect(screen.getByRole('button', { name: /Tools/ })).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Resources/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Tools/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Resources/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^Resource Templates/ })).toBeInTheDocument()
     })
 
     it('disables the tile for an empty category', () => {
       render(<ServerDetailView server={multi} />)
-      const promptsTile = screen.getAllByRole('button').find((b) => b.textContent?.includes('0'))
-      expect(promptsTile).toBeDisabled()
+      expect(screen.getByRole('button', { name: /^Prompts/ })).toBeDisabled()
     })
 
     it('jumps to the Capabilities tab filtered to the clicked category', () => {
@@ -96,11 +98,19 @@ describe('ServerDetailView', () => {
       expect(screen.queryByText('x')).not.toBeInTheDocument()
     })
 
+    it('jumps to the Capabilities tab filtered to resource templates', () => {
+      render(<ServerDetailView server={multi} />)
+      fireEvent.click(screen.getByRole('button', { name: /^Resource Templates/ }))
+      expect(screen.getByText('t://{id}')).toBeInTheDocument()
+      expect(screen.queryByText('r://one')).not.toBeInTheDocument()
+    })
+
     it('shows all categories when the Capabilities tab is opened directly', () => {
       render(<ServerDetailView server={multi} />)
-      fireEvent.click(screen.getByRole('button', { name: 'Capabilities (2)' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Capabilities (3)' }))
       expect(screen.getByText('x')).toBeInTheDocument()
       expect(screen.getByText('r://one')).toBeInTheDocument()
+      expect(screen.getByText('t://{id}')).toBeInTheDocument()
     })
   })
 

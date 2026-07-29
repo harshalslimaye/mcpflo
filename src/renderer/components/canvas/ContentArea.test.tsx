@@ -17,6 +17,7 @@ const server: MCPServer = {
     }
   ],
   resources: [{ uri: 'memory://graph', name: 'Graph', description: 'The knowledge graph' }],
+  resourceTemplates: [],
   prompts: []
 }
 

@@ -17,6 +17,7 @@ export type ActivityKind =
   | 'connect'
   | 'list-tools'
   | 'list-resources'
+  | 'list-resource-templates'
   | 'list-prompts'
 
 // Where a protocol event's data came from: a live wire exchange, or the on-disk
@@ -29,7 +30,7 @@ export type ActivitySource = 'live' | 'cache'
 // lives in its own flat slice on the store and is merged into the "All" view.
 export interface ProtocolEvent {
   id: string
-  kind: 'connect' | 'list-tools' | 'list-resources' | 'list-prompts'
+  kind: 'connect' | 'list-tools' | 'list-resources' | 'list-resource-templates' | 'list-prompts'
   serverId: string
   // Server display name — the row's primary line.
   serverName: string

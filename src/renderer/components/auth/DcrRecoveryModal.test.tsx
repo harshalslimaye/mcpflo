@@ -11,6 +11,7 @@ const server: MCPServer = {
   status: 'disconnected',
   tools: [],
   resources: [],
+  resourceTemplates: [],
   prompts: [],
   auth: { status: 'auth_required', reason: 'DCR_FAILED' }
 }

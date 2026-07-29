@@ -17,11 +17,15 @@ const base: MCPServer = {
     }
   ],
   resources: [{ uri: 'repo://octocat/hello-world/tree', description: 'File tree.' }],
+  resourceTemplates: [
+    { uriTemplate: 'repo://{owner}/{repo}/tree', description: 'File tree of any repo.' }
+  ],
   prompts: [{ name: 'open_pr_review', description: 'Draft a review.' }]
 }
 
 const mockSelectTool = vi.fn()
 const mockSelectResource = vi.fn()
+const mockSelectResourceTemplate = vi.fn()
 const mockSelectPrompt = vi.fn()
 
 beforeEach(() => {
@@ -29,6 +33,7 @@ beforeEach(() => {
   useServerStore.setState({
     selectTool: mockSelectTool,
     selectResource: mockSelectResource,
+    selectResourceTemplate: mockSelectResourceTemplate,
     selectPrompt: mockSelectPrompt
   })
 })
@@ -36,20 +41,38 @@ beforeEach(() => {
 describe('CapabilitySections', () => {
   it('renders nothing when the server has no capabilities', () => {
     const { container } = render(
-      <CapabilitySections server={{ ...base, tools: [], resources: [], prompts: [] }} />
+      <CapabilitySections
+        server={{ ...base, tools: [], resources: [], resourceTemplates: [], prompts: [] }}
+      />
     )
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('renders all three section headers, expanded by default', () => {
+  it('renders all four section headers, expanded by default', () => {
     render(<CapabilitySections server={base} />)
     expect(screen.getByText('Tools')).toBeInTheDocument()
     expect(screen.getByText('Resources')).toBeInTheDocument()
+    expect(screen.getByText('Resource Templates')).toBeInTheDocument()
     expect(screen.getByText('Prompts')).toBeInTheDocument()
     // Expanded by default — each section's item is already visible.
     expect(screen.getByText('create_repository')).toBeInTheDocument()
     expect(screen.getByText('repo://octocat/hello-world/tree')).toBeInTheDocument()
+    expect(screen.getByText('repo://{owner}/{repo}/tree')).toBeInTheDocument()
     expect(screen.getByText('open_pr_review')).toBeInTheDocument()
+  })
+
+  it('falls back to the uriTemplate when a template has no name', () => {
+    render(<CapabilitySections server={base} />)
+    expect(screen.getByText('repo://{owner}/{repo}/tree')).toBeInTheDocument()
+  })
+
+  it('selects a template by its uriTemplate when its row is clicked', () => {
+    render(<CapabilitySections server={base} />)
+    fireEvent.click(screen.getByText('repo://{owner}/{repo}/tree'))
+    expect(mockSelectResourceTemplate).toHaveBeenCalledWith(
+      'github-mcp',
+      'repo://{owner}/{repo}/tree'
+    )
   })
 
   it('falls back to the uri when a resource has no name', () => {
