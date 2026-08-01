@@ -48,6 +48,7 @@ export interface ProtocolEvent {
 export type ActivityTarget =
   | { kind: 'tool'; serverId: string; toolName: string }
   | { kind: 'resource'; serverId: string; uri: string }
+  | { kind: 'resource-template'; serverId: string; uriTemplate: string }
   | { kind: 'prompt'; serverId: string; promptName: string }
 
 // A unified, display-ready row for the "All" tab.
@@ -94,16 +95,37 @@ export function toolCallToActivity(record: ToolCallRecord): ActivityEvent {
   }
 }
 
+// Both plain resource reads and template reads live in `resourceHistory`, so
+// this has to tell them apart: `expandedUri` is only ever set by a template
+// read. Pointing a template read at { kind: 'resource' } would send the click
+// looking for a resource whose uri is a template — which no server lists.
 export function resourceReadToActivity(record: ResourceReadRecord): ActivityEvent {
-  return {
+  const base = {
     id: record.id,
-    kind: 'resource-read',
+    kind: 'resource-read' as const,
     serverId: record.serverId,
     status: record.status,
     durationMs: record.durationMs,
     at: record.at,
-    label: record.uri,
-    target: { kind: 'resource', serverId: record.serverId, uri: record.uri }
+    // The template, for a template read — the same thing the row's history is
+    // keyed by, and what the detail view opens.
+    label: record.uri
+  }
+  if (record.expandedUri === undefined) {
+    return { ...base, target: { kind: 'resource', serverId: record.serverId, uri: record.uri } }
+  }
+  return {
+    ...base,
+    // Every template read shares a label, so the URI it resolved to is what
+    // distinguishes the rows.
+    detail: record.expandedUri,
+    target: {
+      kind: 'resource-template',
+      serverId: record.serverId,
+      uriTemplate: record.uri
+    },
+    // Carried so navigating also re-fills the form, as tool and prompt rows do.
+    args: record.args
   }
 }
 

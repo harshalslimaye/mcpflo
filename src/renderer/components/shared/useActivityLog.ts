@@ -22,6 +22,7 @@ export function useActivityLog(): ActivityLog {
   const clearAll = useServerStore((s) => s.clearAllActivity)
   const selectTool = useServerStore((s) => s.selectTool)
   const selectResource = useServerStore((s) => s.selectResource)
+  const selectResourceTemplate = useServerStore((s) => s.selectResourceTemplate)
   const selectPrompt = useServerStore((s) => s.selectPrompt)
   const setPendingPrefill = useServerStore((s) => s.setPendingPrefill)
 
@@ -34,14 +35,23 @@ export function useActivityLog(): ActivityLog {
     (event: ActivityEvent) => {
       const target = event.target
       if (!target) return
-      // Tool/prompt rows carry their args, so navigating also re-fills the
-      // target form (consumed by the detail view). Resource reads have none.
+      // Tool, prompt and resource-template rows carry the values they ran with,
+      // so navigating also re-fills the target form (consumed by the detail
+      // view). A plain resource read has no inputs to restore.
       if (target.kind === 'tool') {
         selectTool(target.serverId, target.toolName)
         if (event.args)
           setPendingPrefill({ serverId: target.serverId, name: target.toolName, args: event.args })
       } else if (target.kind === 'resource') {
         selectResource(target.serverId, target.uri)
+      } else if (target.kind === 'resource-template') {
+        selectResourceTemplate(target.serverId, target.uriTemplate)
+        if (event.args)
+          setPendingPrefill({
+            serverId: target.serverId,
+            name: target.uriTemplate,
+            args: event.args
+          })
       } else {
         selectPrompt(target.serverId, target.promptName)
         if (event.args)
@@ -52,7 +62,7 @@ export function useActivityLog(): ActivityLog {
           })
       }
     },
-    [selectTool, selectResource, selectPrompt, setPendingPrefill]
+    [selectTool, selectResource, selectResourceTemplate, selectPrompt, setPendingPrefill]
   )
 
   return { events, navigateTo, clearAll }

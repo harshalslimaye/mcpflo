@@ -83,6 +83,29 @@ describe('activity event mappers', () => {
     expect(event.kind).toBe('resource-read')
     expect(event.label).toBe('mem://x')
     expect(event.target).toEqual({ kind: 'resource', serverId: 's1', uri: 'mem://x' })
+    expect(event.args).toBeUndefined()
+  })
+
+  it('projects a template read at the template, not at a resource that does not exist', () => {
+    // Template reads share resourceHistory with plain reads; `expandedUri` is
+    // what tells the two apart. Pointing this at { kind: 'resource' } would send
+    // the click looking for a resource whose uri is a template.
+    const event = resourceReadToActivity(
+      resourceRec({
+        uri: 'mem://text/{id}',
+        expandedUri: 'mem://text/7',
+        args: { id: '7' }
+      })
+    )
+    expect(event.label).toBe('mem://text/{id}')
+    expect(event.detail).toBe('mem://text/7')
+    expect(event.target).toEqual({
+      kind: 'resource-template',
+      serverId: 's1',
+      uriTemplate: 'mem://text/{id}'
+    })
+    // Carried so navigating re-fills the form, as tool and prompt rows do.
+    expect(event.args).toEqual({ id: '7' })
   })
 
   it('projects a prompt get with a prompt target', () => {

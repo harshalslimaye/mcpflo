@@ -20,6 +20,7 @@ import type {
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
 import { clearCompletionCache } from '../lib/completion'
+import { expandTemplate } from '../lib/uriTemplate'
 import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
@@ -67,7 +68,16 @@ export interface ToolCallRecord {
 export interface ResourceReadRecord {
   id: string
   serverId: string
+  // For a plain resource, what was read. For a template read this is the
+  // *template*, matching the key its history lives under — see expandedUri for
+  // what the server was actually asked for.
   uri: string
+  // Set only on a template read: the concrete URI `uri` expanded to, and the
+  // values it expanded from. Both optional because a plain resource read has
+  // neither, and because records made before templates existed can outlive a
+  // reload of this module within a session.
+  expandedUri?: string
+  args?: Record<string, string>
   status: 'success' | 'error'
   // Full JSON-RPC response envelope, when one was received.
   response?: unknown
@@ -271,6 +281,13 @@ interface ServerStore {
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
   clearHistory: (serverId: string, toolName: string) => void
   readResource: (serverId: string, uri: string) => Promise<void>
+  // Expands a resource template with the given variable values and reads the
+  // resulting URI. History lands under the template, not the expanded URI.
+  readResourceTemplate: (
+    serverId: string,
+    uriTemplate: string,
+    values: Record<string, string>
+  ) => Promise<void>
   clearResourceHistory: (serverId: string, uri: string) => void
   getPrompt: (serverId: string, promptName: string, args: Record<string, string>) => Promise<void>
   clearPromptHistory: (serverId: string, promptName: string) => void
@@ -648,6 +665,83 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         }
       }))
     }
+  },
+
+  readResourceTemplate: async (serverId, uriTemplate, values) => {
+    const server = get().servers.find((s) => s.id === serverId)
+    if (!server) return
+
+    // Keyed by the template rather than by the URI it expands to, so reads of
+    // /7 and /8 accumulate in one list the way a tool's calls do whatever
+    // arguments they carried. Keying by the expanded URI would give every set
+    // of values its own single-entry history, which is no history at all.
+    const key = resourceKey(serverId, uriTemplate)
+    const at = Date.now()
+    const push = (record: ResourceReadRecord): void => {
+      set((state) => ({
+        resourceHistory: {
+          ...state.resourceHistory,
+          [key]: pushCapped(state.resourceHistory[key], record)
+        }
+      }))
+    }
+
+    const expansion = expandTemplate(uriTemplate, values)
+    if (!expansion.ok) {
+      // The form keeps Read disabled while a value is missing, so this is the
+      // defensive path (the raw-JSON editor can hand us anything). Record it
+      // rather than returning quietly — a button that no-ops without saying
+      // why is the harder thing to debug.
+      push({
+        id: crypto.randomUUID(),
+        serverId,
+        uri: uriTemplate,
+        args: values,
+        status: 'error',
+        error: expansion.error,
+        durationMs: 0,
+        at
+      })
+      return
+    }
+
+    // Read over the existing resources/read channel: expansion happens here, so
+    // main only ever sees a concrete URI and needs no template awareness.
+    const expandedUri = expansion.uri
+    const base = { id: crypto.randomUUID(), serverId, uri: uriTemplate, expandedUri, args: values }
+    let record: ResourceReadRecord | null = null
+    try {
+      const outcome = await window.api.mcp.readResource(serverId, expandedUri)
+      if (outcome.authRequired) {
+        // Null record on auth-required, as in readResource: no phantom error.
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+      } else {
+        const { response, truncated } = capResponse(outcome.response)
+        record = {
+          ...base,
+          status: outcomeStatus(outcome),
+          response,
+          responseTruncated: truncated,
+          error: outcome.error,
+          durationMs: Date.now() - at,
+          at
+        }
+      }
+    } catch (err) {
+      record = {
+        ...base,
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - at,
+        at
+      }
+    }
+
+    if (!record) return
+    push(record)
+    // No runTestForCall here: the Tests tab never lists templates, so there is
+    // no script that could be attached to one. Calling it would always find
+    // nothing and only suggest otherwise.
   },
 
   clearResourceHistory: (serverId, uri) => {
