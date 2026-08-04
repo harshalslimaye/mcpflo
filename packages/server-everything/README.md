@@ -36,10 +36,14 @@ need, matching upstream's own behavior exactly.
 one with dependent argument completion, and one that embeds a resource.
 
 **Resources** — 7 static documentation files (this package's own `docs/`,
-describing its architecture, features, and how to extend it) plus 2 dynamic
+describing its architecture, features, and how to extend it) plus 3 dynamic
 resource templates (`mcpflo://dynamic/text/{resourceId}`,
-`mcpflo://dynamic/blob/{resourceId}`) that regenerate content with a live
-timestamp on every read and are deliberately excluded from `resources/list`.
+`mcpflo://dynamic/blob/{resourceId}`,
+`mcpflo://dynamic/report/{department}/{member}`) that regenerate content with
+a live timestamp on every read and are deliberately excluded from
+`resources/list`. The report template takes two variables and completes the
+second one from the first — the same dependent completion as the prompt above,
+reached through `ref/resource` instead of `ref/prompt`.
 
 Read [`docs/architecture.md`](docs/architecture.md) and
 [`docs/extension.md`](docs/extension.md) for the actual code layout and how
