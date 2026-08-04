@@ -67,6 +67,23 @@ const DYNAMIC_BLOB_URI_TEMPLATE = 'mcpflo://dynamic/blob/{resourceId}'
 // pair above can't express that: a single variable has no sibling to depend on,
 // so a client asking for completions always sends an empty context.
 const DYNAMIC_REPORT_URI_TEMPLATE = 'mcpflo://dynamic/report/{department}/{member}'
+// Form-style query expansion rather than path segments: `{?q,limit}` becomes
+// `?q=…&limit=…`, not `/…/…`. Every other template here is a simple `{var}`
+// path substitution, which is the one RFC 6570 form a client could get away
+// with implementing as a regex — this one it can't.
+//
+// `limit` deliberately gets no completer while `q` does, so the two variables
+// of one template differ in whether the server has anything to suggest.
+const DYNAMIC_SEARCH_URI_TEMPLATE = 'mcpflo://dynamic/search{?q,limit}'
+
+// Canned queries, so `q` has something to offer without pretending this
+// fixture has a corpus behind it.
+const COMPLETABLE_SEARCH_QUERIES = ['completion', 'prompts', 'resources', 'templates', 'tools']
+
+const MAX_SEARCH_LIMIT = 10
+// A fixed pretend corpus size, so a read can report "n of TOTAL" without the
+// number moving around between reads.
+const TOTAL_SEARCH_MATCHES = 42
 
 // Suggests the ids this server actually has, filtered by what's been typed —
 // the same shape as the prompt completer above. It previously echoed any
@@ -138,6 +155,46 @@ function dynamicReportContent(uri: URL, department: string, member: string): Tex
   }
 }
 
+// UriTemplate.match() returns variables exactly as they appeared in the URI —
+// it reverses the template's *structure*, not its percent-encoding, so a `q` of
+// "hello world" comes back as "hello%20world". The path templates above never
+// notice: their values are ids and roster names that survive encoding
+// unchanged. A free-text query does notice, so it gets decoded here.
+//
+// A value can be encoded but not decodable (a lone "%" is a legal character in
+// a URI and throws in decodeURIComponent). Treating that as "no decoding
+// needed" keeps a malformed read reporting the query it was given rather than
+// failing with a URIError that says nothing about resources.
+function decodedValue(variables: Variables, name: string): string {
+  const raw = firstValue(variables, name)
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+function parseSearchLimit(variables: Variables): number {
+  const raw = decodedValue(variables, 'limit')
+  const limit = Number(raw)
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_SEARCH_LIMIT) {
+    throw new Error(`Invalid limit: ${raw}. Must be an integer between 1 and ${MAX_SEARCH_LIMIT}.`)
+  }
+  return limit
+}
+
+function dynamicSearchContent(uri: URL, query: string, limit: number): TextResourceContents {
+  const matches = Array.from({ length: limit }, (_, i) => `${i + 1}. ${query} — match ${i + 1}`)
+  return {
+    uri: uri.toString(),
+    mimeType: 'text/plain',
+    text: [
+      `Search for "${query}": ${limit} of ${TOTAL_SEARCH_MATCHES} matches, dynamically generated at ${new Date().toISOString()}.`,
+      ...matches
+    ].join('\n')
+  }
+}
+
 export function registerResourceTemplates(server: McpServer): void {
   server.registerResource(
     'Dynamic Text Resource',
@@ -188,5 +245,27 @@ export function registerResourceTemplates(server: McpServer): void {
       const { department, member } = parseReportVariables(variables)
       return { contents: [dynamicReportContent(uri, department, member)] }
     }
+  )
+
+  server.registerResource(
+    'Dynamic Search Result',
+    new ResourceTemplate(DYNAMIC_SEARCH_URI_TEMPLATE, {
+      list: undefined,
+      // Only `q`. `limit` is left out on purpose: a client has to cope with a
+      // template whose variables don't all have something behind them, and
+      // there is nothing sensible to suggest for a free-form number anyway.
+      complete: {
+        q: (value) => COMPLETABLE_SEARCH_QUERIES.filter((query) => query.startsWith(value))
+      }
+    }),
+    {
+      mimeType: 'text/plain',
+      description: `Plaintext dynamic resource fabricated from the {?q,limit} query variables — free-text q, and limit as an integer between 1 and ${MAX_SEARCH_LIMIT}. Expands to a query string rather than path segments, and only q offers completions. Demo/test fixture.`
+    },
+    async (uri, variables) => ({
+      contents: [
+        dynamicSearchContent(uri, decodedValue(variables, 'q'), parseSearchLimit(variables))
+      ]
+    })
   )
 }
