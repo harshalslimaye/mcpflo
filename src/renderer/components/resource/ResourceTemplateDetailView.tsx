@@ -127,15 +127,20 @@ export function ResourceTemplateDetailView({
         selectedId={displayed?.id}
         onClearThis={() => clearResourceHistory(serverId, template.uriTemplate)}
         // Every row shares the template as its label, so the URI it actually
-        // read is the only thing that tells one read from another.
-        renderDetail={(record) => (
-          <span
-            className="block truncate font-mono text-[11px] text-code opacity-85"
-            title={record.expandedUri}
-          >
-            {record.expandedUri}
-          </span>
-        )}
+        // read is the only thing that tells one read from another — except for
+        // a read whose expansion failed, which never reached a URI. That falls
+        // back to the error, so the row says why instead of sitting blank.
+        renderDetail={(record) => {
+          const detail = record.expandedUri ?? record.error
+          return (
+            <span
+              className="block truncate font-mono text-[11px] text-code opacity-85"
+              title={detail}
+            >
+              {detail}
+            </span>
+          )
+        }}
         // Unlike a plain resource read, selecting an entry also re-fills the
         // form: a template read has inputs, so the useful thing to do with a
         // past one is to edit and re-run it, not just look at what came back.

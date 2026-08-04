@@ -66,4 +66,31 @@ describe('useActivityLog — navigateTo', () => {
       args: { id: '7' }
     })
   })
+
+  it('navigates a failed-expansion row to its template rather than nowhere', () => {
+    // This row has no expandedUri — the read never got one. Discriminating on
+    // that field sent it to selectResource(serverId, template), which matches
+    // no resource, leaving the canvas on the empty state with nothing clicked.
+    const template = 'mem://text/{id}'
+    useServerStore.setState({
+      resourceHistory: {
+        [resourceKey('srv', template)]: [
+          read({
+            uri: template,
+            status: 'error',
+            error: 'Missing a value for id',
+            args: { id: '' }
+          })
+        ]
+      }
+    })
+    const { result } = renderHook(() => useActivityLog())
+    act(() => result.current.navigateTo(result.current.events[0]))
+
+    expect(useServerStore.getState().selectedResourceTemplate).toEqual({
+      serverId: 'srv',
+      uriTemplate: template
+    })
+    expect(useServerStore.getState().selectedResource).toBeNull()
+  })
 })

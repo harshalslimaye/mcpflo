@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { ResourceTemplateDetailView } from './ResourceTemplateDetailView'
 import { useServerStore, resourceKey, type ResourceReadRecord } from '../../stores/serverStore'
 import type { ResourceTemplate } from '../../../shared/mcp.types'
@@ -93,6 +93,30 @@ describe('ResourceTemplateDetailView', () => {
     // tells them apart.
     expect(screen.getByText('demo://note/8')).toBeInTheDocument()
     expect(screen.getByText('demo://note/7')).toBeInTheDocument()
+  })
+
+  it('says why a read failed when its expansion never reached a uri', () => {
+    // readResourceTemplate records this when expandTemplate rejects the values,
+    // leaving expandedUri unset — the row would otherwise render blank.
+    useServerStore.setState({
+      resourceHistory: {
+        [key]: [
+          record({
+            id: 'failed',
+            expandedUri: undefined,
+            args: { id: '' },
+            status: 'error',
+            error: 'Missing a value for id'
+          })
+        ]
+      }
+    })
+    const { container } = renderView()
+    fireEvent.click(screen.getByRole('button', { name: /This template/ }))
+    // Scoped to the history rail: the result dock shows the same error for the
+    // record it currently displays, so an unscoped match would be ambiguous.
+    const rail = within(container.querySelector('aside') as HTMLElement)
+    expect(rail.getByText('Missing a value for id')).toBeInTheDocument()
   })
 
   it('re-fills the form from a history entry rather than only switching the view', () => {

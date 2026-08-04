@@ -96,9 +96,12 @@ export function toolCallToActivity(record: ToolCallRecord): ActivityEvent {
 }
 
 // Both plain resource reads and template reads live in `resourceHistory`, so
-// this has to tell them apart: `expandedUri` is only ever set by a template
-// read. Pointing a template read at { kind: 'resource' } would send the click
-// looking for a resource whose uri is a template — which no server lists.
+// this has to tell them apart. `args` is what does it: readResourceTemplate
+// sets it on every record it pushes, a plain read never does. `expandedUri`
+// looks like the more natural discriminator and isn't — a template read whose
+// expansion failed never reached a URI, so it has no expandedUri, and keying
+// off that field sent it to { kind: 'resource' }, pointing a later click at a
+// resource whose uri is the raw template string, which no server lists.
 export function resourceReadToActivity(record: ResourceReadRecord): ActivityEvent {
   const base = {
     id: record.id,
@@ -111,13 +114,13 @@ export function resourceReadToActivity(record: ResourceReadRecord): ActivityEven
     // keyed by, and what the detail view opens.
     label: record.uri
   }
-  if (record.expandedUri === undefined) {
+  if (record.args === undefined) {
     return { ...base, target: { kind: 'resource', serverId: record.serverId, uri: record.uri } }
   }
   return {
     ...base,
     // Every template read shares a label, so the URI it resolved to is what
-    // distinguishes the rows.
+    // distinguishes the rows — absent when the expansion never produced one.
     detail: record.expandedUri,
     target: {
       kind: 'resource-template',
