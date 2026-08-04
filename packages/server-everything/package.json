@@ -1,6 +1,6 @@
 {
   "name": "@mcpflo/server-everything",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic MCP test-fixture server for MCPFlo",
   "mcpName": "io.github.harshalslimaye/mcpflo-server-everything",
   "license": "MIT",
