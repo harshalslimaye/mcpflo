@@ -48,7 +48,11 @@ function normalizeCapabilities(parsed: unknown): CachedCapabilities | undefined 
     resources: list(parsed.resources),
     prompts: list(parsed.prompts),
     resourceTemplates: list(parsed.resourceTemplates),
-    fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : 0,
+    // Left undefined rather than defaulted when it isn't a number: "we don't
+    // know" and "the epoch" are different claims, and every reader already
+    // treats undefined as unknown. Defaulting to 0 made a corrupt cache render
+    // as a fetch 20,000 days ago.
+    fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : undefined,
     // Only the outer shape is checked; the flags inside are left as written,
     // since the renderer reads each one defensively anyway. Hence the assertion
     // through unknown — it's a claim about the contents, not a proof.

@@ -412,7 +412,11 @@ export interface CachedCapabilities {
   // written before templates existed genuinely has no such key, and the type
   // shouldn't claim otherwise for anyone reading the file by other means.
   resourceTemplates?: ResourceTemplate[]
-  fetchedAt: number
+  // Optional because a cache file can be missing it (hand-edited, or written by
+  // a build that predates it). writeCapabilities always stamps it, so absence
+  // means "we don't know when this was fetched" — a distinct thing from any
+  // number, and the one MCPServer.fetchedAt and the header already understand.
+  fetchedAt?: number
   features?: ServerFeatures
 }
 

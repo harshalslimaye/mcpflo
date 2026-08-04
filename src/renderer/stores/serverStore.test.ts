@@ -209,6 +209,26 @@ describe('serverStore', () => {
       expect(useServerStore.getState().protocolEvents).toEqual([])
     })
 
+    it('still loads a server whose cache lost its fetch time, minus the replayed events', async () => {
+      // The activity log is chronological, so there's nowhere honest to put an
+      // event with no timestamp — but the server and its capabilities are still
+      // perfectly usable and must render.
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': {
+          tools: [{ name: 'list_issues', inputSchema: { type: 'object' } }],
+          resources: [],
+          resourceTemplates: [],
+          prompts: []
+        }
+      })
+      await useServerStore.getState().hydrate()
+      const server = useServerStore.getState().servers[0]
+      expect(server.tools).toHaveLength(1)
+      expect(server.fetchedAt).toBeUndefined()
+      expect(useServerStore.getState().protocolEvents).toEqual([])
+    })
+
     it('sets empty array when no servers stored', async () => {
       await useServerStore.getState().hydrate()
       expect(useServerStore.getState().servers).toHaveLength(0)

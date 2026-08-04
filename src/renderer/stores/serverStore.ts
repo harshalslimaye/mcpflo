@@ -440,6 +440,12 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         const cachedEvents: ProtocolEvent[] = configs.flatMap((c) => {
           const cached = cache[c.id]
           if (!cached) return []
+          // A cache whose fetch time didn't survive (corrupt or hand-edited)
+          // has nothing to stamp these with. The log is chronological, so an
+          // event with an invented time would sit somewhere it never happened
+          // — skip them. The server itself still renders, capabilities and all.
+          const at = cached.fetchedAt
+          if (at === undefined) return []
           const list = (
             kind: 'list-tools' | 'list-resources' | 'list-resource-templates' | 'list-prompts',
             detail: string
@@ -452,7 +458,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
             detail,
             source: 'cache',
             durationMs: 0,
-            at: cached.fetchedAt
+            at
           })
           return [
             list('list-tools', `${cached.tools.length} tools`),

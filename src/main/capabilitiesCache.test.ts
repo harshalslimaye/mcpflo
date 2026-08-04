@@ -104,11 +104,19 @@ describe('capabilitiesCache', () => {
       expect(read?.prompts).toEqual([])
     })
 
-    it('defaults a missing or non-numeric fetchedAt to 0', async () => {
+    it('leaves a missing or non-numeric fetchedAt unknown rather than defaulting it', async () => {
+      // Defaulting to 0 would claim a fetch at the epoch, which the header
+      // renders as "20000 days ago". Undefined is the thing every reader
+      // already understands as "never fetched / don't know".
       await writeRaw('srv-1', JSON.stringify({ tools: [] }))
-      expect((await readCapabilities('srv-1'))?.fetchedAt).toBe(0)
+      expect((await readCapabilities('srv-1'))?.fetchedAt).toBeUndefined()
       await writeRaw('srv-2', JSON.stringify({ tools: [], fetchedAt: 'yesterday' }))
-      expect((await readCapabilities('srv-2'))?.fetchedAt).toBe(0)
+      expect((await readCapabilities('srv-2'))?.fetchedAt).toBeUndefined()
+    })
+
+    it('keeps a real fetchedAt as-is', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: [], fetchedAt: 1717171717 }))
+      expect((await readCapabilities('srv-1'))?.fetchedAt).toBe(1717171717)
     })
 
     it('drops features that is not an object', async () => {
