@@ -6,6 +6,8 @@ import {
   MessageSquare,
   Zap,
   FileText,
+  Braces,
+  FileCode,
   Hash,
   Plus,
   Search,
@@ -22,10 +24,17 @@ import { DeleteServerModal } from '../servers/DeleteServerModal'
 import { ServerRowItem } from './ServerRowItem'
 import { CategoryRow } from './CategoryRow'
 import { CapabilityItem } from './CapabilityItem'
-import type { SelectedTool, SelectedResource, SelectedPrompt } from '../../stores/serverStore'
-import type { MCPServer, Tool, Resource, Prompt } from '../../../shared/mcp.types'
+import type {
+  SelectedTool,
+  SelectedResource,
+  SelectedResourceTemplate,
+  SelectedPrompt
+} from '../../stores/serverStore'
+import type { MCPServer, Tool, Resource, ResourceTemplate, Prompt } from '../../../shared/mcp.types'
 
-type GroupKey = 'tools' | 'resources' | 'prompts'
+type GroupKey = 'tools' | 'resources' | 'templates' | 'prompts'
+
+type CapabilityListItem = Tool | Resource | ResourceTemplate | Prompt
 
 const GROUP_META: Record<
   GroupKey,
@@ -33,20 +42,33 @@ const GROUP_META: Record<
 > = {
   tools: { label: 'Tools', icon: <Wrench size={13} />, itemIcon: <Zap size={13} /> },
   resources: { label: 'Resources', icon: <Database size={13} />, itemIcon: <FileText size={13} /> },
+  templates: {
+    label: 'Resource Templates',
+    icon: <Braces size={13} />,
+    itemIcon: <FileCode size={13} />
+  },
   prompts: { label: 'Prompts', icon: <MessageSquare size={13} />, itemIcon: <Hash size={13} /> }
 }
 
-const GROUP_KEYS: GroupKey[] = ['tools', 'resources', 'prompts']
+const GROUP_KEYS: GroupKey[] = ['tools', 'resources', 'templates', 'prompts']
 
 function groupId(serverId: string, group: GroupKey): string {
   return `${serverId}-${group}`
 }
 
+// What identifies an item within its server — what a click selects, and what a
+// selection is compared against. Tools and prompts go by name; resources and
+// templates by their uri, which is the only thing guaranteed to be there.
+function itemKey(item: CapabilityListItem): string {
+  if ('uriTemplate' in item) return item.uriTemplate
+  if ('uri' in item) return item.uri
+  return item.name
+}
+
 // Display label used both for rendering and for filter matching. Tools/prompts
-// carry a name; resources fall back to their uri.
-function itemLabel(item: Tool | Resource | Prompt): string {
-  const uri = 'uri' in item ? item.uri : undefined
-  return item.name ?? uri ?? ''
+// carry a name; resources and templates fall back to their uri.
+function itemLabel(item: CapabilityListItem): string {
+  return item.name ?? itemKey(item)
 }
 
 interface ServerTreeProps {
@@ -58,12 +80,14 @@ interface ServerTreeProps {
   selected: boolean
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
+  selectedResourceTemplate: SelectedResourceTemplate | null
   selectedPrompt: SelectedPrompt | null
   onToggleServer: () => void
   onSelectServer: () => void
   onToggleGroup: (group: GroupKey) => void
   onSelectTool: (toolName: string) => void
   onSelectResource: (uri: string) => void
+  onSelectResourceTemplate: (uriTemplate: string) => void
   onSelectPrompt: (promptName: string) => void
   onDisconnect: () => void
   onRefresh: () => void
@@ -79,12 +103,14 @@ function ServerTree({
   selected,
   selectedTool,
   selectedResource,
+  selectedResourceTemplate,
   selectedPrompt,
   onToggleServer,
   onSelectServer,
   onToggleGroup,
   onSelectTool,
   onSelectResource,
+  onSelectResourceTemplate,
   onSelectPrompt,
   onDisconnect,
   onRefresh,
@@ -96,8 +122,9 @@ function ServerTree({
   const baseGroups = [
     { key: 'tools', items: server.tools },
     { key: 'resources', items: server.resources },
+    { key: 'templates', items: server.resourceTemplates },
     { key: 'prompts', items: server.prompts }
-  ] satisfies { key: GroupKey; items: (Tool | Resource | Prompt)[] }[]
+  ] satisfies { key: GroupKey; items: CapabilityListItem[] }[]
 
   const groups = baseGroups.map((g) => ({
     ...g,
@@ -152,32 +179,32 @@ function ServerTree({
 
               {isGroupExpanded &&
                 visible.map((item) => {
-                  const uri = 'uri' in item ? item.uri : undefined
-                  const label = item.name ?? uri ?? ''
-                  // Tools, resources and prompts each open a detail view.
-                  const isTool = key === 'tools'
-                  const isResource = key === 'resources'
-                  const isPrompt = key === 'prompts'
-                  const isSelected = isTool
-                    ? selectedTool?.serverId === server.id && selectedTool?.toolName === label
-                    : isResource
-                      ? selectedResource?.serverId === server.id && selectedResource?.uri === uri
-                      : isPrompt
-                        ? selectedPrompt?.serverId === server.id &&
-                          selectedPrompt?.promptName === label
-                        : false
-                  const onClick = isTool
-                    ? () => onSelectTool(label)
-                    : isResource && uri !== undefined
-                      ? () => onSelectResource(uri)
-                      : isPrompt
-                        ? () => onSelectPrompt(label)
-                        : undefined
+                  // Each of the four kinds opens its own detail view, selected
+                  // by whatever identifies it within the server.
+                  const id = itemKey(item)
+                  const isSelected =
+                    key === 'tools'
+                      ? selectedTool?.serverId === server.id && selectedTool.toolName === id
+                      : key === 'resources'
+                        ? selectedResource?.serverId === server.id && selectedResource.uri === id
+                        : key === 'templates'
+                          ? selectedResourceTemplate?.serverId === server.id &&
+                            selectedResourceTemplate.uriTemplate === id
+                          : selectedPrompt?.serverId === server.id &&
+                            selectedPrompt.promptName === id
+                  const onClick =
+                    key === 'tools'
+                      ? () => onSelectTool(id)
+                      : key === 'resources'
+                        ? () => onSelectResource(id)
+                        : key === 'templates'
+                          ? () => onSelectResourceTemplate(id)
+                          : () => onSelectPrompt(id)
                   return (
                     <CapabilityItem
-                      key={uri ?? label}
+                      key={id}
                       icon={meta.itemIcon}
-                      label={label}
+                      label={itemLabel(item)}
                       selected={isSelected}
                       onClick={onClick}
                     />
@@ -202,6 +229,8 @@ export function SecondarySidebar(): React.JSX.Element {
   const selectTool = useServerStore((s) => s.selectTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
   const selectResource = useServerStore((s) => s.selectResource)
+  const selectedResourceTemplate = useServerStore((s) => s.selectedResourceTemplate)
+  const selectResourceTemplate = useServerStore((s) => s.selectResourceTemplate)
   const selectedPrompt = useServerStore((s) => s.selectedPrompt)
   const selectPrompt = useServerStore((s) => s.selectPrompt)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -399,12 +428,16 @@ export function SecondarySidebar(): React.JSX.Element {
                   selected={selectedServerId === server.id}
                   selectedTool={selectedTool}
                   selectedResource={selectedResource}
+                  selectedResourceTemplate={selectedResourceTemplate}
                   selectedPrompt={selectedPrompt}
                   onToggleServer={() => toggleServer(server.id)}
                   onSelectServer={() => selectServerRow(server.id)}
                   onToggleGroup={(group) => toggleGroup(server.id, group)}
                   onSelectTool={(toolName) => selectTool(server.id, toolName)}
                   onSelectResource={(uri) => selectResource(server.id, uri)}
+                  onSelectResourceTemplate={(uriTemplate) =>
+                    selectResourceTemplate(server.id, uriTemplate)
+                  }
                   onSelectPrompt={(promptName) => selectPrompt(server.id, promptName)}
                   onDisconnect={() => handleDisconnect(server.id)}
                   onRefresh={() => refreshCapabilities(server.id)}

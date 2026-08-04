@@ -10,6 +10,7 @@ const base: MCPServer = {
   status: 'connected',
   tools: [],
   resources: [],
+  resourceTemplates: [],
   prompts: []
 }
 

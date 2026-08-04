@@ -39,6 +39,10 @@ export const resourceTypeCompleter = completable(
   (value) => RESOURCE_TYPES.filter((t) => t.startsWith(value))
 )
 
+// The ids this fixture server offers as completions. Shared by the prompt
+// argument and the template variable below, which name the same resources.
+const COMPLETABLE_RESOURCE_IDS = ['1', '2', '3', '4', '5']
+
 // resourceId stays a plain completable string, not a coerced number: prompt
 // argument values always arrive as strings over the wire, and completion
 // candidates need to be strings too — the numeric conversion happens where
@@ -46,7 +50,7 @@ export const resourceTypeCompleter = completable(
 // reference's own handler-side Number(...) conversion.
 export const resourceIdForPromptCompleter = completable(
   z.string().describe('ID of the resource'),
-  (value) => ['1', '2', '3', '4', '5'].filter((id) => id.startsWith(value))
+  (value) => COMPLETABLE_RESOURCE_IDS.filter((id) => id.startsWith(value))
 )
 
 // Distinct namespace from the static mcpflo://static/resource/... URIs above,
@@ -56,10 +60,13 @@ export const resourceIdForPromptCompleter = completable(
 const DYNAMIC_TEXT_URI_TEMPLATE = 'mcpflo://dynamic/text/{resourceId}'
 const DYNAMIC_BLOB_URI_TEMPLATE = 'mcpflo://dynamic/blob/{resourceId}'
 
-const resourceIdForResourceTemplateCompleter: CompleteResourceTemplateCallback = (value) => {
-  const resourceId = Number(value)
-  return Number.isInteger(resourceId) && resourceId > 0 ? [value] : []
-}
+// Suggests the ids this server actually has, filtered by what's been typed —
+// the same shape as the prompt completer above. It previously echoed any
+// positive integer straight back, which meant typing "7" suggested "7": a
+// completion that tells the user nothing they didn't just write, and nothing
+// for a test to assert beyond the echo.
+const resourceIdForResourceTemplateCompleter: CompleteResourceTemplateCallback = (value) =>
+  COMPLETABLE_RESOURCE_IDS.filter((id) => id.startsWith(value))
 
 function parseResourceId(variables: Variables): number {
   const raw = Array.isArray(variables.resourceId) ? variables.resourceId[0] : variables.resourceId

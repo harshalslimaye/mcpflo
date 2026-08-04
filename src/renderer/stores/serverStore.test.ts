@@ -112,6 +112,7 @@ describe('serverStore', () => {
       selectedServerId: null,
       selectedTool: null,
       selectedResource: null,
+      selectedResourceTemplate: null,
       selectedPrompt: null,
       history: {},
       resourceHistory: {},
@@ -193,6 +194,7 @@ describe('serverStore', () => {
       const events = useServerStore.getState().protocolEvents
       expect(events.map((e) => e.kind).sort()).toEqual([
         'list-prompts',
+        'list-resource-templates',
         'list-resources',
         'list-tools'
       ])
@@ -207,9 +209,41 @@ describe('serverStore', () => {
       expect(useServerStore.getState().protocolEvents).toEqual([])
     })
 
+    it('still loads a server whose cache lost its fetch time, minus the replayed events', async () => {
+      // The activity log is chronological, so there's nowhere honest to put an
+      // event with no timestamp — but the server and its capabilities are still
+      // perfectly usable and must render.
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': {
+          tools: [{ name: 'list_issues', inputSchema: { type: 'object' } }],
+          resources: [],
+          resourceTemplates: [],
+          prompts: []
+        }
+      })
+      await useServerStore.getState().hydrate()
+      const server = useServerStore.getState().servers[0]
+      expect(server.tools).toHaveLength(1)
+      expect(server.fetchedAt).toBeUndefined()
+      expect(useServerStore.getState().protocolEvents).toEqual([])
+    })
+
     it('sets empty array when no servers stored', async () => {
       await useServerStore.getState().hydrate()
       expect(useServerStore.getState().servers).toHaveLength(0)
+    })
+
+    it('still loads the servers when building their activity events throws', async () => {
+      mockApi.mcp.getServers.mockResolvedValue([githubConfig])
+      // A cache entry that parses but holds the wrong shape — `.length` on it
+      // throws while the events are being built.
+      mockApi.mcp.getCachedCapabilities.mockResolvedValue({
+        'github-mcp': { tools: null, resources: [], prompts: [], fetchedAt: 1000 }
+      })
+      await useServerStore.getState().hydrate()
+      expect(useServerStore.getState().servers).toHaveLength(1)
+      expect(useServerStore.getState().protocolEvents).toEqual([])
     })
 
     it('swallows a read failure instead of rejecting', async () => {
@@ -328,6 +362,75 @@ describe('serverStore', () => {
       useServerStore.getState().selectPrompt('github-mcp', 'summarize')
       expect(useServerStore.getState().selectedServerId).toBeNull()
     })
+  })
+
+  describe('selectResourceTemplate', () => {
+    it('sets the selected template with its owning server id', () => {
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      expect(useServerStore.getState().selectedResourceTemplate).toEqual({
+        serverId: 'github-mcp',
+        uriTemplate: 'mem://{id}'
+      })
+    })
+
+    it('clears a selected tool, resource and prompt', () => {
+      useServerStore.getState().selectTool('github-mcp', 'create_issue')
+      useServerStore.getState().selectResource('github-mcp', 'mem://x')
+      useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      expect(useServerStore.getState().selectedTool).toBeNull()
+      expect(useServerStore.getState().selectedResource).toBeNull()
+      expect(useServerStore.getState().selectedPrompt).toBeNull()
+      expect(useServerStore.getState().selectedResourceTemplate?.uriTemplate).toBe('mem://{id}')
+    })
+
+    it('clears a selected server (mutually exclusive with the server view)', () => {
+      useServerStore.getState().selectServer('github-mcp')
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      expect(useServerStore.getState().selectedServerId).toBeNull()
+    })
+  })
+
+  // The content area renders whichever selection is non-null, so two live at
+  // once means two detail views at once. Each new leaf kind adds a row *and* a
+  // column here, and missing a single cell is easy — hence the exhaustive sweep
+  // rather than a few hand-picked pairs.
+  describe('leaf selection is mutually exclusive', () => {
+    const select = {
+      selectedTool: () => useServerStore.getState().selectTool('github-mcp', 'create_issue'),
+      selectedResource: () => useServerStore.getState().selectResource('github-mcp', 'mem://x'),
+      selectedResourceTemplate: () =>
+        useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}'),
+      selectedPrompt: () => useServerStore.getState().selectPrompt('github-mcp', 'summarize')
+    }
+    const kinds = Object.keys(select) as (keyof typeof select)[]
+
+    for (const first of kinds) {
+      for (const second of kinds) {
+        if (first === second) continue
+        it(`selecting a ${second} clears a ${first}`, () => {
+          select[first]()
+          select[second]()
+          for (const kind of kinds) {
+            if (kind === second) expect(useServerStore.getState()[kind]).not.toBeNull()
+            else expect(useServerStore.getState()[kind]).toBeNull()
+          }
+        })
+      }
+
+      it(`selecting a server clears a ${first}`, () => {
+        select[first]()
+        useServerStore.getState().selectServer('github-mcp')
+        expect(useServerStore.getState()[first]).toBeNull()
+        expect(useServerStore.getState().selectedServerId).toBe('github-mcp')
+      })
+
+      it(`selecting a ${first} clears the selected server`, () => {
+        useServerStore.getState().selectServer('github-mcp')
+        select[first]()
+        expect(useServerStore.getState().selectedServerId).toBeNull()
+      })
+    }
   })
 
   describe('executeTool', () => {
@@ -791,6 +894,98 @@ describe('serverStore', () => {
         expect(mockApi.testing.getScript).not.toHaveBeenCalled()
         expect(mockApi.testing.run).not.toHaveBeenCalled()
       })
+    })
+  })
+
+  describe('readResourceTemplate', () => {
+    const template = 'mem://text/{id}'
+    // History lives under the template, not under whatever it expanded to.
+    const key = `github-mcp::${template}`
+
+    it('reads the expanded uri over the existing resources/read channel', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      expect(mockApi.mcp.readResource).toHaveBeenCalledWith('github-mcp', 'mem://text/7')
+    })
+
+    it('records the template, the uri it read, and the values it used', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      const record = useServerStore.getState().resourceHistory[key][0]
+      expect(record.status).toBe('success')
+      expect(record.uri).toBe(template)
+      expect(record.expandedUri).toBe('mem://text/7')
+      expect(record.args).toEqual({ id: '7' })
+    })
+
+    it('collects reads with different values into one history', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '8' })
+      expect(useServerStore.getState().resourceHistory[key]).toHaveLength(2)
+      // Keying by the expanded uri instead would have made two lists of one.
+      expect(Object.keys(useServerStore.getState().resourceHistory)).toEqual([key])
+      expect(useServerStore.getState().resourceHistory[key].map((r) => r.expandedUri)).toEqual([
+        'mem://text/8',
+        'mem://text/7'
+      ])
+    })
+
+    it('percent-encodes a value rather than letting it add a path segment', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: 'a/b' })
+      expect(mockApi.mcp.readResource).toHaveBeenCalledWith('github-mcp', 'mem://text/a%2Fb')
+    })
+
+    it('records an expansion failure without calling IPC', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '' })
+      expect(mockApi.mcp.readResource).not.toHaveBeenCalled()
+      const record = useServerStore.getState().resourceHistory[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toMatch(/missing/i)
+      expect(record.args).toEqual({ id: '' })
+    })
+
+    it('records a transport error returned by the outcome', async () => {
+      mockApi.mcp.readResource.mockResolvedValue({ error: 'connection refused' })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      const record = useServerStore.getState().resourceHistory[key][0]
+      expect(record.status).toBe('error')
+      expect(record.error).toBe('connection refused')
+      expect(record.expandedUri).toBe('mem://text/7')
+    })
+
+    it('records an error when the IPC call rejects', async () => {
+      mockApi.mcp.readResource.mockRejectedValue(new Error('ipc failed'))
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      expect(useServerStore.getState().resourceHistory[key][0].error).toBe('ipc failed')
+    })
+
+    it('raises auth rather than recording a phantom error', async () => {
+      mockApi.mcp.readResource.mockResolvedValue({ authRequired: true })
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      expect(useServerStore.getState().resourceHistory[key]).toBeUndefined()
+      expect(
+        useServerStore.getState().servers.find((s) => s.id === 'github-mcp')?.auth?.status
+      ).toBe('auth_required')
+    })
+
+    it('does nothing for an unknown server', async () => {
+      await useServerStore.getState().readResourceTemplate('missing', template, { id: '7' })
+      expect(mockApi.mcp.readResource).not.toHaveBeenCalled()
+      expect(useServerStore.getState().resourceHistory).toEqual({})
+    })
+
+    it('never looks for a test script — templates have none', async () => {
+      mockApi.testing.getScript.mockResolvedValue('test("a", function () {})')
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().readResourceTemplate('github-mcp', template, { id: '7' })
+      expect(mockApi.testing.getScript).not.toHaveBeenCalled()
+      expect(mockApi.testing.run).not.toHaveBeenCalled()
     })
   })
 
@@ -1309,6 +1504,21 @@ describe('serverStore', () => {
       expect(useServerStore.getState().selectedTool?.serverId).toBe('github-mcp')
     })
 
+    it('clears selectedResourceTemplate if it belonged to the removed server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      await useServerStore.getState().removeServer('github-mcp')
+      expect(useServerStore.getState().selectedResourceTemplate).toBeNull()
+    })
+
+    it('preserves selectedResourceTemplate if a different server is removed', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      await useServerStore.getState().addServer(slackConfig)
+      useServerStore.getState().selectResourceTemplate('github-mcp', 'mem://{id}')
+      await useServerStore.getState().removeServer('slack-mcp')
+      expect(useServerStore.getState().selectedResourceTemplate?.serverId).toBe('github-mcp')
+    })
+
     it('prunes call history belonging to the removed server', async () => {
       await useServerStore.getState().addServer(githubConfig)
       await useServerStore.getState().addServer(slackConfig)
@@ -1516,11 +1726,41 @@ describe('serverStore', () => {
       expect(events.map((e) => e.kind).sort()).toEqual([
         'connect',
         'list-prompts',
+        'list-resource-templates',
         'list-resources',
         'list-tools'
       ])
       expect(events.every((e) => e.serverId === 'github-mcp' && e.status === 'success')).toBe(true)
       expect(events.find((e) => e.kind === 'list-tools')?.detail).toBe('1 tools')
+    })
+
+    it('reports zero templates when the server listed none', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({ tools: [], resources: [], prompts: [] })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      const events = useServerStore.getState().protocolEvents
+      expect(events.find((e) => e.kind === 'list-resource-templates')?.detail).toBe(
+        '0 resource templates'
+      )
+      expect(useServerStore.getState().servers[0].resourceTemplates).toEqual([])
+    })
+
+    it('stores the listed resource templates on the server', async () => {
+      await useServerStore.getState().addServer(githubConfig)
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [],
+        resources: [],
+        prompts: [],
+        resourceTemplates: [{ uriTemplate: 'mem://{id}' }]
+      })
+      await useServerStore.getState().fetchCapabilities('github-mcp')
+      expect(useServerStore.getState().servers[0].resourceTemplates).toEqual([
+        { uriTemplate: 'mem://{id}' }
+      ])
+      const events = useServerStore.getState().protocolEvents
+      expect(events.find((e) => e.kind === 'list-resource-templates')?.detail).toBe(
+        '1 resource templates'
+      )
     })
 
     it('records a single connect error protocol event on failure', async () => {
@@ -1607,6 +1847,13 @@ describe('serverStore', () => {
   describe('disconnectServer', () => {
     it('disconnects, clears cached capabilities, and resets the server to disconnected (grey)', async () => {
       await useServerStore.getState().addServer(githubConfig)
+      // Every listing populated, so the reset has something to clear in each.
+      mockApi.mcp.fetchCapabilities.mockResolvedValue({
+        tools: [{ name: 'create_issue', inputSchema: { type: 'object' as const } }],
+        resources: [{ uri: 'repo://tree' }],
+        resourceTemplates: [{ uriTemplate: 'repo://{owner}/tree' }],
+        prompts: [{ name: 'summarize' }]
+      })
       await useServerStore.getState().fetchCapabilities('github-mcp')
       expect(useServerStore.getState().servers[0].status).toBe('connected')
 
@@ -1618,6 +1865,7 @@ describe('serverStore', () => {
       expect(server?.status).toBe('disconnected')
       expect(server?.tools).toEqual([])
       expect(server?.resources).toEqual([])
+      expect(server?.resourceTemplates).toEqual([])
       expect(server?.prompts).toEqual([])
       expect(server?.fetchedAt).toBeUndefined()
     })
@@ -1730,6 +1978,7 @@ describe('serverStore', () => {
           'oauth-mcp': {
             tools: [{ name: 'echo', inputSchema: { type: 'object' } }],
             resources: [{ uri: 'file://x', name: 'x' }],
+            resourceTemplates: [{ uriTemplate: 'file://{name}' }],
             prompts: [{ name: 'greet' }],
             fetchedAt: 1000
           }
@@ -1743,6 +1992,7 @@ describe('serverStore', () => {
         expect(server.status).toBe('disconnected')
         expect(server.tools).toEqual([])
         expect(server.resources).toEqual([])
+        expect(server.resourceTemplates).toEqual([])
         expect(server.prompts).toEqual([])
         expect(server.fetchedAt).toBeUndefined()
       })

@@ -42,6 +42,15 @@ describe('capabilitiesCache', () => {
     expect(read?.fetchedAt).toEqual(expect.any(Number))
   })
 
+  it('round-trips resource templates', async () => {
+    await writeCapabilities('srv-1', {
+      ...caps,
+      resourceTemplates: [{ uriTemplate: 'file:///{path}', name: 'file' }]
+    })
+    const read = await readCapabilities('srv-1')
+    expect(read?.resourceTemplates).toEqual([{ uriTemplate: 'file:///{path}', name: 'file' }])
+  })
+
   it('round-trips features', async () => {
     await writeCapabilities('srv-1', { ...caps, features: { completions: true } })
     const read = await readCapabilities('srv-1')
@@ -63,6 +72,77 @@ describe('capabilitiesCache', () => {
     await fs.mkdir(dir, { recursive: true })
     await fs.writeFile(join(dir, 'capabilities.json'), '{not json', 'utf-8')
     expect(await readCapabilities('srv-1')).toBeUndefined()
+  })
+
+  describe('normalizing what it reads off disk', () => {
+    async function writeRaw(id: string, contents: string): Promise<void> {
+      const dir = join(h.userData, 'servers', id)
+      await fs.mkdir(dir, { recursive: true })
+      await fs.writeFile(join(dir, 'capabilities.json'), contents, 'utf-8')
+    }
+
+    it('fills in listings a cache from an older version never wrote', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: [], fetchedAt: 5 }))
+      const read = await readCapabilities('srv-1')
+      expect(read?.resources).toEqual([])
+      expect(read?.prompts).toEqual([])
+      // Written long before templates existed — reads back as an empty list,
+      // not undefined, so callers need no guard.
+      expect(read?.resourceTemplates).toEqual([])
+    })
+
+    it('replaces a null listing with an empty array', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: null, resources: [], prompts: [] }))
+      expect((await readCapabilities('srv-1'))?.tools).toEqual([])
+    })
+
+    it('replaces a listing of the wrong type with an empty array', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: 'echo', resources: {}, prompts: 3 }))
+      const read = await readCapabilities('srv-1')
+      expect(read?.tools).toEqual([])
+      expect(read?.resources).toEqual([])
+      expect(read?.prompts).toEqual([])
+    })
+
+    it('leaves a missing or non-numeric fetchedAt unknown rather than defaulting it', async () => {
+      // Defaulting to 0 would claim a fetch at the epoch, which the header
+      // renders as "20000 days ago". Undefined is the thing every reader
+      // already understands as "never fetched / don't know".
+      await writeRaw('srv-1', JSON.stringify({ tools: [] }))
+      expect((await readCapabilities('srv-1'))?.fetchedAt).toBeUndefined()
+      await writeRaw('srv-2', JSON.stringify({ tools: [], fetchedAt: 'yesterday' }))
+      expect((await readCapabilities('srv-2'))?.fetchedAt).toBeUndefined()
+    })
+
+    it('keeps a real fetchedAt as-is', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: [], fetchedAt: 1717171717 }))
+      expect((await readCapabilities('srv-1'))?.fetchedAt).toBe(1717171717)
+    })
+
+    it('drops features that is not an object', async () => {
+      await writeRaw('srv-1', JSON.stringify({ features: true }))
+      expect((await readCapabilities('srv-1'))?.features).toBeUndefined()
+    })
+
+    it('keeps keys it does not know about', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: [], futureField: { a: 1 } }))
+      const read = await readCapabilities('srv-1')
+      expect((read as unknown as Record<string, unknown>).futureField).toEqual({ a: 1 })
+    })
+
+    it('returns undefined for JSON that is not an object', async () => {
+      await writeRaw('srv-1', 'null')
+      expect(await readCapabilities('srv-1')).toBeUndefined()
+      await writeRaw('srv-2', '[]')
+      expect(await readCapabilities('srv-2')).toBeUndefined()
+    })
+
+    it('normalizes through readAllCapabilities too', async () => {
+      await writeRaw('srv-1', JSON.stringify({ tools: [{ name: 'echo' }] }))
+      const all = await readAllCapabilities()
+      expect(all['srv-1'].resources).toEqual([])
+      expect(all['srv-1'].prompts).toEqual([])
+    })
   })
 
   it('clearCapabilities removes the file but keeps the server folder', async () => {

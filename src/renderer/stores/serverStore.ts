@@ -20,6 +20,7 @@ import type {
 } from '../../shared/mcp.types'
 import { capResponse, pushCapped } from '../lib/historyRecord'
 import { clearCompletionCache } from '../lib/completion'
+import { expandTemplate } from '../lib/uriTemplate'
 import { extractEnvelopeResult } from '../lib/envelope'
 import type { ProtocolEvent } from '../lib/activityEvent'
 import { useErrorStore, toMessage } from './errorStore'
@@ -67,7 +68,16 @@ export interface ToolCallRecord {
 export interface ResourceReadRecord {
   id: string
   serverId: string
+  // For a plain resource, what was read. For a template read this is the
+  // *template*, matching the key its history lives under — see expandedUri for
+  // what the server was actually asked for.
   uri: string
+  // Set only on a template read: the concrete URI `uri` expanded to, and the
+  // values it expanded from. Both optional because a plain resource read has
+  // neither, and because records made before templates existed can outlive a
+  // reload of this module within a session.
+  expandedUri?: string
+  args?: Record<string, string>
   status: 'success' | 'error'
   // Full JSON-RPC response envelope, when one was received.
   response?: unknown
@@ -202,6 +212,14 @@ export interface SelectedResource {
   uri: string
 }
 
+// Identifies a selected resource template. Keyed by the template rather than by
+// any URI it expands to: the template is what the server lists and what stays
+// put while the user tries different variable values.
+export interface SelectedResourceTemplate {
+  serverId: string
+  uriTemplate: string
+}
+
 // Identifies a selected prompt. Prompt names are only unique within a server, so
 // the owning server id is part of the key.
 export interface SelectedPrompt {
@@ -214,6 +232,7 @@ interface ServerStore {
   selectedServerId: string | null
   selectedTool: SelectedTool | null
   selectedResource: SelectedResource | null
+  selectedResourceTemplate: SelectedResourceTemplate | null
   selectedPrompt: SelectedPrompt | null
   // Per-tool call history (newest first), keyed by `toolKey(serverId, toolName)`.
   history: Record<string, ToolCallRecord[]>
@@ -257,10 +276,18 @@ interface ServerStore {
   selectServer: (id: string | null) => void
   selectTool: (serverId: string, toolName: string) => void
   selectResource: (serverId: string, uri: string) => void
+  selectResourceTemplate: (serverId: string, uriTemplate: string) => void
   selectPrompt: (serverId: string, promptName: string) => void
   executeTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<void>
   clearHistory: (serverId: string, toolName: string) => void
   readResource: (serverId: string, uri: string) => Promise<void>
+  // Expands a resource template with the given variable values and reads the
+  // resulting URI. History lands under the template, not the expanded URI.
+  readResourceTemplate: (
+    serverId: string,
+    uriTemplate: string,
+    values: Record<string, string>
+  ) => Promise<void>
   clearResourceHistory: (serverId: string, uri: string) => void
   getPrompt: (serverId: string, promptName: string, args: Record<string, string>) => Promise<void>
   clearPromptHistory: (serverId: string, promptName: string) => void
@@ -318,6 +345,7 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = f
     status: cached ? 'connected' : 'disconnected',
     tools: cached?.tools ?? [],
     resources: cached?.resources ?? [],
+    resourceTemplates: cached?.resourceTemplates ?? [],
     prompts: cached?.prompts ?? [],
     fetchedAt: cached?.fetchedAt,
     features: cached?.features,
@@ -327,11 +355,59 @@ function toRuntime(config: LoadedServer, cached?: CachedCapabilities, authed = f
   }
 }
 
+// The state a server drops back to when its session is torn down — disconnect
+// and sign-out both land here, and main clears the on-disk cache to match.
+// Every capability listing belongs in this one object: one left out survives
+// the teardown and keeps rendering as though the server were still connected,
+// which also holds the context budget above zero and so keeps the cards that
+// hide themselves on an empty server on screen.
+//
+// A function rather than a constant so each call gets its own arrays — a shared
+// literal would hand the same array instance to every torn-down server.
+function clearedSession(): Pick<
+  MCPServer,
+  'status' | 'error' | 'tools' | 'resources' | 'resourceTemplates' | 'prompts' | 'fetchedAt'
+> {
+  return {
+    status: 'disconnected',
+    error: undefined,
+    tools: [],
+    resources: [],
+    resourceTemplates: [],
+    prompts: [],
+    fetchedAt: undefined
+  }
+}
+
+// The content area shows exactly one detail view, so a server selection and the
+// four leaf selections are mutually exclusive. Every selector spreads this first
+// and sets its own field on top, rather than each one listing the others it must
+// null — that version only held together as long as five call sites agreed, and
+// a sixth selection kind would have to be threaded through all of them by hand.
+//
+// Safe to share (unlike clearedSession below) because every value is null: there
+// is no mutable array here for two servers to end up pointing at.
+const NO_SELECTION = {
+  selectedServerId: null,
+  selectedTool: null,
+  selectedResource: null,
+  selectedResourceTemplate: null,
+  selectedPrompt: null
+} satisfies Pick<
+  ServerStore,
+  | 'selectedServerId'
+  | 'selectedTool'
+  | 'selectedResource'
+  | 'selectedResourceTemplate'
+  | 'selectedPrompt'
+>
+
 export const useServerStore = create<ServerStore>((set, get) => ({
   servers: [],
   selectedServerId: null,
   selectedTool: null,
   selectedResource: null,
+  selectedResourceTemplate: null,
   selectedPrompt: null,
   history: {},
   resourceHistory: {},
@@ -351,37 +427,54 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         window.api.mcp.getAuthedServerIds()
       ])
       const authed = new Set(authedIds)
-      // Replay each cached server's capability listing into the activity log so
-      // the "All" tab isn't empty on a cached startup. These are badged `cache`
-      // (and stamped at the cache's own fetch time, so their age is honest) —
-      // and deliberately carry no `connect` event, since no handshake happened.
-      const cachedEvents: ProtocolEvent[] = configs.flatMap((c) => {
-        const cached = cache[c.id]
-        if (!cached) return []
-        const list = (
-          kind: 'list-tools' | 'list-resources' | 'list-prompts',
-          detail: string
-        ): ProtocolEvent => ({
-          id: crypto.randomUUID(),
-          kind,
-          serverId: c.id,
-          serverName: c.name,
-          status: 'success',
-          detail,
-          source: 'cache',
-          durationMs: 0,
-          at: cached.fetchedAt
+      // The server list lands first, on its own. Everything below it is a
+      // nicety built from the same cache, and a nicety must never be able to
+      // take the list down with it — a user who sees no servers assumes their
+      // data is gone.
+      set({ servers: configs.map((c) => toRuntime(c, cache[c.id], authed.has(c.id))) })
+      try {
+        // Replay each cached server's capability listing into the activity log so
+        // the "All" tab isn't empty on a cached startup. These are badged `cache`
+        // (and stamped at the cache's own fetch time, so their age is honest) —
+        // and deliberately carry no `connect` event, since no handshake happened.
+        const cachedEvents: ProtocolEvent[] = configs.flatMap((c) => {
+          const cached = cache[c.id]
+          if (!cached) return []
+          // A cache whose fetch time didn't survive (corrupt or hand-edited)
+          // has nothing to stamp these with. The log is chronological, so an
+          // event with an invented time would sit somewhere it never happened
+          // — skip them. The server itself still renders, capabilities and all.
+          const at = cached.fetchedAt
+          if (at === undefined) return []
+          const list = (
+            kind: 'list-tools' | 'list-resources' | 'list-resource-templates' | 'list-prompts',
+            detail: string
+          ): ProtocolEvent => ({
+            id: crypto.randomUUID(),
+            kind,
+            serverId: c.id,
+            serverName: c.name,
+            status: 'success',
+            detail,
+            source: 'cache',
+            durationMs: 0,
+            at
+          })
+          return [
+            list('list-tools', `${cached.tools.length} tools`),
+            list('list-resources', `${cached.resources.length} resources`),
+            list(
+              'list-resource-templates',
+              `${cached.resourceTemplates?.length ?? 0} resource templates`
+            ),
+            list('list-prompts', `${cached.prompts.length} prompts`)
+          ]
         })
-        return [
-          list('list-tools', `${cached.tools.length} tools`),
-          list('list-resources', `${cached.resources.length} resources`),
-          list('list-prompts', `${cached.prompts.length} prompts`)
-        ]
-      })
-      set({
-        servers: configs.map((c) => toRuntime(c, cache[c.id], authed.has(c.id))),
-        protocolEvents: cachedEvents
-      })
+        set({ protocolEvents: cachedEvents })
+      } catch (err) {
+        // Worst case the timeline starts empty; the servers are already in.
+        reportError(err)
+      }
     } catch (err) {
       // A startup read failure would otherwise leave the app blank with no
       // explanation; surface it instead.
@@ -389,37 +482,20 @@ export const useServerStore = create<ServerStore>((set, get) => ({
     }
   },
 
-  // Server selection and tool/resource/prompt selection are mutually
-  // exclusive with each other — the content area shows exactly one detail
-  // view — so selecting a server clears any selected leaf.
-  selectServer: (id) =>
-    set({ selectedServerId: id, selectedTool: null, selectedResource: null, selectedPrompt: null }),
+  // Each selector clears everything, then names the one thing it selects — see
+  // NO_SELECTION for why the clearing isn't spelled out per selector.
+  selectServer: (id) => set({ ...NO_SELECTION, selectedServerId: id }),
 
-  // Tool, resource and prompt selection are mutually exclusive with each
-  // other and with the server selection — selecting one clears the rest.
   selectTool: (serverId, toolName) =>
-    set({
-      selectedTool: { serverId, toolName },
-      selectedResource: null,
-      selectedPrompt: null,
-      selectedServerId: null
-    }),
+    set({ ...NO_SELECTION, selectedTool: { serverId, toolName } }),
 
-  selectResource: (serverId, uri) =>
-    set({
-      selectedResource: { serverId, uri },
-      selectedTool: null,
-      selectedPrompt: null,
-      selectedServerId: null
-    }),
+  selectResource: (serverId, uri) => set({ ...NO_SELECTION, selectedResource: { serverId, uri } }),
+
+  selectResourceTemplate: (serverId, uriTemplate) =>
+    set({ ...NO_SELECTION, selectedResourceTemplate: { serverId, uriTemplate } }),
 
   selectPrompt: (serverId, promptName) =>
-    set({
-      selectedPrompt: { serverId, promptName },
-      selectedTool: null,
-      selectedResource: null,
-      selectedServerId: null
-    }),
+    set({ ...NO_SELECTION, selectedPrompt: { serverId, promptName } }),
 
   executeTool: async (serverId, toolName, args) => {
     const server = get().servers.find((s) => s.id === serverId)
@@ -595,6 +671,83 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         }
       }))
     }
+  },
+
+  readResourceTemplate: async (serverId, uriTemplate, values) => {
+    const server = get().servers.find((s) => s.id === serverId)
+    if (!server) return
+
+    // Keyed by the template rather than by the URI it expands to, so reads of
+    // /7 and /8 accumulate in one list the way a tool's calls do whatever
+    // arguments they carried. Keying by the expanded URI would give every set
+    // of values its own single-entry history, which is no history at all.
+    const key = resourceKey(serverId, uriTemplate)
+    const at = Date.now()
+    const push = (record: ResourceReadRecord): void => {
+      set((state) => ({
+        resourceHistory: {
+          ...state.resourceHistory,
+          [key]: pushCapped(state.resourceHistory[key], record)
+        }
+      }))
+    }
+
+    const expansion = expandTemplate(uriTemplate, values)
+    if (!expansion.ok) {
+      // The form keeps Read disabled while a value is missing, so this is the
+      // defensive path (the raw-JSON editor can hand us anything). Record it
+      // rather than returning quietly — a button that no-ops without saying
+      // why is the harder thing to debug.
+      push({
+        id: crypto.randomUUID(),
+        serverId,
+        uri: uriTemplate,
+        args: values,
+        status: 'error',
+        error: expansion.error,
+        durationMs: 0,
+        at
+      })
+      return
+    }
+
+    // Read over the existing resources/read channel: expansion happens here, so
+    // main only ever sees a concrete URI and needs no template awareness.
+    const expandedUri = expansion.uri
+    const base = { id: crypto.randomUUID(), serverId, uri: uriTemplate, expandedUri, args: values }
+    let record: ResourceReadRecord | null = null
+    try {
+      const outcome = await window.api.mcp.readResource(serverId, expandedUri)
+      if (outcome.authRequired) {
+        // Null record on auth-required, as in readResource: no phantom error.
+        get().handleAuthEvent({ type: 'auth_required', serverId })
+      } else {
+        const { response, truncated } = capResponse(outcome.response)
+        record = {
+          ...base,
+          status: outcomeStatus(outcome),
+          response,
+          responseTruncated: truncated,
+          error: outcome.error,
+          durationMs: Date.now() - at,
+          at
+        }
+      }
+    } catch (err) {
+      record = {
+        ...base,
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - at,
+        at
+      }
+    }
+
+    if (!record) return
+    push(record)
+    // No runTestForCall here: the Tests tab never lists templates, so there is
+    // no script that could be attached to one. Calling it would always find
+    // nothing and only suggest otherwise.
   },
 
   clearResourceHistory: (serverId, uri) => {
@@ -902,6 +1055,8 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       selectedServerId: state.selectedServerId === id ? null : state.selectedServerId,
       selectedTool: state.selectedTool?.serverId === id ? null : state.selectedTool,
       selectedResource: state.selectedResource?.serverId === id ? null : state.selectedResource,
+      selectedResourceTemplate:
+        state.selectedResourceTemplate?.serverId === id ? null : state.selectedResourceTemplate,
       selectedPrompt: state.selectedPrompt?.serverId === id ? null : state.selectedPrompt,
       history: Object.fromEntries(
         Object.entries(state.history).filter(([key]) => !key.startsWith(`${id}::`))
@@ -971,6 +1126,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
         return
       }
       const { tools, resources, prompts, features } = result
+      // Optional over the wire (a server that doesn't support the method yields
+      // nothing), required on the runtime server.
+      const resourceTemplates = result.resourceTemplates ?? []
       const finishedAt = Date.now()
       set((state) => ({
         servers: state.servers.map((s) =>
@@ -980,15 +1138,22 @@ export const useServerStore = create<ServerStore>((set, get) => ({
                 status: 'connected',
                 tools,
                 resources,
+                resourceTemplates,
                 prompts,
                 fetchedAt: finishedAt,
                 features
               }
             : s
         ),
-        // The handshake precedes the listings (earlier `at`); all four land here.
+        // The handshake precedes the listings (earlier `at`); all five land here.
         protocolEvents: [
           proto('list-prompts', 'success', `${prompts.length} prompts`, finishedAt),
+          proto(
+            'list-resource-templates',
+            'success',
+            `${resourceTemplates.length} resource templates`,
+            finishedAt
+          ),
           proto('list-resources', 'success', `${resources.length} resources`, finishedAt),
           proto('list-tools', 'success', `${tools.length} tools`, finishedAt),
           proto('connect', 'success', 'initialized', startedAt),
@@ -1052,19 +1217,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       reportError(err)
     }
     set((state) => ({
-      servers: state.servers.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              status: 'disconnected',
-              error: undefined,
-              tools: [],
-              resources: [],
-              prompts: [],
-              fetchedAt: undefined
-            }
-          : s
-      )
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...clearedSession() } : s))
     }))
   },
 
@@ -1092,25 +1245,13 @@ export const useServerStore = create<ServerStore>((set, get) => ({
       // then pushes an 'idle' auth event which resets the auth field. Since the
       // live session is genuinely torn down, mirror disconnectServer's local
       // reset here too — otherwise the row would keep rendering green with its
-      // (now unreachable) tools/resources/prompts still listed.
+      // (now unreachable) capabilities still listed.
       await window.api.mcp.clearAuth(id)
     } catch (err) {
       reportError(err)
     }
     set((state) => ({
-      servers: state.servers.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              status: 'disconnected',
-              error: undefined,
-              tools: [],
-              resources: [],
-              prompts: [],
-              fetchedAt: undefined
-            }
-          : s
-      )
+      servers: state.servers.map((s) => (s.id === id ? { ...s, ...clearedSession() } : s))
     }))
   },
 

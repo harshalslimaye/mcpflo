@@ -44,7 +44,7 @@ export { expect } from '@playwright/test'
 // chevron specifically.
 export async function openEverythingGroup(
   page: Page,
-  group: 'Tools' | 'Resources' | 'Prompts'
+  group: 'Tools' | 'Resources' | 'Resource Templates' | 'Prompts'
 ): Promise<void> {
   const row = page.getByRole('group', { name: 'Everything' })
   await row.getByRole('button', { name: /Expand|Collapse/ }).click()

@@ -23,10 +23,49 @@ function capabilitiesFile(id: string): string {
   return join(serverDir(id), 'capabilities.json')
 }
 
+// Anything on disk is untrusted: an older MCPFlo may not have written a field
+// that today's code reads, and a crash or a full disk can leave a file that
+// parses but holds the wrong shapes. Casting the parse result would push those
+// problems into the renderer, where a missing array shows up as a blank sidebar
+// far from its cause. So shape the object once, here at the read boundary, and
+// let every caller treat the result as sound.
+//
+// Unknown keys are kept rather than dropped: a newer version of the app may
+// have written fields this build doesn't know about, and preserving them means
+// downgrading and upgrading again doesn't silently discard the cache.
+// `typeof null` is 'object' and so is an array, so a bare typeof check isn't
+// enough to conclude "a record of fields".
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeCapabilities(parsed: unknown): CachedCapabilities | undefined {
+  if (!isPlainObject(parsed)) return undefined
+  const list = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : [])
+  return {
+    ...parsed,
+    tools: list(parsed.tools),
+    resources: list(parsed.resources),
+    prompts: list(parsed.prompts),
+    resourceTemplates: list(parsed.resourceTemplates),
+    // Left undefined rather than defaulted when it isn't a number: "we don't
+    // know" and "the epoch" are different claims, and every reader already
+    // treats undefined as unknown. Defaulting to 0 made a corrupt cache render
+    // as a fetch 20,000 days ago.
+    fetchedAt: typeof parsed.fetchedAt === 'number' ? parsed.fetchedAt : undefined,
+    // Only the outer shape is checked; the flags inside are left as written,
+    // since the renderer reads each one defensively anyway. Hence the assertion
+    // through unknown — it's a claim about the contents, not a proof.
+    features: isPlainObject(parsed.features)
+      ? (parsed.features as unknown as CachedCapabilities['features'])
+      : undefined
+  }
+}
+
 export async function readCapabilities(id: string): Promise<CachedCapabilities | undefined> {
   try {
     const raw = await fs.readFile(capabilitiesFile(id), 'utf-8')
-    return JSON.parse(raw) as CachedCapabilities
+    return normalizeCapabilities(JSON.parse(raw))
   } catch {
     return undefined
   }

@@ -134,6 +134,21 @@ export interface Resource {
   mimeType?: string
 }
 
+// A parameterised resource: an RFC 6570 URI template the user fills in to get a
+// concrete URI to read. `uriTemplate` is the identity here — it's what the
+// server lists it under, what completion requests reference, and what stays
+// stable across reads with different values, the way a tool's name does.
+//
+// Kept to the same fields as Resource. The spec also allows `annotations`,
+// `icons` and `_meta`, but nothing displays those for resources either, so
+// carrying them here would be dead weight.
+export interface ResourceTemplate {
+  uriTemplate: string
+  name?: string
+  description?: string
+  mimeType?: string
+}
+
 export interface PromptArgument {
   name: string
   description?: string
@@ -192,6 +207,9 @@ export interface ConnectResult {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
+  // Optional because this comes straight off the wire, where a server that
+  // doesn't support resources/templates/list yields nothing at all.
+  resourceTemplates?: ResourceTemplate[]
   authRequired?: boolean
   features?: ServerFeatures
 }
@@ -390,7 +408,15 @@ export interface CachedCapabilities {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
-  fetchedAt: number
+  // Stays optional even though normalizeCapabilities fills it in: a cache
+  // written before templates existed genuinely has no such key, and the type
+  // shouldn't claim otherwise for anyone reading the file by other means.
+  resourceTemplates?: ResourceTemplate[]
+  // Optional because a cache file can be missing it (hand-edited, or written by
+  // a build that predates it). writeCapabilities always stamps it, so absence
+  // means "we don't know when this was fetched" — a distinct thing from any
+  // number, and the one MCPServer.fetchedAt and the header already understand.
+  fetchedAt?: number
   features?: ServerFeatures
 }
 
@@ -441,6 +467,9 @@ export interface MCPServer extends ServerConfig {
   tools: Tool[]
   resources: Resource[]
   prompts: Prompt[]
+  // Required unlike its cached and over-the-wire counterparts: this is a
+  // runtime object, and toRuntime always fills it in.
+  resourceTemplates: ResourceTemplate[]
   // When capabilities were last fetched. Undefined = never fetched.
   fetchedAt?: number
   // OAuth sign-in state. Runtime-only (never persisted to config.json) and

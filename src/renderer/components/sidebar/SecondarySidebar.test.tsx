@@ -18,6 +18,11 @@ const mockServers: MCPServer[] = [
       { name: 'search_nodes', inputSchema: { type: 'object' } }
     ],
     resources: [{ uri: 'memory://graph', name: 'Graph' }],
+    // One named, one unnamed — the unnamed falls back to its uriTemplate as a label.
+    resourceTemplates: [
+      { uriTemplate: 'memory://entity/{id}', name: 'Entity' },
+      { uriTemplate: 'memory://relation/{from}/{to}' }
+    ],
     prompts: []
   },
   {
@@ -28,6 +33,7 @@ const mockServers: MCPServer[] = [
     status: 'disconnected',
     tools: [],
     resources: [],
+    resourceTemplates: [],
     prompts: []
   }
 ]
@@ -98,6 +104,7 @@ describe('SecondarySidebar', () => {
     toggleServer('Memory MCP')
     expect(screen.getByText('Tools')).toBeInTheDocument()
     expect(screen.getByText('Resources')).toBeInTheDocument()
+    expect(screen.getByText('Resource Templates')).toBeInTheDocument()
     expect(screen.getByText('Prompts')).toBeInTheDocument()
   })
 
@@ -395,6 +402,59 @@ describe('SecondarySidebar', () => {
     toggleServer('Memory MCP')
     fireEvent.click(screen.getByText('Resources'))
     expect(screen.getByText('Graph').closest('button')).toHaveAttribute('aria-current', 'true')
+  })
+
+  describe('resource templates', () => {
+    it('shows the group with its count', () => {
+      render(<SecondarySidebar />)
+      toggleServer('Memory MCP')
+      expect(screen.getByText('Resource Templates').closest('button')).toHaveTextContent('2')
+    })
+
+    it('labels a named template by its name and an unnamed one by its uriTemplate', () => {
+      render(<SecondarySidebar />)
+      toggleServer('Memory MCP')
+      fireEvent.click(screen.getByText('Resource Templates'))
+      expect(screen.getByText('Entity')).toBeInTheDocument()
+      expect(screen.getByText('memory://relation/{from}/{to}')).toBeInTheDocument()
+    })
+
+    it('selects a template by its uriTemplate, not by its label', () => {
+      render(<SecondarySidebar />)
+      toggleServer('Memory MCP')
+      fireEvent.click(screen.getByText('Resource Templates'))
+      fireEvent.click(screen.getByText('Entity'))
+      expect(useServerStore.getState().selectedResourceTemplate).toEqual({
+        serverId: 'memory-mcp',
+        uriTemplate: 'memory://entity/{id}'
+      })
+    })
+
+    it('marks the selected template with aria-current', () => {
+      useServerStore.setState({
+        selectedResourceTemplate: { serverId: 'memory-mcp', uriTemplate: 'memory://entity/{id}' }
+      })
+      render(<SecondarySidebar />)
+      toggleServer('Memory MCP')
+      fireEvent.click(screen.getByText('Resource Templates'))
+      expect(screen.getByText('Entity').closest('button')).toHaveAttribute('aria-current', 'true')
+    })
+
+    it('renders an empty, disabled group for a server with no templates', () => {
+      useServerStore.setState({ servers: [{ ...mockServers[0], resourceTemplates: [] }] })
+      render(<SecondarySidebar />)
+      toggleServer('Memory MCP')
+      const row = screen.getByText('Resource Templates').closest('button')
+      expect(row).toHaveTextContent('0')
+      expect(row).toBeDisabled()
+    })
+
+    it('matches templates by label when filtering', () => {
+      render(<SecondarySidebar />)
+      fireEvent.change(screen.getByPlaceholderText(/Filter/), { target: { value: 'entity' } })
+      expect(screen.getByText('Entity')).toBeInTheDocument()
+      expect(screen.queryByText('Tools')).not.toBeInTheDocument()
+    })
   })
 
   it('marks the selected tool with aria-current', () => {

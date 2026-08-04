@@ -17,6 +17,7 @@ export type ActivityKind =
   | 'connect'
   | 'list-tools'
   | 'list-resources'
+  | 'list-resource-templates'
   | 'list-prompts'
 
 // Where a protocol event's data came from: a live wire exchange, or the on-disk
@@ -29,7 +30,7 @@ export type ActivitySource = 'live' | 'cache'
 // lives in its own flat slice on the store and is merged into the "All" view.
 export interface ProtocolEvent {
   id: string
-  kind: 'connect' | 'list-tools' | 'list-resources' | 'list-prompts'
+  kind: 'connect' | 'list-tools' | 'list-resources' | 'list-resource-templates' | 'list-prompts'
   serverId: string
   // Server display name — the row's primary line.
   serverName: string
@@ -47,6 +48,7 @@ export interface ProtocolEvent {
 export type ActivityTarget =
   | { kind: 'tool'; serverId: string; toolName: string }
   | { kind: 'resource'; serverId: string; uri: string }
+  | { kind: 'resource-template'; serverId: string; uriTemplate: string }
   | { kind: 'prompt'; serverId: string; promptName: string }
 
 // A unified, display-ready row for the "All" tab.
@@ -93,16 +95,40 @@ export function toolCallToActivity(record: ToolCallRecord): ActivityEvent {
   }
 }
 
+// Both plain resource reads and template reads live in `resourceHistory`, so
+// this has to tell them apart. `args` is what does it: readResourceTemplate
+// sets it on every record it pushes, a plain read never does. `expandedUri`
+// looks like the more natural discriminator and isn't — a template read whose
+// expansion failed never reached a URI, so it has no expandedUri, and keying
+// off that field sent it to { kind: 'resource' }, pointing a later click at a
+// resource whose uri is the raw template string, which no server lists.
 export function resourceReadToActivity(record: ResourceReadRecord): ActivityEvent {
-  return {
+  const base = {
     id: record.id,
-    kind: 'resource-read',
+    kind: 'resource-read' as const,
     serverId: record.serverId,
     status: record.status,
     durationMs: record.durationMs,
     at: record.at,
-    label: record.uri,
-    target: { kind: 'resource', serverId: record.serverId, uri: record.uri }
+    // The template, for a template read — the same thing the row's history is
+    // keyed by, and what the detail view opens.
+    label: record.uri
+  }
+  if (record.args === undefined) {
+    return { ...base, target: { kind: 'resource', serverId: record.serverId, uri: record.uri } }
+  }
+  return {
+    ...base,
+    // Every template read shares a label, so the URI it resolved to is what
+    // distinguishes the rows — absent when the expansion never produced one.
+    detail: record.expandedUri,
+    target: {
+      kind: 'resource-template',
+      serverId: record.serverId,
+      uriTemplate: record.uri
+    },
+    // Carried so navigating also re-fills the form, as tool and prompt rows do.
+    args: record.args
   }
 }
 

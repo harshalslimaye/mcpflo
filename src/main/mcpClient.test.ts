@@ -40,6 +40,9 @@ function makeFakeSession(serverCapabilities?: Record<string, unknown>): Session 
         .mockResolvedValue({ tools: [{ name: 'echo', inputSchema: { type: 'object' } }] }),
       listResources: vi.fn().mockResolvedValue({ resources: [{ uri: 'mem://x' }] }),
       listPrompts: vi.fn().mockResolvedValue({ prompts: [] }),
+      listResourceTemplates: vi
+        .fn()
+        .mockResolvedValue({ resourceTemplates: [{ uriTemplate: 'mem://{id}' }] }),
       readResource: vi.fn().mockResolvedValue({ contents: [] }),
       getPrompt: vi.fn().mockResolvedValue({ messages: [] }),
       getServerCapabilities: vi.fn().mockReturnValue(serverCapabilities)
@@ -56,13 +59,14 @@ describe('mcpClient', () => {
   })
 
   describe('connectServer', () => {
-    it('returns the listed tools, resources and prompts', async () => {
+    it('returns the listed tools, resources, prompts and resource templates', async () => {
       h.getSession.mockResolvedValue(makeFakeSession())
       const result = await mod.connectServer(config)
       expect(result).toEqual({
         tools: [{ name: 'echo', inputSchema: { type: 'object' } }],
         resources: [{ uri: 'mem://x' }],
         prompts: [],
+        resourceTemplates: [{ uriTemplate: 'mem://{id}' }],
         features: { completions: false }
       })
     })
@@ -88,6 +92,7 @@ describe('mcpClient', () => {
       expect(session.client.listTools).toHaveBeenCalledWith(undefined, { signal })
       expect(session.client.listResources).toHaveBeenCalledWith(undefined, { signal })
       expect(session.client.listPrompts).toHaveBeenCalledWith(undefined, { signal })
+      expect(session.client.listResourceTemplates).toHaveBeenCalledWith(undefined, { signal })
     })
 
     it('preserves the execution.taskSupport hint on tools', async () => {
@@ -117,14 +122,30 @@ describe('mcpClient', () => {
       ;(session.client.listPrompts as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error('prompts not supported')
       )
+      ;(session.client.listResourceTemplates as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('templates not supported')
+      )
       h.getSession.mockResolvedValue(session)
       const result = await mod.connectServer(config)
       expect(result).toEqual({
         tools: [],
         resources: [],
         prompts: [],
+        resourceTemplates: [],
         features: { completions: false }
       })
+    })
+
+    it('keeps the other listings when only resources/templates/list is unsupported', async () => {
+      const session = makeFakeSession()
+      ;(session.client.listResourceTemplates as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error('Method not found')
+      )
+      h.getSession.mockResolvedValue(session)
+      const result = await mod.connectServer(config)
+      expect(result.resourceTemplates).toEqual([])
+      expect(result.tools).toHaveLength(1)
+      expect(result.resources).toEqual([{ uri: 'mem://x' }])
     })
   })
 
@@ -251,14 +272,26 @@ describe('mcpClient', () => {
       // a red error.
       h.getSession.mockRejectedValue(new UnauthorizedError('401'))
       const result = await mod.fetchCapabilities(config)
-      expect(result).toEqual({ tools: [], resources: [], prompts: [], authRequired: true })
+      expect(result).toEqual({
+        tools: [],
+        resources: [],
+        prompts: [],
+        resourceTemplates: [],
+        authRequired: true
+      })
       expect(h.handleOperationAuthError).toHaveBeenCalledWith(config.id)
     })
 
     it('translates a DCR failure into a benign authRequired outcome', async () => {
       h.getSession.mockRejectedValue(new DcrRegistrationRequiredError())
       const result = await mod.fetchCapabilities(config)
-      expect(result).toEqual({ tools: [], resources: [], prompts: [], authRequired: true })
+      expect(result).toEqual({
+        tools: [],
+        resources: [],
+        prompts: [],
+        resourceTemplates: [],
+        authRequired: true
+      })
     })
 
     it('rethrows any other connect failure', async () => {

@@ -1,5 +1,5 @@
 import { encode } from 'gpt-tokenizer'
-import type { Tool, Resource, Prompt, MCPServer } from '../../shared/mcp.types'
+import type { Tool, Resource, ResourceTemplate, Prompt, MCPServer } from '../../shared/mcp.types'
 
 // A reference context window used only to express a server's footprint as a
 // percentage ("~1.70% of a 200K window"). Not a limit MCPFlo enforces — just a
@@ -42,6 +42,15 @@ function resourceDefinitionText(resource: Resource): string {
   })
 }
 
+function resourceTemplateDefinitionText(template: ResourceTemplate): string {
+  return JSON.stringify({
+    uriTemplate: template.uriTemplate,
+    name: template.name,
+    description: template.description,
+    mimeType: template.mimeType
+  })
+}
+
 function promptDefinitionText(prompt: Prompt): string {
   return JSON.stringify({
     name: prompt.name,
@@ -56,6 +65,10 @@ export function estimateToolTokens(tool: Tool): number {
 
 export function estimateResourceTokens(resource: Resource): number {
   return countTokens(resourceDefinitionText(resource))
+}
+
+export function estimateResourceTemplateTokens(template: ResourceTemplate): number {
+  return countTokens(resourceTemplateDefinitionText(template))
 }
 
 export function estimatePromptTokens(prompt: Prompt): number {
@@ -92,7 +105,8 @@ export function estimatePromptDefinitionPayload(prompt: Prompt): DefinitionPaylo
   return definitionPayload(promptDefinitionText(prompt))
 }
 
-// The token cost of one capability category (tools, resources, or prompts).
+// The token cost of one capability category (tools, resources, resource
+// templates, or prompts).
 export interface CapabilityBudget {
   // Number of items in the category.
   count: number
@@ -110,6 +124,7 @@ export interface CapabilityBudget {
 export interface ContextBudget {
   tools: CapabilityBudget
   resources: CapabilityBudget
+  resourceTemplates: CapabilityBudget
   prompts: CapabilityBudget
   total: {
     count: number
@@ -135,22 +150,29 @@ function summarize(itemTokens: number[], grandTotal: number): CapabilityBudget {
 // agent's context, broken down by category. Pure and deterministic — callers
 // should memoize, since tokenizing every capability isn't free.
 export function computeContextBudget(
-  server: Pick<MCPServer, 'tools' | 'resources' | 'prompts'>
+  server: Pick<MCPServer, 'tools' | 'resources' | 'resourceTemplates' | 'prompts'>
 ): ContextBudget {
   const toolTokens = server.tools.map(estimateToolTokens)
   const resourceTokens = server.resources.map(estimateResourceTokens)
+  // Templates count here even though they have no Tests-tab presence: their
+  // definitions ship in resources/templates/list just like the rest, so they
+  // occupy an agent's context whether or not MCPFlo can script them.
+  const templateTokens = server.resourceTemplates.map(estimateResourceTemplateTokens)
   const promptTokens = server.prompts.map(estimatePromptTokens)
 
   const grandTotal =
     toolTokens.reduce((s, t) => s + t, 0) +
     resourceTokens.reduce((s, t) => s + t, 0) +
+    templateTokens.reduce((s, t) => s + t, 0) +
     promptTokens.reduce((s, t) => s + t, 0)
 
-  const totalCount = toolTokens.length + resourceTokens.length + promptTokens.length
+  const totalCount =
+    toolTokens.length + resourceTokens.length + templateTokens.length + promptTokens.length
 
   return {
     tools: summarize(toolTokens, grandTotal),
     resources: summarize(resourceTokens, grandTotal),
+    resourceTemplates: summarize(templateTokens, grandTotal),
     prompts: summarize(promptTokens, grandTotal),
     total: {
       count: totalCount,

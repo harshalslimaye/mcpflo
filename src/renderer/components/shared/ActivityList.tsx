@@ -10,6 +10,7 @@ const KIND_ICON: Record<ActivityKind, typeof Wrench> = {
   connect: Plug,
   'list-tools': List,
   'list-resources': List,
+  'list-resource-templates': List,
   'list-prompts': List
 }
 
@@ -19,6 +20,7 @@ const KIND_LABEL: Partial<Record<ActivityKind, string>> = {
   connect: 'initialize',
   'list-tools': 'tools/list',
   'list-resources': 'resources/list',
+  'list-resource-templates': 'resources/templates/list',
   'list-prompts': 'prompts/list'
 }
 

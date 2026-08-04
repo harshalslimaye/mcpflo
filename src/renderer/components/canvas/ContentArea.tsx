@@ -2,6 +2,7 @@ import { Server } from 'lucide-react'
 import { useServerStore } from '../../stores/serverStore'
 import { ToolDetailView } from '../tool/ToolDetailView'
 import { ResourceDetailView } from '../resource/ResourceDetailView'
+import { ResourceTemplateDetailView } from '../resource/ResourceTemplateDetailView'
 import { PromptDetailView } from '../prompt/PromptDetailView'
 import { ServerDetailView } from '../server/ServerDetailView'
 import { GlobalActivityRail } from '../shared/GlobalActivityRail'
@@ -24,6 +25,7 @@ export function ContentArea(): React.JSX.Element {
   const selectedServerId = useServerStore((s) => s.selectedServerId)
   const selectedTool = useServerStore((s) => s.selectedTool)
   const selectedResource = useServerStore((s) => s.selectedResource)
+  const selectedResourceTemplate = useServerStore((s) => s.selectedResourceTemplate)
   const selectedPrompt = useServerStore((s) => s.selectedPrompt)
   const servers = useServerStore((s) => s.servers)
 
@@ -54,6 +56,24 @@ export function ContentArea(): React.JSX.Element {
         <ResourceDetailView
           key={`${server.id}::${resource.uri}`}
           resource={resource}
+          serverId={server.id}
+          serverName={server.name}
+        />
+      )
+    }
+  }
+
+  if (selectedResourceTemplate) {
+    const server = servers.find((s) => s.id === selectedResourceTemplate.serverId)
+    const template = server?.resourceTemplates.find(
+      (t) => t.uriTemplate === selectedResourceTemplate.uriTemplate
+    )
+    if (server && template) {
+      // Remount per template so local view state (form values, result tab) resets.
+      return (
+        <ResourceTemplateDetailView
+          key={`${server.id}::${template.uriTemplate}`}
+          template={template}
           serverId={server.id}
           serverName={server.name}
         />

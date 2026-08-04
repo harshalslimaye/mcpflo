@@ -17,6 +17,7 @@ const server: MCPServer = {
     }
   ],
   resources: [{ uri: 'memory://graph', name: 'Graph', description: 'The knowledge graph' }],
+  resourceTemplates: [{ uriTemplate: 'memory://entity/{id}', name: 'Entity' }],
   prompts: []
 }
 
@@ -25,7 +26,8 @@ beforeEach(() => {
     servers: [],
     selectedServerId: null,
     selectedTool: null,
-    selectedResource: null
+    selectedResource: null,
+    selectedResourceTemplate: null
   })
 })
 
@@ -130,5 +132,38 @@ describe('ContentArea — resource detail', () => {
     })
     render(<ContentArea />)
     expect(screen.getByText('Ready when you are')).toBeInTheDocument()
+  })
+})
+
+describe('ContentArea — resource template detail', () => {
+  it('renders the template detail view for the selected template', () => {
+    useServerStore.setState({
+      servers: [server],
+      selectedResourceTemplate: { serverId: 'memory-mcp', uriTemplate: 'memory://entity/{id}' }
+    })
+    render(<ContentArea />)
+    expect(screen.getByText('Entity')).toBeInTheDocument()
+    expect(screen.getByText('Memory MCP')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'id' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Read' })).toBeInTheDocument()
+  })
+
+  it('falls back to the empty state when the selected template no longer exists', () => {
+    useServerStore.setState({
+      servers: [server],
+      selectedResourceTemplate: { serverId: 'memory-mcp', uriTemplate: 'memory://gone/{id}' }
+    })
+    render(<ContentArea />)
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument()
+  })
+
+  it('shows the template view, not the resource view, when a template is selected', () => {
+    useServerStore.setState({
+      servers: [server],
+      selectedResourceTemplate: { serverId: 'memory-mcp', uriTemplate: 'memory://entity/{id}' }
+    })
+    render(<ContentArea />)
+    // The plain-resource view's read-only URI field must not appear.
+    expect(screen.queryByRole('textbox', { name: 'Resource URI' })).not.toBeInTheDocument()
   })
 })

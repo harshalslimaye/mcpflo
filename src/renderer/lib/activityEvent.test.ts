@@ -83,6 +83,64 @@ describe('activity event mappers', () => {
     expect(event.kind).toBe('resource-read')
     expect(event.label).toBe('mem://x')
     expect(event.target).toEqual({ kind: 'resource', serverId: 's1', uri: 'mem://x' })
+    expect(event.args).toBeUndefined()
+  })
+
+  it('projects a template read at the template, not at a resource that does not exist', () => {
+    // Template reads share resourceHistory with plain reads; `args` is what
+    // tells the two apart. Pointing this at { kind: 'resource' } would send the
+    // click looking for a resource whose uri is a template.
+    const event = resourceReadToActivity(
+      resourceRec({
+        uri: 'mem://text/{id}',
+        expandedUri: 'mem://text/7',
+        args: { id: '7' }
+      })
+    )
+    expect(event.label).toBe('mem://text/{id}')
+    expect(event.detail).toBe('mem://text/7')
+    expect(event.target).toEqual({
+      kind: 'resource-template',
+      serverId: 's1',
+      uriTemplate: 'mem://text/{id}'
+    })
+    // Carried so navigating re-fills the form, as tool and prompt rows do.
+    expect(event.args).toEqual({ id: '7' })
+  })
+
+  it('still targets the template when the expansion failed before reaching a uri', () => {
+    // readResourceTemplate records this when expandTemplate rejects the values,
+    // and never sets expandedUri on that path — which is why expandedUri can't
+    // be the discriminator. Keying off it sent this row to a resource that no
+    // server lists, so clicking it in the "All" tab navigated nowhere.
+    const event = resourceReadToActivity(
+      resourceRec({
+        uri: 'mem://text/{id}',
+        status: 'error',
+        error: 'Missing a value for id',
+        args: { id: '' }
+      })
+    )
+    expect(event.target).toEqual({
+      kind: 'resource-template',
+      serverId: 's1',
+      uriTemplate: 'mem://text/{id}'
+    })
+    expect(event.detail).toBeUndefined()
+    expect(event.args).toEqual({ id: '' })
+  })
+
+  it('treats a zero-variable template read as a template read, not a plain one', () => {
+    // Its values are `{}` — defined but empty. `args === undefined` is the
+    // check, so an empty object must still read as a template.
+    const event = resourceReadToActivity(
+      resourceRec({ uri: 'mem://static', expandedUri: 'mem://static', args: {} })
+    )
+    expect(event.target).toEqual({
+      kind: 'resource-template',
+      serverId: 's1',
+      uriTemplate: 'mem://static'
+    })
   })
 
   it('projects a prompt get with a prompt target', () => {

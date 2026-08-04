@@ -188,6 +188,7 @@ describe('PromptDetailView — completion prop threading', () => {
           status: 'connected',
           tools: [],
           resources: [],
+          resourceTemplates: [],
           prompts: [],
           features: { completions: true }
         }
@@ -214,6 +215,7 @@ describe('PromptDetailView — completion prop threading', () => {
           status: 'connected',
           tools: [],
           resources: [],
+          resourceTemplates: [],
           prompts: [],
           features: { completions: true }
         }

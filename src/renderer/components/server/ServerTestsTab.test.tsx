@@ -11,6 +11,7 @@ const base: MCPServer = {
   status: 'connected',
   tools: [{ name: 'create_issue', inputSchema: { type: 'object' } }],
   resources: [{ uri: 'repo://tree' }],
+  resourceTemplates: [],
   prompts: [{ name: 'summarize' }]
 }
 
@@ -42,15 +43,52 @@ describe('ServerTestsTab', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  // Resource templates are deliberately absent from this tab: they have no test
+  // scripts, so counting them would report "0 of N passed" against capabilities
+  // that can never pass. Keep them out of both the rows and the totals.
+  it('ignores resource templates entirely', () => {
+    const withTemplates = { ...base, resourceTemplates: [{ uriTemplate: 'repo://{owner}/tree' }] }
+    render(
+      <ServerTestsTab
+        server={withTemplates}
+        scripted={new Set()}
+        onScriptedChange={mockOnScriptedChange}
+      />
+    )
+    expect(screen.queryByText('repo://{owner}/tree')).not.toBeInTheDocument()
+    expect(screen.queryByText('Resource Templates')).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when the only capabilities are resource templates', () => {
+    const { container } = render(
+      <ServerTestsTab
+        server={{
+          ...base,
+          tools: [],
+          resources: [],
+          prompts: [],
+          resourceTemplates: [{ uriTemplate: 'repo://{owner}/tree' }]
+        }}
+        scripted={new Set()}
+        onScriptedChange={mockOnScriptedChange}
+      />
+    )
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('renders every capability grouped by category', () => {
-    render(<ServerTestsTab server={base} scripted={new Set()} onScriptedChange={mockOnScriptedChange} />)
+    render(
+      <ServerTestsTab server={base} scripted={new Set()} onScriptedChange={mockOnScriptedChange} />
+    )
     expect(screen.getByText('create_issue')).toBeInTheDocument()
     expect(screen.getByText('repo://tree')).toBeInTheDocument()
     expect(screen.getByText('summarize')).toBeInTheDocument()
   })
 
   it('shows "No test script" and no Run button for a capability with no saved script', () => {
-    render(<ServerTestsTab server={base} scripted={new Set()} onScriptedChange={mockOnScriptedChange} />)
+    render(
+      <ServerTestsTab server={base} scripted={new Set()} onScriptedChange={mockOnScriptedChange} />
+    )
     // All three fixture capabilities are un-scripted here.
     expect(screen.getAllByText('No test script')).toHaveLength(3)
     expect(screen.queryByRole('button', { name: 'Run create_issue' })).not.toBeInTheDocument()
@@ -68,7 +106,7 @@ describe('ServerTestsTab', () => {
     expect(screen.getByRole('button', { name: 'Run create_issue' })).toBeInTheDocument()
   })
 
-  it('calls runCapabilityTests when a row\'s Run button is clicked', () => {
+  it("calls runCapabilityTests when a row's Run button is clicked", () => {
     render(
       <ServerTestsTab
         server={base}
@@ -145,7 +183,7 @@ describe('ServerTestsTab', () => {
     expect(screen.getByText('rejects dup')).toBeInTheDocument()
   })
 
-  it('shows the aggregate summary only for this server\'s completed runs', () => {
+  it("shows the aggregate summary only for this server's completed runs", () => {
     useServerStore.setState({
       testsTabRuns: {
         [testsTabKey('github-mcp', 'tool', 'create_issue')]: {
@@ -182,7 +220,9 @@ describe('ServerTestsTab', () => {
   })
 
   it('calls runAllTests when Run all tests is clicked', async () => {
-    render(<ServerTestsTab server={base} scripted={new Set()} onScriptedChange={mockOnScriptedChange} />)
+    render(
+      <ServerTestsTab server={base} scripted={new Set()} onScriptedChange={mockOnScriptedChange} />
+    )
     fireEvent.click(screen.getByRole('button', { name: /Run all tests/ }))
     expect(mockRunAllTests).toHaveBeenCalledWith('github-mcp')
   })

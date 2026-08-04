@@ -8,11 +8,12 @@ interface ContextBudgetCardProps {
   server: MCPServer
 }
 
-type CategoryKey = 'tools' | 'resources' | 'prompts'
+type CategoryKey = 'tools' | 'resources' | 'resourceTemplates' | 'prompts'
 
 const CATEGORIES: { key: CategoryKey; label: string }[] = [
   { key: 'tools', label: 'Tools' },
   { key: 'resources', label: 'Resources' },
+  { key: 'resourceTemplates', label: 'Resource Templates' },
   { key: 'prompts', label: 'Prompts' }
 ]
 
@@ -21,8 +22,9 @@ const CATEGORIES: { key: CategoryKey; label: string }[] = [
 // hues would imply a meaning (e.g. status) that isn't there.
 const CATEGORY_OPACITY: Record<CategoryKey, string> = {
   tools: 'opacity-100',
-  resources: 'opacity-70',
-  prompts: 'opacity-45'
+  resources: 'opacity-75',
+  resourceTemplates: 'opacity-55',
+  prompts: 'opacity-40'
 }
 
 function formatTokens(tokens: number): string {
@@ -39,10 +41,10 @@ const WINDOW_TOKENS_K = CONTEXT_WINDOW_TOKENS / 1000
 // entirely when the server has no capabilities at all — an empty card (zero
 // bar, zero table) would be visual noise with nothing to communicate.
 export function ContextBudgetCard({ server }: ContextBudgetCardProps): React.JSX.Element | null {
-  const { tools, resources, prompts } = server
+  const { tools, resources, resourceTemplates, prompts } = server
   const budget = useMemo(
-    () => computeContextBudget({ tools, resources, prompts }),
-    [tools, resources, prompts]
+    () => computeContextBudget({ tools, resources, resourceTemplates, prompts }),
+    [tools, resources, resourceTemplates, prompts]
   )
 
   if (budget.total.count === 0) return null

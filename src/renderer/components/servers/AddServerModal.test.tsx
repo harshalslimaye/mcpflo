@@ -592,6 +592,7 @@ describe('AddServerModal', () => {
             status: 'disconnected',
             tools: [],
             resources: [],
+            resourceTemplates: [],
             prompts: []
           }
         ],

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Wrench, Database, MessageSquare } from 'lucide-react'
+import { Wrench, Database, Braces, MessageSquare } from 'lucide-react'
 import type { MCPServer } from '../../../shared/mcp.types'
 import { useServerStore } from '../../stores/serverStore'
 import { computeContextBudget } from '../../lib/contextBudget'
@@ -66,10 +66,10 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
   const showAuthCard =
     server.auth?.status === 'authenticated' || server.auth?.status === 'auth_required'
 
-  const { tools, resources, prompts } = server
+  const { tools, resources, resourceTemplates, prompts } = server
   const budget = useMemo(
-    () => computeContextBudget({ tools, resources, prompts }),
-    [tools, resources, prompts]
+    () => computeContextBudget({ tools, resources, resourceTemplates, prompts }),
+    [tools, resources, resourceTemplates, prompts]
   )
 
   function handleTabBarChange(tab: DetailTab): void {
@@ -106,18 +106,15 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
               tabs (with their count badges) don't fit a narrow window — same
               no-scrollbar treatment ResultPanel's docked tab row uses. */}
           <div className="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-border no-scrollbar">
-            <Tabs
-              tabs={tabs}
-              activeTab={activeTab}
-              onTabChange={handleTabBarChange}
-              flushBottom
-            />
+            <Tabs tabs={tabs} activeTab={activeTab} onTabChange={handleTabBarChange} flushBottom />
           </div>
 
           {activeTab === 'overview' && (
             <>
               {budget.total.count > 0 && (
-                <div className="grid shrink-0 grid-cols-1 gap-3 @min-[760px]:grid-cols-3">
+                // Four tiles: two-up once there's room, four-up only when the
+                // row is wide enough that each still fits its label.
+                <div className="grid shrink-0 grid-cols-1 gap-3 @min-[560px]:grid-cols-2 @min-[1040px]:grid-cols-4">
                   <CapabilitySummaryTile
                     icon={<Wrench size={14} />}
                     label="Tools"
@@ -131,6 +128,13 @@ export function ServerDetailView({ server }: ServerDetailViewProps): React.JSX.E
                     count={budget.resources.count}
                     tokens={budget.resources.tokens}
                     onClick={() => handleTileClick('resources')}
+                  />
+                  <CapabilitySummaryTile
+                    icon={<Braces size={14} />}
+                    label="Resource Templates"
+                    count={budget.resourceTemplates.count}
+                    tokens={budget.resourceTemplates.tokens}
+                    onClick={() => handleTileClick('resourceTemplates')}
                   />
                   <CapabilitySummaryTile
                     icon={<MessageSquare size={14} />}

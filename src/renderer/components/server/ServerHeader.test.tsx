@@ -11,6 +11,7 @@ const base: MCPServer = {
   fetchedAt: Date.now() - 4 * 60 * 1000,
   tools: [],
   resources: [],
+  resourceTemplates: [],
   prompts: []
 }
 
