@@ -47,10 +47,13 @@ function FieldTemplate(props: FieldTemplateProps): React.JSX.Element {
   const showErrors = !ctx || ctx.touched.has(id)
 
   return (
-    <div className={`flex flex-col gap-1.5 ${classNames ?? ''}`} style={style}>
+    <div className={`flex min-w-0 flex-col gap-1.5 ${classNames ?? ''}`} style={style}>
       {displayLabel && label && (
         <div className="flex items-center gap-1.5">
-          <label htmlFor={id} className="font-mono text-[13px] text-text-primary">
+          <label
+            htmlFor={id}
+            className="min-w-0 font-mono text-[13px] text-text-primary [overflow-wrap:anywhere]"
+          >
             {label}
             {required && <span className="ml-0.5 text-accent">*</span>}
           </label>
